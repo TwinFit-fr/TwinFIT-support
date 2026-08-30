@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/primitives";
 import type { LabSetRow } from "@/lib/lab/queries";
 import {
   buildLabSetChartData,
+  maxSeriesTimeSeconds,
+  mergeSeriesBySampleIndex,
   parseSensorPayload,
   type LabSetChartData,
   type SlotChartSeries,
@@ -34,28 +36,6 @@ function durationSeconds(startedAt: string, endedAt: string): string {
   return `${Math.round((end - start) / 1000)}s`;
 }
 
-function mergeSeriesForChart(series: SlotChartSeries[]): Record<string, number>[] {
-  const allT = new Set<number>();
-  const maps = series.map((s) => {
-    const map = new Map<number, number>();
-    for (const p of s.points) {
-      map.set(p.t, p.y);
-      allT.add(p.t);
-    }
-    return { slot: s.slot, map };
-  });
-  return [...allT]
-    .sort((a, b) => a - b)
-    .map((t) => {
-      const row: Record<string, number> = { t };
-      for (const { slot, map } of maps) {
-        const y = map.get(t);
-        if (y !== undefined) row[slot] = y;
-      }
-      return row;
-    });
-}
-
 function MagnitudeChart({
   title,
   series,
@@ -65,8 +45,14 @@ function MagnitudeChart({
   series: SlotChartSeries[];
   yLabel: string;
 }) {
-  const data = useMemo(() => mergeSeriesForChart(series), [series]);
-  if (!series.length || data.length === 0) {
+  const chartRows = useMemo(() => mergeSeriesBySampleIndex(series), [series]);
+  const maxT = useMemo(() => maxSeriesTimeSeconds(series), [series]);
+  const totalPoints = useMemo(
+    () => series.reduce((sum, s) => sum + s.points.length, 0),
+    [series],
+  );
+
+  if (!series.length || totalPoints === 0) {
     return (
       <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-500">
         {title}: no samples
@@ -76,23 +62,31 @@ function MagnitudeChart({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-zinc-200 bg-white p-3">
-      <h3 className="mb-2 text-sm font-medium text-zinc-700">{title}</h3>
-      <div className="min-h-[220px] flex-1">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+      <h3 className="mb-2 text-sm font-medium text-zinc-700">
+        {title}
+        <span className="ml-2 font-normal text-zinc-500">
+          ({totalPoints.toLocaleString()} samples)
+        </span>
+      </h3>
+      <div className="h-[260px] w-full shrink-0">
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart
+            data={chartRows}
+            margin={{ top: 4, right: 12, left: 4, bottom: 20 }}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
             <XAxis
-              dataKey="t"
               type="number"
-              domain={[0, "dataMax"]}
+              dataKey="t"
+              domain={[0, maxT > 0 ? maxT : "auto"]}
               allowDataOverflow
-              tickFormatter={(v) => `${Number(v).toFixed(1)} s`}
+              tickFormatter={(v) => `${Number(v).toFixed(2)} s`}
               stroke="#71717a"
               fontSize={12}
               label={{
                 value: "Time (s)",
                 position: "insideBottom",
-                offset: -2,
+                offset: -8,
                 style: { fill: "#71717a", fontSize: 11 },
               }}
             />
@@ -108,8 +102,8 @@ function MagnitudeChart({
               }}
             />
             <Tooltip
-              formatter={(value) =>
-                typeof value === "number" ? [value.toFixed(3), ""] : ["—", ""]
+              formatter={(value, name) =>
+                typeof value === "number" ? [value.toFixed(3), String(name)] : ["—", String(name)]
               }
               labelFormatter={(label) => `t = ${Number(label).toFixed(2)} s`}
             />
@@ -117,7 +111,7 @@ function MagnitudeChart({
             {series.map((s) => (
               <Line
                 key={s.slot}
-                type="monotone"
+                type="linear"
                 dataKey={s.slot}
                 name={s.slotLabel}
                 stroke={s.color}
