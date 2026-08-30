@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
 import {
-  createRestExercise,
   linkCatalogExercise,
   listCatalogCandidates,
   listLabExercises,
@@ -37,19 +36,6 @@ export async function POST(request: Request) {
       const exercise = await linkCatalogExercise(token, exoId);
       return NextResponse.json({ ok: true, exercise });
     }
-    if (body.action === "create_rest") {
-      const displayName = String(body.display_name ?? "").trim();
-      if (!displayName) {
-        return NextResponse.json({ error: "display_name required" }, { status: 400 });
-      }
-      const exercise = await createRestExercise(token, {
-        display_name: displayName,
-        notes: body.notes ?? undefined,
-        sort_order: body.sort_order ?? undefined,
-        active: body.active ?? undefined,
-      });
-      return NextResponse.json({ ok: true, exercise });
-    }
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
     if (error instanceof Response) return error;
@@ -62,13 +48,14 @@ export async function PATCH(request: Request) {
   try {
     const token = requireStaffToken(request);
     const body = await request.json();
-    const id = String(body.id ?? "");
-    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
-    const exercise = await updateLabExercise(token, id, {
+    const catalogExoId = Number(body.catalog_exo_id ?? body.id);
+    if (!Number.isFinite(catalogExoId)) {
+      return NextResponse.json({ error: "catalog_exo_id required" }, { status: 400 });
+    }
+    const exercise = await updateLabExercise(token, catalogExoId, {
       active: body.active,
       notes: body.notes,
       sort_order: body.sort_order,
-      display_name: body.display_name,
     });
     return NextResponse.json({ ok: true, exercise });
   } catch (error) {

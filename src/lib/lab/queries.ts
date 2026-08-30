@@ -1,37 +1,32 @@
 import { staffGql } from "@/lib/staff-gql";
 
 export type LabExerciseRow = {
-  id: string;
-  kind: "catalog" | "rest";
-  catalog_exo_id: number | null;
-  display_name: string | null;
+  catalog_exo_id: number;
   active: boolean;
   sort_order: number;
   notes: string | null;
   catalogExercise?: { exo_id: number; display_name: string } | null;
+  sets_aggregate?: { aggregate?: { count?: number } | null } | null;
 };
 
 export type LabGlobalStatRow = {
-  lab_exercise_id: string;
+  catalog_exo_id: number;
   total_sets: number;
-  updated_at: string;
-  labExercise: LabExerciseRow;
+  labExercise: LabExerciseRow | null;
+  catalogExercise?: { exo_id: number; display_name: string } | null;
 };
 
 export type LabUserStatRow = {
   user_id: string;
-  lab_exercise_id: string;
+  catalog_exo_id: number;
   set_count: number;
-  updated_at: string;
-  labExercise: LabExerciseRow;
+  catalogExercise?: { exo_id: number; display_name: string } | null;
+  labExercise?: LabExerciseRow | null;
   user?: { id: string; email: string; displayName?: string | null } | null;
 };
 
 const LAB_EXERCISE_FIELDS = `
-  id
-  kind
   catalog_exo_id
-  display_name
   active
   sort_order
   notes
@@ -47,6 +42,9 @@ export async function listLabExercises(token: string): Promise<LabExerciseRow[]>
     `query {
       lab_exercises(order_by: [{ sort_order: asc }, { inserted_at: asc }]) {
         ${LAB_EXERCISE_FIELDS}
+        sets_aggregate {
+          aggregate { count }
+        }
       }
     }`,
   );
@@ -54,43 +52,105 @@ export async function listLabExercises(token: string): Promise<LabExerciseRow[]>
 }
 
 export async function listLabGlobalStats(token: string): Promise<LabGlobalStatRow[]> {
-  const data = await staffGql<{ lab_exercise_set_stats: LabGlobalStatRow[] }>(
+  const data = await staffGql<{
+    counts: { catalog_exo_id: number }[];
+    globalByExercise: {
+      catalog_exo_id: number;
+      catalogExercise: { exo_id: number; display_name: string } | null;
+    }[];
+    pool: LabExerciseRow[];
+  }>(
     token,
     `query {
-      lab_exercise_set_stats(order_by: { total_sets: desc }) {
-        lab_exercise_id
-        total_sets
-        updated_at
-        labExercise {
-          ${LAB_EXERCISE_FIELDS}
-        }
+      globalByExercise: lab_sets(distinct_on: catalog_exo_id, order_by: [{ catalog_exo_id: asc }]) {
+        catalog_exo_id
+        catalogExercise { exo_id display_name }
+      }
+      counts: lab_sets {
+        catalog_exo_id
+      }
+      pool: lab_exercises {
+        ${LAB_EXERCISE_FIELDS}
       }
     }`,
   );
-  return data.lab_exercise_set_stats ?? [];
+
+  const countByExo = new Map<number, number>();
+  for (const row of data.counts ?? []) {
+    countByExo.set(row.catalog_exo_id, (countByExo.get(row.catalog_exo_id) ?? 0) + 1);
+  }
+
+  const poolByExo = new Map(
+    (data.pool ?? []).map((row) => [row.catalog_exo_id, row]),
+  );
+
+  const exoIds = new Set<number>([
+    ...countByExo.keys(),
+    ...(data.globalByExercise ?? []).map((r) => r.catalog_exo_id),
+  ]);
+
+  return [...exoIds]
+    .map((catalog_exo_id) => {
+      const fromSet = (data.globalByExercise ?? []).find((r) => r.catalog_exo_id === catalog_exo_id);
+      return {
+        catalog_exo_id,
+        total_sets: countByExo.get(catalog_exo_id) ?? 0,
+        labExercise: poolByExo.get(catalog_exo_id) ?? null,
+        catalogExercise: fromSet?.catalogExercise ?? poolByExo.get(catalog_exo_id)?.catalogExercise ?? null,
+      };
+    })
+    .sort((a, b) => b.total_sets - a.total_sets);
 }
 
 export async function listLabUserStats(token: string): Promise<LabUserStatRow[]> {
-  const data = await staffGql<{ lab_user_exercise_set_stats: LabUserStatRow[] }>(
+  const data = await staffGql<{
+    lab_sets: {
+      user_id: string;
+      catalog_exo_id: number;
+      catalogExercise: { exo_id: number; display_name: string } | null;
+      user: { id: string; email: string; displayName?: string | null } | null;
+    }[];
+    pool: LabExerciseRow[];
+  }>(
     token,
     `query {
-      lab_user_exercise_set_stats(order_by: [{ user_id: asc }, { set_count: desc }]) {
+      lab_sets {
         user_id
-        lab_exercise_id
-        set_count
-        updated_at
-        labExercise {
-          ${LAB_EXERCISE_FIELDS}
-        }
-        user {
-          id
-          email
-          displayName
-        }
+        catalog_exo_id
+        catalogExercise { exo_id display_name }
+        user { id email displayName }
+      }
+      pool: lab_exercises {
+        ${LAB_EXERCISE_FIELDS}
       }
     }`,
   );
-  return data.lab_user_exercise_set_stats ?? [];
+
+  const poolByExo = new Map(
+    (data.pool ?? []).map((row) => [row.catalog_exo_id, row]),
+  );
+
+  const grouped = new Map<string, LabUserStatRow>();
+  for (const row of data.lab_sets ?? []) {
+    const key = `${row.user_id}:${row.catalog_exo_id}`;
+    const prev = grouped.get(key);
+    if (prev) {
+      prev.set_count += 1;
+    } else {
+      grouped.set(key, {
+        user_id: row.user_id,
+        catalog_exo_id: row.catalog_exo_id,
+        set_count: 1,
+        catalogExercise: row.catalogExercise,
+        labExercise: poolByExo.get(row.catalog_exo_id) ?? null,
+        user: row.user,
+      });
+    }
+  }
+
+  return [...grouped.values()].sort((a, b) =>
+    a.user_id.localeCompare(b.user_id) || b.set_count - a.set_count,
+  );
 }
 
 export async function linkCatalogExercise(
@@ -106,7 +166,6 @@ export async function linkCatalogExercise(
     }`,
     {
       object: {
-        kind: "catalog",
         catalog_exo_id: catalogExoId,
         active: true,
       },
@@ -118,51 +177,23 @@ export async function linkCatalogExercise(
   return data.insert_lab_exercises_one;
 }
 
-export async function createRestExercise(
-  token: string,
-  input: { display_name: string; notes?: string; sort_order?: number; active?: boolean },
-): Promise<LabExerciseRow> {
-  const data = await staffGql<{ insert_lab_exercises_one: LabExerciseRow }>(
-    token,
-    `mutation($object: lab_exercises_insert_input!) {
-      insert_lab_exercises_one(object: $object) {
-        ${LAB_EXERCISE_FIELDS}
-      }
-    }`,
-    {
-      object: {
-        kind: "rest",
-        display_name: input.display_name,
-        notes: input.notes ?? null,
-        sort_order: input.sort_order ?? 0,
-        active: input.active ?? true,
-      },
-    },
-  );
-  if (!data.insert_lab_exercises_one) {
-    throw new Error("Failed to create rest exercise");
-  }
-  return data.insert_lab_exercises_one;
-}
-
 export async function updateLabExercise(
   token: string,
-  id: string,
+  catalogExoId: number,
   patch: Partial<{
     active: boolean;
     notes: string | null;
     sort_order: number;
-    display_name: string | null;
   }>,
 ): Promise<LabExerciseRow> {
   const data = await staffGql<{ update_lab_exercises_by_pk: LabExerciseRow }>(
     token,
-    `mutation($id: uuid!, $patch: lab_exercises_set_input!) {
-      update_lab_exercises_by_pk(pk_columns: { id: $id }, _set: $patch) {
+    `mutation($id: Int!, $patch: lab_exercises_set_input!) {
+      update_lab_exercises_by_pk(pk_columns: { catalog_exo_id: $id }, _set: $patch) {
         ${LAB_EXERCISE_FIELDS}
       }
     }`,
-    { id, patch },
+    { id: catalogExoId, patch },
   );
   if (!data.update_lab_exercises_by_pk) {
     throw new Error("Lab exercise not found");
@@ -175,7 +206,7 @@ export async function listCatalogCandidates(token: string): Promise<
 > {
   const data = await staffGql<{
     catalog_exercises: { exo_id: number; display_name: string }[];
-    lab_exercises: { catalog_exo_id: number | null }[];
+    lab_exercises: { catalog_exo_id: number }[];
   }>(
     token,
     `query {
@@ -183,20 +214,18 @@ export async function listCatalogCandidates(token: string): Promise<
         exo_id
         display_name
       }
-      lab_exercises(where: { kind: { _eq: "catalog" } }) {
+      lab_exercises {
         catalog_exo_id
       }
     }`,
   );
-  const linked = new Set(
-    (data.lab_exercises ?? [])
-      .map((row) => row.catalog_exo_id)
-      .filter((id): id is number => id != null),
-  );
+  const linked = new Set((data.lab_exercises ?? []).map((row) => row.catalog_exo_id));
   return (data.catalog_exercises ?? []).filter((ex) => !linked.has(ex.exo_id));
 }
 
-export function labExerciseLabel(row: LabExerciseRow): string {
-  if (row.kind === "rest") return row.display_name ?? "Rest";
-  return row.display_name ?? row.catalogExercise?.display_name ?? `exo ${row.catalog_exo_id}`;
+export function labExerciseLabel(row: {
+  catalog_exo_id: number;
+  catalogExercise?: { display_name: string } | null;
+}): string {
+  return row.catalogExercise?.display_name ?? `exo ${row.catalog_exo_id}`;
 }

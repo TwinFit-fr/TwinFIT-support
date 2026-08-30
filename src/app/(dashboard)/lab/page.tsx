@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Badge, Card } from "@/components/ui/primitives";
+import { Card } from "@/components/ui/primitives";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { labExerciseLabel, type LabGlobalStatRow, type LabUserStatRow } from "@/lib/lab/queries";
 
@@ -35,6 +35,14 @@ export default function LabStatsPage() {
     }
     void load();
   }, [staffFetch]);
+
+  function exerciseName(row: LabGlobalStatRow | LabUserStatRow): string {
+    if ("labExercise" in row && row.labExercise) return labExerciseLabel(row.labExercise);
+    if ("catalogExercise" in row && row.catalogExercise) {
+      return row.catalogExercise.display_name;
+    }
+    return `exo ${row.catalog_exo_id}`;
+  }
 
   return (
     <div className="space-y-6">
@@ -96,24 +104,20 @@ export default function LabStatsPage() {
             <thead className="border-b border-zinc-200 bg-zinc-50">
               <tr>
                 <th className="px-4 py-2 font-medium">Exercise</th>
-                <th className="px-4 py-2 font-medium">Kind</th>
+                <th className="px-4 py-2 font-medium">exo_id</th>
+                <th className="px-4 py-2 font-medium">In pool</th>
                 <th className="px-4 py-2 font-medium">Active</th>
                 <th className="px-4 py-2 font-medium">Total sets</th>
-                <th className="px-4 py-2 font-medium">Updated</th>
               </tr>
             </thead>
             <tbody>
               {data.globalStats.map((row) => (
-                <tr key={row.lab_exercise_id} className="border-b border-zinc-100">
-                  <td className="px-4 py-2">{labExerciseLabel(row.labExercise)}</td>
-                  <td className="px-4 py-2">
-                    <Badge>{row.labExercise.kind}</Badge>
-                  </td>
-                  <td className="px-4 py-2">{row.labExercise.active ? "yes" : "no"}</td>
+                <tr key={row.catalog_exo_id} className="border-b border-zinc-100">
+                  <td className="px-4 py-2">{exerciseName(row)}</td>
+                  <td className="px-4 py-2">{row.catalog_exo_id}</td>
+                  <td className="px-4 py-2">{row.labExercise ? "yes" : "no"}</td>
+                  <td className="px-4 py-2">{row.labExercise?.active ? "yes" : "no"}</td>
                   <td className="px-4 py-2 font-medium">{row.total_sets}</td>
-                  <td className="px-4 py-2 text-zinc-500">
-                    {new Date(row.updated_at).toLocaleString()}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -154,11 +158,11 @@ export default function LabStatsPage() {
               <tbody>
                 {data.userStats.map((row) => (
                   <tr
-                    key={`${row.user_id}-${row.lab_exercise_id}`}
+                    key={`${row.user_id}-${row.catalog_exo_id}`}
                     className="border-b border-zinc-100"
                   >
                     <td className="px-4 py-2">{row.user?.email ?? row.user_id}</td>
-                    <td className="px-4 py-2">{labExerciseLabel(row.labExercise)}</td>
+                    <td className="px-4 py-2">{exerciseName(row)}</td>
                     <td className="px-4 py-2 font-medium">{row.set_count}</td>
                   </tr>
                 ))}
