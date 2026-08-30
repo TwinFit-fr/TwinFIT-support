@@ -17,6 +17,63 @@ function candidateLabel(c: CatalogCandidate): string {
   return meta ? `${c.exo_id} — ${c.display_name} (${meta})` : `${c.exo_id} — ${c.display_name}`;
 }
 
+function matchesNameFilter(c: CatalogCandidate, nameFilter: string): boolean {
+  const nameQ = nameFilter.trim().toLowerCase();
+  if (!nameQ) return true;
+  const haystack = [
+    c.display_name,
+    String(c.exo_id),
+    c.primary_muscle_group?.name,
+    c.primary_muscle_group?.code,
+    c.equipment?.name,
+    c.equipment?.code,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(nameQ);
+}
+
+function filterCandidates(
+  candidates: CatalogCandidate[],
+  filters: { nameFilter: string; muscleGroup?: string; equipment?: string },
+): CatalogCandidate[] {
+  return candidates.filter((c) => {
+    if (!matchesNameFilter(c, filters.nameFilter)) return false;
+    if (filters.muscleGroup && c.primary_muscle_group?.code !== filters.muscleGroup) {
+      return false;
+    }
+    if (filters.equipment && c.equipment?.code !== filters.equipment) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function collectMuscleGroupOptions(list: CatalogCandidate[]) {
+  const byCode = new Map<string, string>();
+  for (const c of list) {
+    const code = c.primary_muscle_group?.code;
+    if (!code) continue;
+    byCode.set(code, c.primary_muscle_group?.name ?? code);
+  }
+  return [...byCode.entries()]
+    .map(([code, name]) => ({ code, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function collectEquipmentOptions(list: CatalogCandidate[]) {
+  const byCode = new Map<string, string>();
+  for (const c of list) {
+    const code = c.equipment?.code;
+    if (!code) continue;
+    byCode.set(code, c.equipment?.name ?? code);
+  }
+  return [...byCode.entries()]
+    .map(([code, name]) => ({ code, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export default function LabExercisesPage() {
   const staffFetch = useStaffFetch();
   const [exercises, setExercises] = useState<LabExerciseRow[]>([]);
@@ -50,56 +107,52 @@ export default function LabExercisesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staffFetch]);
 
-  const muscleGroupOptions = useMemo(() => {
-    const byCode = new Map<string, string>();
-    for (const c of candidates) {
-      const code = c.primary_muscle_group?.code;
-      if (!code) continue;
-      byCode.set(code, c.primary_muscle_group?.name ?? code);
-    }
-    return [...byCode.entries()]
-      .map(([code, name]) => ({ code, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [candidates]);
+  const muscleGroupOptions = useMemo(
+    () =>
+      collectMuscleGroupOptions(
+        filterCandidates(candidates, {
+          nameFilter,
+          equipment: equipmentFilter || undefined,
+        }),
+      ),
+    [candidates, nameFilter, equipmentFilter],
+  );
 
-  const equipmentOptions = useMemo(() => {
-    const byCode = new Map<string, string>();
-    for (const c of candidates) {
-      const code = c.equipment?.code;
-      if (!code) continue;
-      byCode.set(code, c.equipment?.name ?? code);
-    }
-    return [...byCode.entries()]
-      .map(([code, name]) => ({ code, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [candidates]);
+  const equipmentOptions = useMemo(
+    () =>
+      collectEquipmentOptions(
+        filterCandidates(candidates, {
+          nameFilter,
+          muscleGroup: muscleGroupFilter || undefined,
+        }),
+      ),
+    [candidates, nameFilter, muscleGroupFilter],
+  );
 
-  const filteredCandidates = useMemo(() => {
-    const nameQ = nameFilter.trim().toLowerCase();
-    return candidates.filter((c) => {
-      if (nameQ) {
-        const haystack = [
-          c.display_name,
-          String(c.exo_id),
-          c.primary_muscle_group?.name,
-          c.primary_muscle_group?.code,
-          c.equipment?.name,
-          c.equipment?.code,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!haystack.includes(nameQ)) return false;
-      }
-      if (muscleGroupFilter && c.primary_muscle_group?.code !== muscleGroupFilter) {
-        return false;
-      }
-      if (equipmentFilter && c.equipment?.code !== equipmentFilter) {
-        return false;
-      }
-      return true;
-    });
-  }, [candidates, nameFilter, muscleGroupFilter, equipmentFilter]);
+  const filteredCandidates = useMemo(
+    () =>
+      filterCandidates(candidates, {
+        nameFilter,
+        muscleGroup: muscleGroupFilter || undefined,
+        equipment: equipmentFilter || undefined,
+      }),
+    [candidates, nameFilter, muscleGroupFilter, equipmentFilter],
+  );
+
+  useEffect(() => {
+    if (
+      muscleGroupFilter &&
+      !muscleGroupOptions.some((g) => g.code === muscleGroupFilter)
+    ) {
+      setMuscleGroupFilter("");
+    }
+  }, [muscleGroupFilter, muscleGroupOptions]);
+
+  useEffect(() => {
+    if (equipmentFilter && !equipmentOptions.some((eq) => eq.code === equipmentFilter)) {
+      setEquipmentFilter("");
+    }
+  }, [equipmentFilter, equipmentOptions]);
 
   useEffect(() => {
     if (!filteredCandidates.length) {
@@ -161,6 +214,7 @@ export default function LabExercisesPage() {
           <h2 className="font-medium">Link from catalog</h2>
           <p className="mt-1 text-sm text-zinc-500">
             Exercises already in the Lab pool are excluded. Sorted by exo_id (numeric).
+            Muscle group and equipment filters narrow each other to valid combinations.
           </p>
         </div>
 
