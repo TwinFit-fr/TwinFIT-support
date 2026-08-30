@@ -11,6 +11,7 @@ const nav = [
   { href: "/catalog", label: "Catalog" },
   { href: "/catalog/compose", label: "New exercise" },
   { href: "/catalog/taxonomy", label: "Taxonomy" },
+  { href: "/lab", label: "Lab" },
 ];
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
