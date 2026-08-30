@@ -202,18 +202,25 @@ export async function updateLabExercise(
   return data.update_lab_exercises_by_pk;
 }
 
-export async function listCatalogCandidates(token: string): Promise<
-  { exo_id: number; display_name: string }[]
-> {
+export type CatalogCandidate = {
+  exo_id: number;
+  display_name: string;
+  primary_muscle_group?: { code: string; name: string } | null;
+  equipment?: { code: string; name: string } | null;
+};
+
+export async function listCatalogCandidates(token: string): Promise<CatalogCandidate[]> {
   const data = await staffGql<{
-    catalog_exercises: { exo_id: number; display_name: string }[];
+    catalog_exercises: CatalogCandidate[];
     lab_exercises: { catalog_exo_id: number }[];
   }>(
     token,
     `query {
-      catalog_exercises(where: { active: { _eq: true } }, order_by: { display_name: asc }) {
+      catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {
         exo_id
         display_name
+        primary_muscle_group { code name }
+        equipment { code name }
       }
       lab_exercises {
         catalog_exo_id
@@ -221,7 +228,9 @@ export async function listCatalogCandidates(token: string): Promise<
     }`,
   );
   const linked = new Set((data.lab_exercises ?? []).map((row) => row.catalog_exo_id));
-  return (data.catalog_exercises ?? []).filter((ex) => !linked.has(ex.exo_id));
+  return (data.catalog_exercises ?? [])
+    .filter((ex) => !linked.has(ex.exo_id))
+    .sort((a, b) => a.exo_id - b.exo_id);
 }
 
 export function labExerciseLabel(row: {

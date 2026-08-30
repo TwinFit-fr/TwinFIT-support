@@ -1,12 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { Badge, Button, Card } from "@/components/ui/primitives";
+import { useEffect, useMemo, useState } from "react";
+import { Button, Card } from "@/components/ui/primitives";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
-import { labExerciseLabel, type LabExerciseRow } from "@/lib/lab/queries";
+import {
+  labExerciseLabel,
+  type CatalogCandidate,
+  type LabExerciseRow,
+} from "@/lib/lab/queries";
 
-type CatalogCandidate = { exo_id: number; display_name: string };
+function candidateLabel(c: CatalogCandidate): string {
+  const mg = c.primary_muscle_group?.name ?? c.primary_muscle_group?.code;
+  const eq = c.equipment?.name ?? c.equipment?.code;
+  const meta = [mg, eq].filter(Boolean).join(" · ");
+  return meta ? `${c.exo_id} — ${c.display_name} (${meta})` : `${c.exo_id} — ${c.display_name}`;
+}
 
 export default function LabExercisesPage() {
   const staffFetch = useStaffFetch();
@@ -15,6 +24,9 @@ export default function LabExercisesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedExoId, setSelectedExoId] = useState<string>("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [muscleGroupFilter, setMuscleGroupFilter] = useState("");
+  const [equipmentFilter, setEquipmentFilter] = useState("");
 
   async function reload() {
     setLoading(true);
@@ -26,9 +38,6 @@ export default function LabExercisesPage() {
       ]);
       setExercises(exRes.exercises ?? []);
       setCandidates(candRes.candidates ?? []);
-      if (!selectedExoId && candRes.candidates?.[0]) {
-        setSelectedExoId(String(candRes.candidates[0].exo_id));
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -41,6 +50,68 @@ export default function LabExercisesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staffFetch]);
 
+  const muscleGroupOptions = useMemo(() => {
+    const byCode = new Map<string, string>();
+    for (const c of candidates) {
+      const code = c.primary_muscle_group?.code;
+      if (!code) continue;
+      byCode.set(code, c.primary_muscle_group?.name ?? code);
+    }
+    return [...byCode.entries()]
+      .map(([code, name]) => ({ code, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [candidates]);
+
+  const equipmentOptions = useMemo(() => {
+    const byCode = new Map<string, string>();
+    for (const c of candidates) {
+      const code = c.equipment?.code;
+      if (!code) continue;
+      byCode.set(code, c.equipment?.name ?? code);
+    }
+    return [...byCode.entries()]
+      .map(([code, name]) => ({ code, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [candidates]);
+
+  const filteredCandidates = useMemo(() => {
+    const nameQ = nameFilter.trim().toLowerCase();
+    return candidates.filter((c) => {
+      if (nameQ) {
+        const haystack = [
+          c.display_name,
+          String(c.exo_id),
+          c.primary_muscle_group?.name,
+          c.primary_muscle_group?.code,
+          c.equipment?.name,
+          c.equipment?.code,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(nameQ)) return false;
+      }
+      if (muscleGroupFilter && c.primary_muscle_group?.code !== muscleGroupFilter) {
+        return false;
+      }
+      if (equipmentFilter && c.equipment?.code !== equipmentFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [candidates, nameFilter, muscleGroupFilter, equipmentFilter]);
+
+  useEffect(() => {
+    if (!filteredCandidates.length) {
+      setSelectedExoId("");
+      return;
+    }
+    const stillVisible = filteredCandidates.some((c) => String(c.exo_id) === selectedExoId);
+    if (!stillVisible) {
+      setSelectedExoId(String(filteredCandidates[0].exo_id));
+    }
+  }, [filteredCandidates, selectedExoId]);
+
   async function linkCatalog() {
     if (!selectedExoId) return;
     await staffFetch("/api/lab/exercises", {
@@ -48,6 +119,9 @@ export default function LabExercisesPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "link_catalog", catalog_exo_id: Number(selectedExoId) }),
     });
+    setNameFilter("");
+    setMuscleGroupFilter("");
+    setEquipmentFilter("");
     await reload();
   }
 
@@ -59,6 +133,11 @@ export default function LabExercisesPage() {
     });
     await reload();
   }
+
+  const sortedExercises = useMemo(
+    () => [...exercises].sort((a, b) => a.catalog_exo_id - b.catalog_exo_id),
+    [exercises],
+  );
 
   return (
     <div className="space-y-6">
@@ -77,23 +156,76 @@ export default function LabExercisesPage() {
         </Link>
       </div>
 
-      <Card className="space-y-3 p-4">
-        <h2 className="font-medium">Link from catalog</h2>
+      <Card className="space-y-4 p-4">
+        <div>
+          <h2 className="font-medium">Link from catalog</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Exercises already in the Lab pool are excluded. Sorted by exo_id (numeric).
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="block text-sm">
+            <span className="mb-1 block text-zinc-600">Filter by name</span>
+            <input
+              type="search"
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              placeholder="Name or exo_id…"
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-zinc-600">Muscle group</span>
+            <select
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              value={muscleGroupFilter}
+              onChange={(e) => setMuscleGroupFilter(e.target.value)}
+            >
+              <option value="">All groups</option>
+              {muscleGroupOptions.map((g) => (
+                <option key={g.code} value={g.code}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-zinc-600">Equipment</span>
+            <select
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              value={equipmentFilter}
+              onChange={(e) => setEquipmentFilter(e.target.value)}
+            >
+              <option value="">All equipment</option>
+              {equipmentOptions.map((eq) => (
+                <option key={eq.code} value={eq.code}>
+                  {eq.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <p className="text-sm text-zinc-500">
-          Create exercises in Catalog first, then add them to the Lab dataset here.
+          {filteredCandidates.length} of {candidates.length} available
+          {candidates.length === 0 && !loading ? " (all catalog exercises are already linked)" : ""}
         </p>
+
         <select
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
           value={selectedExoId}
           onChange={(e) => setSelectedExoId(e.target.value)}
+          disabled={!filteredCandidates.length}
         >
-          {candidates.map((c) => (
+          {filteredCandidates.map((c) => (
             <option key={c.exo_id} value={c.exo_id}>
-              {c.exo_id} — {c.display_name}
+              {candidateLabel(c)}
             </option>
           ))}
         </select>
-        <Button onClick={() => void linkCatalog()} disabled={!candidates.length}>
+
+        <Button onClick={() => void linkCatalog()} disabled={!filteredCandidates.length}>
           Add to Lab dataset
         </Button>
       </Card>
@@ -114,7 +246,7 @@ export default function LabExercisesPage() {
             </tr>
           </thead>
           <tbody>
-            {exercises.map((row) => (
+            {sortedExercises.map((row) => (
               <tr key={row.catalog_exo_id} className="border-b border-zinc-100">
                 <td className="px-4 py-2">{labExerciseLabel(row)}</td>
                 <td className="px-4 py-2">{row.catalog_exo_id}</td>
