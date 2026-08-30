@@ -19,13 +19,15 @@ export async function GET(
     }
 
     const file = await downloadLabSetFile(token, id);
-    return new NextResponse(file.body, {
-      headers: {
-        "Content-Type": file.contentType,
-        "Content-Disposition": contentDisposition(file.downloadName),
-        "Cache-Control": "private, no-store",
-      },
-    });
+    const inline = new URL(request.url).searchParams.get("inline") === "1";
+    const headers: Record<string, string> = {
+      "Content-Type": inline ? "application/json" : file.contentType,
+      "Cache-Control": "private, no-store",
+    };
+    if (!inline) {
+      headers["Content-Disposition"] = contentDisposition(file.downloadName);
+    }
+    return new NextResponse(file.body, { headers });
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Download failed";

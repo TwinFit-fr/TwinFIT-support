@@ -2,6 +2,7 @@
 
 import { useAccessToken } from "@nhost/react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { LabSetViewerDialog } from "@/components/lab-set-viewer-dialog";
 import { Button, Card, Input } from "@/components/ui/primitives";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import {
@@ -54,6 +55,7 @@ export default function LabSetsPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [viewingRow, setViewingRow] = useState<LabSetRow | null>(null);
 
   const [draftUserId, setDraftUserId] = useState("");
   const [draftExoId, setDraftExoId] = useState("");
@@ -168,6 +170,12 @@ export default function LabSetsPage() {
 
   return (
     <div className="space-y-6">
+      <LabSetViewerDialog
+        open={viewingRow !== null}
+        setRow={viewingRow}
+        accessToken={accessToken}
+        onClose={() => setViewingRow(null)}
+      />
       <div>
         <h1 className="text-2xl font-semibold">Lab sets</h1>
         <p className="mt-1 text-sm text-zinc-500">
@@ -297,7 +305,12 @@ export default function LabSetsPage() {
                 </td>
                 <td className="px-4 py-2">
                   <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="secondary" disabled title="Coming next">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!row.storage_path}
+                      onClick={() => setViewingRow(row)}
+                    >
                       View data
                     </Button>
                     <Button
