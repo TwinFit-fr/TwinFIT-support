@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Input } from "@/components/ui/primitives";
-import { useAdminFetch } from "@/hooks/use-admin-fetch";
+import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
 type CatalogExercise = {
   exo_id: number;
@@ -15,7 +15,7 @@ type CatalogExercise = {
 };
 
 export default function CatalogPage() {
-  const adminFetch = useAdminFetch();
+  const staffFetch = useStaffFetch();
   const [exercises, setExercises] = useState<CatalogExercise[]>([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
@@ -26,7 +26,7 @@ export default function CatalogPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = (await adminFetch("/api/catalog/library")) as {
+        const res = (await staffFetch("/api/catalog/library")) as {
           data: { catalog_exercises: CatalogExercise[] };
         };
         setExercises(res.data.catalog_exercises ?? []);
@@ -37,7 +37,7 @@ export default function CatalogPage() {
       }
     }
     void load();
-  }, [adminFetch]);
+  }, [staffFetch]);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();

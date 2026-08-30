@@ -3,7 +3,7 @@
 import { useAccessToken } from "@nhost/react";
 import { useCallback } from "react";
 
-export function useAdminFetch() {
+export function useStaffFetch() {
   const accessToken = useAccessToken();
 
   return useCallback(

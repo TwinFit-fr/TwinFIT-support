@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireAdminToken } from "@/lib/api-auth";
+import { requireAdminToken, requireStaffToken } from "@/lib/api-auth";
 import {
+  bindCatalogStaffToken,
   fetchTaxonomyAdmin,
   manageRelation,
   updateLookup,
@@ -9,7 +10,8 @@ import {
 
 export async function GET(request: Request) {
   try {
-    requireAdminToken(request);
+    const token = requireStaffToken(request);
+    bindCatalogStaffToken(token);
     const data = await fetchTaxonomyAdmin();
     return NextResponse.json({ ok: true, data });
   } catch (error) {
@@ -21,9 +23,19 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    requireAdminToken(request);
     const body = await request.json();
     const kind = body.kind as string | undefined;
+    const action = body.action as string | undefined;
+
+    if (kind === "relation" && action === "unlink") {
+      const token = requireAdminToken(request);
+      bindCatalogStaffToken(token);
+      await manageRelation(body);
+      return NextResponse.json({ ok: true });
+    }
+
+    const token = requireStaffToken(request);
+    bindCatalogStaffToken(token);
 
     if (kind === "relation") {
       await manageRelation(body);

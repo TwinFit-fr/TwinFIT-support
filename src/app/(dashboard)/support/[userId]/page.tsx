@@ -3,25 +3,35 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge, Button, Card, Input } from "@/components/ui/primitives";
-import { useAdminFetch } from "@/hooks/use-admin-fetch";
+import { useIsAdmin } from "@/hooks/use-is-staff";
+import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import type { SupportUserLookup } from "@/lib/support/types";
+
+type PendingAction =
+  | { type: "verify-email" }
+  | { type: "set-subscription"; tier: string; expiresAt: string | null }
+  | { type: "set-disabled"; disabled: boolean };
 
 export default function SupportUserPage() {
   const params = useParams<{ userId: string }>();
-  const adminFetch = useAdminFetch();
+  const staffFetch = useStaffFetch();
+  const isAdmin = useIsAdmin();
   const [data, setData] = useState<SupportUserLookup | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tier, setTier] = useState("premium");
   const [expiresAt, setExpiresAt] = useState("");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = (await adminFetch(
+      const result = (await staffFetch(
         `/api/support/lookup?q=${encodeURIComponent(params.userId)}`,
       )) as SupportUserLookup;
       setData(result);
@@ -31,7 +41,7 @@ export default function SupportUserPage() {
     } finally {
       setLoading(false);
     }
-  }, [adminFetch, params.userId]);
+  }, [staffFetch, params.userId]);
 
   useEffect(() => {
     void load();
@@ -39,17 +49,75 @@ export default function SupportUserPage() {
 
   async function runAction(body: Record<string, unknown>) {
     setActionMessage(null);
+    setActionLoading(true);
     try {
-      await adminFetch("/api/support/actions", {
+      await staffFetch("/api/support/actions", {
         method: "POST",
         body: JSON.stringify(body),
       });
       setActionMessage("Action completed.");
+      setPendingAction(null);
       await load();
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setActionLoading(false);
     }
   }
+
+  async function confirmPendingAction() {
+    if (!data?.user || !pendingAction) return;
+    const userId = data.user.id;
+
+    if (pendingAction.type === "verify-email") {
+      await runAction({ action: "verify-email", userId });
+      return;
+    }
+    if (pendingAction.type === "set-subscription") {
+      await runAction({
+        action: "set-subscription",
+        userId,
+        tier: pendingAction.tier,
+        expiresAt: pendingAction.expiresAt,
+        provider: "manual",
+      });
+      return;
+    }
+    if (pendingAction.type === "set-disabled") {
+      await runAction({
+        action: "set-disabled",
+        userId,
+        disabled: pendingAction.disabled,
+      });
+    }
+  }
+
+  function confirmDialogContent(): { title: string; description: string; variant?: "default" | "danger" } | null {
+    if (!data?.user || !pendingAction) return null;
+    const userId = data.user.id;
+
+    if (pendingAction.type === "verify-email") {
+      return {
+        title: "Verify email?",
+        description: `Mark ${data.user.email} (${userId}) as email-verified.`,
+      };
+    }
+    if (pendingAction.type === "set-subscription") {
+      return {
+        title: "Update subscription?",
+        description: `Set tier to "${pendingAction.tier}"${
+          pendingAction.expiresAt ? ` until ${pendingAction.expiresAt}` : ""
+        } for ${data.user.email} (${userId}).`,
+      };
+    }
+    return {
+      title: pendingAction.disabled ? "Disable account?" : "Re-enable account?",
+      description: `${pendingAction.disabled ? "Disable" : "Re-enable"} ${data.user.email} (${userId}).`,
+      variant: "danger",
+    };
+  }
+
+  const dialog = confirmDialogContent();
 
   if (loading) {
     return <p className="text-sm text-zinc-500">Loading user…</p>;
@@ -80,6 +148,17 @@ export default function SupportUserPage() {
 
       {actionMessage && <p className="text-sm text-emerald-700">{actionMessage}</p>}
 
+      <ConfirmDialog
+        open={Boolean(pendingAction && dialog)}
+        title={dialog?.title ?? ""}
+        description={dialog?.description ?? ""}
+        variant={dialog?.variant}
+        loading={actionLoading}
+        confirmLabel="Confirm"
+        onConfirm={() => void confirmPendingAction()}
+        onCancel={() => setPendingAction(null)}
+      />
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="space-y-3">
           <h2 className="font-medium">Account</h2>
@@ -99,26 +178,25 @@ export default function SupportUserPage() {
             {!data.user.emailVerified && (
               <Button
                 type="button"
-                onClick={() =>
-                  runAction({ action: "verify-email", userId })
-                }
+                onClick={() => setPendingAction({ type: "verify-email" })}
               >
                 Verify email
               </Button>
             )}
-            <Button
-              type="button"
-              variant={data.user.disabled ? "default" : "danger"}
-              onClick={() =>
-                runAction({
-                  action: "set-disabled",
-                  userId,
-                  disabled: !data.user?.disabled,
-                })
-              }
-            >
-              {data.user.disabled ? "Re-enable account" : "Disable account"}
-            </Button>
+            {isAdmin && (
+              <Button
+                type="button"
+                variant={data.user.disabled ? "default" : "danger"}
+                onClick={() =>
+                  setPendingAction({
+                    type: "set-disabled",
+                    disabled: !data.user?.disabled,
+                  })
+                }
+              >
+                {data.user.disabled ? "Re-enable account" : "Disable account"}
+              </Button>
+            )}
           </div>
         </Card>
 
@@ -166,12 +244,10 @@ export default function SupportUserPage() {
             <Button
               type="button"
               onClick={() =>
-                runAction({
-                  action: "set-subscription",
-                  userId,
+                setPendingAction({
+                  type: "set-subscription",
                   tier,
                   expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
-                  provider: "manual",
                 })
               }
             >

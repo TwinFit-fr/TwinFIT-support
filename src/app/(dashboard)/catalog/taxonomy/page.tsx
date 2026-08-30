@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
-import { useAdminFetch } from "@/hooks/use-admin-fetch";
+import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
 type MuscleGroup = {
   id: string;
@@ -13,7 +13,7 @@ type MuscleGroup = {
 };
 
 export default function CatalogTaxonomyPage() {
-  const adminFetch = useAdminFetch();
+  const staffFetch = useStaffFetch();
   const [groups, setGroups] = useState<MuscleGroup[]>([]);
   const [table, setTable] = useState("catalog_muscles");
   const [code, setCode] = useState("");
@@ -21,11 +21,11 @@ export default function CatalogTaxonomyPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const res = (await adminFetch("/api/catalog/taxonomy")) as {
+    const res = (await staffFetch("/api/catalog/taxonomy")) as {
       data: { catalog_muscle_groups: MuscleGroup[] };
     };
     setGroups(res.data.catalog_muscle_groups ?? []);
-  }, [adminFetch]);
+  }, [staffFetch]);
 
   useEffect(() => {
     void load().catch((err) => {
@@ -37,7 +37,7 @@ export default function CatalogTaxonomyPage() {
     event.preventDefault();
     setMessage(null);
     try {
-      await adminFetch("/api/catalog/taxonomy", {
+      await staffFetch("/api/catalog/taxonomy", {
         method: "POST",
         body: JSON.stringify({ table, code, name }),
       });

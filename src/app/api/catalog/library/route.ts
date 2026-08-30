@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireAdminToken } from "@/lib/api-auth";
+import { requireStaffToken } from "@/lib/api-auth";
 import {
+  bindCatalogStaffToken,
   composeXcatExercise,
   listXcatLibraryAdmin,
   nextXcatExoId,
@@ -8,7 +9,8 @@ import {
 
 export async function GET(request: Request) {
   try {
-    requireAdminToken(request);
+    const token = requireStaffToken(request);
+    bindCatalogStaffToken(token);
     const { searchParams } = new URL(request.url);
     if (searchParams.get("nextExoId") === "1") {
       const exo_id = await nextXcatExoId();
@@ -25,7 +27,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    requireAdminToken(request);
+    const token = requireStaffToken(request);
+    bindCatalogStaffToken(token);
     const body = await request.json();
     const exercise = await composeXcatExercise(body);
     return NextResponse.json({ ok: true, exercise });

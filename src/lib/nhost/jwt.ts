@@ -40,9 +40,23 @@ export function parseJwtRoles(accessToken: string): string[] {
   return [];
 }
 
+export function hasStaffRole(accessToken: string | null | undefined): boolean {
+  if (!accessToken) return false;
+  const roles = parseJwtRoles(accessToken);
+  return roles.includes("staff") || roles.includes("admin");
+}
+
 export function hasAdminRole(accessToken: string | null | undefined): boolean {
   if (!accessToken) return false;
   return parseJwtRoles(accessToken).includes("admin");
+}
+
+/** Hasura uses JWT defaultRole (user); Support must request staff/admin explicitly. */
+export function resolveSupportHasuraRole(accessToken: string): "admin" | "staff" {
+  const roles = parseJwtRoles(accessToken);
+  if (roles.includes("admin")) return "admin";
+  if (roles.includes("staff")) return "staff";
+  throw new Error("JWT has no staff or admin Hasura role");
 }
 
 export function parseJwtUserId(accessToken: string): string | null {

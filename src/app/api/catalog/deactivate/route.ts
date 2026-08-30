@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdminToken } from "@/lib/api-auth";
-import { deactivateXcatExercise } from "@/lib/catalog";
+import { bindCatalogStaffToken, deactivateXcatExercise } from "@/lib/catalog";
 
 export async function POST(request: Request) {
   try {
-    requireAdminToken(request);
+    const token = requireAdminToken(request);
+    bindCatalogStaffToken(token);
     const body = await request.json();
     const row = await deactivateXcatExercise(body);
     return NextResponse.json({ ok: true, ...row });

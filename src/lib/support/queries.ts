@@ -1,10 +1,14 @@
-import { adminGql } from "@/lib/hasura-admin";
+import { staffGql } from "@/lib/staff-gql";
 import type { SupportUserLookup } from "./types";
 
-export async function lookupUserByEmail(email: string): Promise<SupportUserLookup | null> {
-  const users = await adminGql<{
+export async function lookupUserByEmail(
+  accessToken: string,
+  email: string,
+): Promise<SupportUserLookup | null> {
+  const users = await staffGql<{
     users: Array<{ id: string }>;
   }>(
+    accessToken,
     `query($email: citext!) {
       users(where: { email: { _eq: $email } }, limit: 1) { id }
     }`,
@@ -12,15 +16,17 @@ export async function lookupUserByEmail(email: string): Promise<SupportUserLooku
   );
   const userId = users.users[0]?.id;
   if (!userId) return null;
-  return lookupUserById(userId);
+  return lookupUserById(accessToken, userId);
 }
 
 export async function lookupUserByUsername(
+  accessToken: string,
   username: string,
 ): Promise<SupportUserLookup | null> {
-  const profiles = await adminGql<{
+  const profiles = await staffGql<{
     profiles: Array<{ id: string }>;
   }>(
+    accessToken,
     `query($username: citext!) {
       profiles(where: { username: { _eq: $username } }, limit: 1) { id }
     }`,
@@ -28,20 +34,24 @@ export async function lookupUserByUsername(
   );
   const userId = profiles.profiles[0]?.id;
   if (!userId) return null;
-  return lookupUserById(userId);
+  return lookupUserById(accessToken, userId);
 }
 
-export async function lookupUserById(userId: string): Promise<SupportUserLookup | null> {
-  const data = await adminGql<{
-    user: SupportUserLookup["user"];
+export async function lookupUserById(
+  accessToken: string,
+  userId: string,
+): Promise<SupportUserLookup | null> {
+  const data = await staffGql<{
+    users: SupportUserLookup["user"][];
     profiles: SupportUserLookup["profile"][];
     workout_sessions_aggregate: { aggregate: { count: number } };
     open_session: SupportUserLookup["openSession"][];
     recent_sessions: SupportUserLookup["recentSessions"];
     workout_templates_aggregate: { aggregate: { count: number } };
   }>(
+    accessToken,
     `query SupportUserLookup($id: uuid!) {
-      user(id: $id) {
+      users(where: { id: { _eq: $id } }, limit: 1) {
         id
         email
         emailVerified
@@ -100,10 +110,10 @@ export async function lookupUserById(userId: string): Promise<SupportUserLookup 
     { id: userId },
   );
 
-  if (!data.user) return null;
+  if (!data.users[0]) return null;
 
   return {
-    user: data.user,
+    user: data.users[0],
     profile: data.profiles[0] ?? null,
     finishedSessions: data.workout_sessions_aggregate.aggregate.count,
     templateCount: data.workout_templates_aggregate.aggregate.count,
@@ -112,12 +122,15 @@ export async function lookupUserById(userId: string): Promise<SupportUserLookup 
   };
 }
 
-export async function lookupUser(query: string): Promise<SupportUserLookup | null> {
+export async function lookupUser(
+  accessToken: string,
+  query: string,
+): Promise<SupportUserLookup | null> {
   const trimmed = query.trim();
   if (!trimmed) return null;
   if (trimmed.includes("@")) {
-    return lookupUserByEmail(trimmed);
+    return lookupUserByEmail(accessToken, trimmed);
   }
   const username = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
-  return lookupUserByUsername(username);
+  return lookupUserByUsername(accessToken, username);
 }

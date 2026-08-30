@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
-import { useAdminFetch } from "@/hooks/use-admin-fetch";
+import { useIsAdmin } from "@/hooks/use-is-staff";
+import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
 type LookupRow = { code: string; name: string };
 
 function ComposeForm() {
-  const adminFetch = useAdminFetch();
+  const staffFetch = useStaffFetch();
+  const isAdmin = useIsAdmin();
   const router = useRouter();
   const searchParams = useSearchParams();
   const editExoId = searchParams.get("exo_id");
@@ -36,7 +38,7 @@ function ComposeForm() {
 
   useEffect(() => {
     async function loadLookups() {
-      const res = (await adminFetch("/api/catalog/library")) as {
+      const res = (await staffFetch("/api/catalog/library")) as {
         data: {
           catalog_muscle_groups: LookupRow[];
           catalog_movement_types: LookupRow[];
@@ -86,7 +88,7 @@ function ComposeForm() {
     void loadLookups().catch((err) => {
       setMessage(err instanceof Error ? err.message : "Failed to load lookups");
     });
-  }, [adminFetch, editExoId]);
+  }, [staffFetch, editExoId]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -98,13 +100,13 @@ function ComposeForm() {
         secondary_muscle_codes: [],
       };
       if (editExoId) {
-        await adminFetch("/api/catalog/update", {
+        await staffFetch("/api/catalog/update", {
           method: "POST",
           body: JSON.stringify({ ...payload, exo_id: Number(editExoId) }),
         });
         setMessage("Exercise updated.");
       } else {
-        await adminFetch("/api/catalog/library", {
+        await staffFetch("/api/catalog/library", {
           method: "POST",
           body: JSON.stringify(payload),
         });
@@ -123,7 +125,7 @@ function ComposeForm() {
     setLoading(true);
     setMessage(null);
     try {
-      await adminFetch("/api/catalog/deactivate", {
+      await staffFetch("/api/catalog/deactivate", {
         method: "POST",
         body: JSON.stringify({ exo_id: Number(editExoId) }),
       });
@@ -193,7 +195,7 @@ function ComposeForm() {
         <Button type="submit" disabled={loading}>
           {loading ? "Saving…" : editExoId ? "Update exercise" : "Create exercise"}
         </Button>
-        {editExoId && form.taxonomy_status === "pending" && (
+        {editExoId && form.taxonomy_status === "pending" && isAdmin && (
           <Button type="button" variant="danger" onClick={deactivate} disabled={loading}>
             Deactivate
           </Button>

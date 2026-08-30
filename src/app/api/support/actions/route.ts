@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
-import { callAdminFunction, requireAdminToken } from "@/lib/api-auth";
+import { callStaffFunction, getBearerToken, requireStaffToken } from "@/lib/api-auth";
+import { hasAdminRole } from "@/lib/nhost/jwt";
 import type { AdminAction } from "@/lib/support/types";
 
 export async function POST(request: Request) {
   try {
-    const token = requireAdminToken(request);
+    const token = requireStaffToken(request);
     const body = (await request.json()) as AdminAction;
 
     switch (body.action) {
       case "verify-email": {
-        const result = await callAdminFunction(token, "admin-verify-email", {
+        const result = await callStaffFunction(token, "admin-verify-email", {
           userId: body.userId,
         });
         return NextResponse.json(result.body, { status: result.status });
       }
       case "set-subscription": {
-        const result = await callAdminFunction(token, "admin-set-subscription", {
+        const result = await callStaffFunction(token, "admin-set-subscription", {
           userId: body.userId,
           tier: body.tier,
           expiresAt: body.expiresAt ?? null,
@@ -25,7 +26,11 @@ export async function POST(request: Request) {
         return NextResponse.json(result.body, { status: result.status });
       }
       case "set-disabled": {
-        const result = await callAdminFunction(token, "admin-set-user-disabled", {
+        const bearer = getBearerToken(request);
+        if (!bearer || !hasAdminRole(bearer)) {
+          return NextResponse.json({ error: "Admin role required" }, { status: 403 });
+        }
+        const result = await callStaffFunction(token, "admin-set-user-disabled", {
           userId: body.userId,
           disabled: body.disabled,
         });

@@ -1,4 +1,4 @@
-const { adminGql } = require("./graphql.cjs");
+const { staffGql } = require("./graphql.cjs");
 
 function normalizeTaxonomy(v) {
   return String(v || '')
@@ -20,7 +20,7 @@ async function ensureLookup(table, code) {
   const c = isMuscle ? normalizeMuscleCode(code) : normalizeTaxonomy(code);
   if (!c) throw new Error(`Empty code for ${table}`);
   const qname = table; // GraphQL root field = table name
-  const existing = await adminGql(
+  const existing = await staffGql(
     `query($code: String!) { ${qname}(where: { code: { _eq: $code } }, limit: 1) { id code } }`,
     { code: c }
   );
@@ -29,7 +29,7 @@ async function ensureLookup(table, code) {
   const name = isMuscle
     ? c.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())
     : c.replace(/_/g, ' ');
-  const ins = await adminGql(
+  const ins = await staffGql(
     `mutation($o: ${table}_insert_input!) {
       insert_${table}_one(object: $o) { id code }
     }`,
@@ -132,7 +132,7 @@ function firstFreeExoId(ids) {
 
 async function nextXcatExoId() {
   // Include inactive rows so soft-held ids are not reused.
-  const data = await adminGql(
+  const data = await staffGql(
     `{ catalog_exercises(order_by: { exo_id: asc }) { exo_id } }`
   );
   return firstFreeExoId((data.catalog_exercises || []).map((r) => r.exo_id));
@@ -175,7 +175,7 @@ function resolveXcatTaxonomyStatus(payload, requestedRaw) {
 }
 
 async function fetchXcatByExoId(exoId) {
-  const found = await adminGql(
+  const found = await staffGql(
     `query($exo_id: Int!) {
       catalog_exercises(where: { exo_id: { _eq: $exo_id } }, limit: 1) {
         id exo_id taxonomy_status active display_name
@@ -219,7 +219,7 @@ async function composeXcatExercise(payload) {
   const displayName = String(payload.display_name || '').trim();
   if (!displayName) throw new Error('display_name is required');
 
-  const dup = await adminGql(
+  const dup = await staffGql(
     `query($name: String!) {
       catalog_exercises(
         where: { active: { _eq: true }, display_name: { _ilike: $name } }
@@ -286,7 +286,7 @@ async function composeXcatExercise(payload) {
     }
   };
 
-  const data = await adminGql(
+  const data = await staffGql(
     `mutation($o: catalog_exercises_insert_input!) {
       insert_catalog_exercises_one(object: $o) {
         id exo_id display_name taxonomy_status
@@ -348,7 +348,7 @@ async function composeCustomXcatExercise(payload) {
     active: true
   };
 
-  const data = await adminGql(
+  const data = await staffGql(
     `mutation($o: workout_custom_exercises_insert_input!) {
       insert_workout_custom_exercises_one(object: $o) {
         id display_name user_id active
@@ -360,7 +360,7 @@ async function composeCustomXcatExercise(payload) {
 }
 
 async function listAuthUsers() {
-  const data = await adminGql(`
+  const data = await staffGql(`
     query AuthUsers {
       users(limit: 100, order_by: { email: asc }) {
         id
@@ -373,7 +373,7 @@ async function listAuthUsers() {
 }
 
 async function listXcatLibraryAdmin() {
-  const data = await adminGql(`
+  const data = await staffGql(`
     query XcatLibraryAdmin {
       catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {
         id
@@ -476,7 +476,7 @@ async function updateXcatExercise(payload) {
     taxonomy_notes: payload.taxonomy_notes || null
   };
 
-  await adminGql(
+  await staffGql(
     `mutation($id: uuid!, $set: catalog_exercises_set_input!, $name: String!, $desc: String) {
       delete_catalog_exercise_secondary_muscles(where: { exercise_id: { _eq: $id } }) { affected_rows }
       update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: $set) { id exo_id }
@@ -491,7 +491,7 @@ async function updateXcatExercise(payload) {
   );
 
   if (ids.secondaryIds.length) {
-    await adminGql(
+    await staffGql(
       `mutation($objects: [catalog_exercise_secondary_muscles_insert_input!]!) {
         insert_catalog_exercise_secondary_muscles(objects: $objects) { affected_rows }
       }`,
@@ -521,7 +521,7 @@ async function deactivateXcatExercise(payload) {
       'Migrated exercises cannot be deactivated. Set status to pending first.'
     );
   }
-  await adminGql(
+  await staffGql(
     `mutation($id: uuid!) {
       update_catalog_exercises_by_pk(
         pk_columns: { id: $id }
@@ -553,7 +553,7 @@ async function upsertLookup(payload) {
     const g = await ensureLookup('catalog_muscle_groups', payload.muscle_group_code);
     const role = ['target', 'secondary'].includes(payload.role) ? payload.role : 'target';
     if (role === 'target') {
-      await adminGql(
+      await staffGql(
         `mutation($m: uuid!, $mg: uuid!) {
           delete_catalog_muscle_group_muscles(
             where: { muscle_id: { _eq: $m }, role: { _eq: "target" }, muscle_group_id: { _neq: $mg } }
@@ -562,7 +562,7 @@ async function upsertLookup(payload) {
         { m: row.id, mg: g.id }
       );
     }
-    await adminGql(
+    await staffGql(
       `mutation($mg: uuid!, $m: uuid!, $role: String!) {
         insert_catalog_muscle_group_muscles(
           objects: [{ muscle_group_id: $mg, muscle_id: $m, role: $role }]
@@ -587,7 +587,7 @@ async function manageRelation(payload) {
     const role = ['target', 'secondary'].includes(payload.role) ? payload.role : 'target';
     if (action === 'link') {
       if (role === 'target') {
-        await adminGql(
+        await staffGql(
           `mutation($m: uuid!, $mg: uuid!) {
             delete_catalog_muscle_group_muscles(
               where: {
@@ -600,7 +600,7 @@ async function manageRelation(payload) {
           { m: m.id, mg: g.id }
         );
       }
-      await adminGql(
+      await staffGql(
         `mutation($mg: uuid!, $m: uuid!, $role: String!) {
           insert_catalog_muscle_group_muscles(
             objects: [{ muscle_group_id: $mg, muscle_id: $m, role: $role }]
@@ -610,7 +610,7 @@ async function manageRelation(payload) {
         { mg: g.id, m: m.id, role }
       );
     } else {
-      await adminGql(
+      await staffGql(
         `mutation($mg: uuid!, $m: uuid!) {
           delete_catalog_muscle_group_muscles(
             where: { muscle_group_id: { _eq: $mg }, muscle_id: { _eq: $m } }
@@ -622,7 +622,7 @@ async function manageRelation(payload) {
   } else {
     const mt = await ensureLookup('catalog_movement_types', payload.code);
     if (action === 'link') {
-      await adminGql(
+      await staffGql(
         `mutation($mg: uuid!, $mt: uuid!) {
           insert_catalog_muscle_group_movement_types(
             objects: [{ muscle_group_id: $mg, movement_type_id: $mt }]
@@ -632,7 +632,7 @@ async function manageRelation(payload) {
         { mg: g.id, mt: mt.id }
       );
     } else {
-      await adminGql(
+      await staffGql(
         `mutation($mg: uuid!, $mt: uuid!) {
           delete_catalog_muscle_group_movement_types(
             where: { muscle_group_id: { _eq: $mg }, movement_type_id: { _eq: $mt } }
@@ -654,7 +654,7 @@ async function updateLookup(payload) {
   if (payload.active != null) set.active = Boolean(payload.active);
   if (payload.sort_order != null) set.sort_order = Number(payload.sort_order);
   if (!Object.keys(set).length) throw new Error('nothing to update');
-  const data = await adminGql(
+  const data = await staffGql(
     `mutation($id: uuid!, $set: ${table}_set_input!) {
       update_${table}_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order }
     }`,
@@ -664,7 +664,7 @@ async function updateLookup(payload) {
 }
 
 async function fetchTaxonomyAdmin() {
-  return adminGql(`
+  return staffGql(`
     query TaxonomyAdmin {
       catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {
         id code name sort_order active

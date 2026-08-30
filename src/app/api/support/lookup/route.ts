@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminToken } from "@/lib/api-auth";
+import { requireStaffToken } from "@/lib/api-auth";
 import { lookupUser, lookupUserById } from "@/lib/support/queries";
 
 const UUID_RE =
@@ -7,13 +7,13 @@ const UUID_RE =
 
 export async function GET(request: Request) {
   try {
-    requireAdminToken(request);
+    const token = requireStaffToken(request);
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim();
     if (!q) {
       return NextResponse.json({ error: "q is required" }, { status: 400 });
     }
-    const result = UUID_RE.test(q) ? await lookupUserById(q) : await lookupUser(q);
+    const result = UUID_RE.test(q) ? await lookupUserById(token, q) : await lookupUser(token, q);
     if (!result) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }

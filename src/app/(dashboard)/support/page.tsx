@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { Badge, Button, Card, Input } from "@/components/ui/primitives";
-import { useAdminFetch } from "@/hooks/use-admin-fetch";
+import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import type { SupportUserLookup } from "@/lib/support/types";
 
 export default function SupportSearchPage() {
-  const adminFetch = useAdminFetch();
+  const staffFetch = useStaffFetch();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export default function SupportSearchPage() {
     setError(null);
     setResult(null);
     try {
-      const data = (await adminFetch(
+      const data = (await staffFetch(
         `/api/support/lookup?q=${encodeURIComponent(query)}`,
       )) as SupportUserLookup;
       setResult(data);

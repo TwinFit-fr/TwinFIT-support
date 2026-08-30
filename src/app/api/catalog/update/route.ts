@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireAdminToken } from "@/lib/api-auth";
-import { updateXcatExercise } from "@/lib/catalog";
+import { callStaffFunction, requireStaffToken } from "@/lib/api-auth";
 
 export async function POST(request: Request) {
   try {
-    requireAdminToken(request);
+    const token = requireStaffToken(request);
     const body = await request.json();
-    const exercise = await updateXcatExercise(body);
-    return NextResponse.json({ ok: true, exercise });
+    const result = await callStaffFunction(token, "staff-catalog-update", body);
+    return NextResponse.json(result.body, { status: result.status });
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Update failed";

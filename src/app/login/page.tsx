@@ -3,13 +3,13 @@
 import { useSignInEmailPassword } from "@nhost/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
-import { useIsAdmin } from "@/hooks/use-is-admin";
+import { useIsStaff } from "@/hooks/use-is-staff";
 import { Button, Input } from "@/components/ui/primitives";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isAdmin = useIsAdmin();
+  const isStaff = useIsStaff();
   const { signInEmailPassword, isLoading, isSuccess, isError, error } =
     useSignInEmailPassword();
   const [email, setEmail] = useState("");
@@ -17,19 +17,19 @@ function LoginForm() {
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (searchParams.get("error") === "admin_required") {
-      setLocalError("Access restricted to administrators.");
+    if (searchParams.get("error") === "staff_required") {
+      setLocalError("Access restricted to staff accounts.");
     }
   }, [searchParams]);
 
   useEffect(() => {
     if (!isSuccess) return;
-    if (!isAdmin) {
-      setLocalError("This account does not have admin access.");
+    if (!isStaff) {
+      setLocalError("This account does not have staff access.");
       return;
     }
     router.replace("/");
-  }, [isSuccess, isAdmin, router]);
+  }, [isSuccess, isStaff, router]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -44,7 +44,7 @@ function LoginForm() {
     >
       <div>
         <h1 className="text-xl font-semibold">TwinFIT Support</h1>
-        <p className="mt-1 text-sm text-zinc-500">Admin sign in</p>
+        <p className="mt-1 text-sm text-zinc-500">Staff sign in</p>
       </div>
       <div className="space-y-2">
         <label className="text-sm font-medium" htmlFor="email">

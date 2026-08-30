@@ -3,11 +3,11 @@
 import { useAuthenticationStatus, useSignOut } from "@nhost/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { useIsAdmin } from "@/hooks/use-is-admin";
+import { useIsStaff } from "@/hooks/use-is-staff";
 
-export function AdminGuard({ children }: { children: React.ReactNode }) {
+export function StaffGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthenticationStatus();
-  const isAdmin = useIsAdmin();
+  const isStaff = useIsStaff();
   const { signOut } = useSignOut();
   const router = useRouter();
 
@@ -17,16 +17,16 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
-    if (!isAdmin) {
+    if (!isStaff) {
       void signOut();
-      router.replace("/login?error=admin_required");
+      router.replace("/login?error=staff_required");
     }
-  }, [isLoading, isAuthenticated, isAdmin, router, signOut]);
+  }, [isLoading, isAuthenticated, isStaff, router, signOut]);
 
-  if (isLoading || !isAuthenticated || !isAdmin) {
+  if (isLoading || !isAuthenticated || !isStaff) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-zinc-500">
-        Checking admin session…
+        Checking staff session…
       </div>
     );
   }
