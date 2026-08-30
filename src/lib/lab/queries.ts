@@ -22,7 +22,7 @@ export type LabUserStatRow = {
   set_count: number;
   catalogExercise?: { exo_id: number; display_name: string } | null;
   labExercise?: LabExerciseRow | null;
-  user?: { id: string; email: string; displayName?: string | null } | null;
+  user?: { id: string; email: string } | null;
 };
 
 const LAB_EXERCISE_FIELDS = `
@@ -108,7 +108,7 @@ export async function listLabUserStats(token: string): Promise<LabUserStatRow[]>
       user_id: string | null;
       catalog_exo_id: number;
       catalogExercise: { exo_id: number; display_name: string } | null;
-      user: { id: string; email: string; displayName?: string | null } | null;
+      user: { id: string; email: string } | null;
     }[];
     pool: LabExerciseRow[];
   }>(
@@ -118,7 +118,7 @@ export async function listLabUserStats(token: string): Promise<LabUserStatRow[]>
         user_id
         catalog_exo_id
         catalogExercise { exo_id display_name }
-        user { id email displayName }
+        user { id email }
       }
       pool: lab_exercises {
         ${LAB_EXERCISE_FIELDS}
