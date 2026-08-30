@@ -34,7 +34,7 @@ export default function HomePage() {
         <Card>
           <h2 className="font-medium">Lab dataset</h2>
           <p className="mt-2 text-sm text-zinc-600">
-            Review labelled capture stats, manage the exercise pool for TwinFIT-Lab,
+            Review labelled capture stats, browse sets, manage the exercise pool for TwinFIT-Lab,
             and link catalog exercises to the sensor dataset.
           </p>
           <Link href="/lab" className="mt-4 inline-block text-sm font-medium underline">

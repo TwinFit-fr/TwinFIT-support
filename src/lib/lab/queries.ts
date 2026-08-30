@@ -239,3 +239,225 @@ export function labExerciseLabel(row: {
 }): string {
   return row.catalogExercise?.display_name ?? `exo ${row.catalog_exo_id}`;
 }
+
+export const LAB_SETS_PAGE_SIZE = 250;
+
+export type LabSetRow = {
+  id: string;
+  user_id: string | null;
+  user_name: string;
+  catalog_exo_id: number;
+  custom_name: string;
+  rep_count: number;
+  weight_kg: number;
+  started_at: string;
+  ended_at: string;
+  labeled_at: string;
+  inserted_at: string;
+  storage_path: string;
+};
+
+export type LabSetFilters = {
+  userId?: string | null;
+  catalogExoId?: number;
+  from?: string;
+  to?: string;
+};
+
+export type LabSetFilterOptions = {
+  users: { id: string | null; user_name: string }[];
+  exercises: { catalog_exo_id: number; custom_name: string }[];
+};
+
+type ProfileName = {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+};
+
+function profileUserName(profile: ProfileName | undefined, email?: string | null): string {
+  if (profile?.display_name?.trim()) return profile.display_name.trim();
+  if (profile?.username?.trim()) return `@${profile.username.trim()}`;
+  if (email?.trim()) return email.trim();
+  return "Deleted account";
+}
+
+function exerciseCustomName(
+  catalogExoId: number,
+  catalogExercise?: { display_name: string } | null,
+): string {
+  return catalogExercise?.display_name?.trim() || `exo ${catalogExoId}`;
+}
+
+async function loadProfilesByIds(
+  token: string,
+  userIds: (string | null | undefined)[],
+): Promise<Map<string, ProfileName>> {
+  const ids = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
+  if (!ids.length) return new Map();
+  const data = await staffGql<{ profiles: ProfileName[] }>(
+    token,
+    `query($ids: [uuid!]!) {
+      profiles(where: { id: { _in: $ids } }) {
+        id
+        username
+        display_name
+      }
+    }`,
+    { ids },
+  );
+  return new Map((data.profiles ?? []).map((row) => [row.id, row]));
+}
+
+function labSetsWhere(filters: LabSetFilters): Record<string, unknown> {
+  const clauses: Record<string, unknown>[] = [];
+  if (filters.userId === null) {
+    clauses.push({ user_id: { _is_null: true } });
+  } else if (filters.userId) {
+    clauses.push({ user_id: { _eq: filters.userId } });
+  }
+  if (typeof filters.catalogExoId === "number" && Number.isFinite(filters.catalogExoId)) {
+    clauses.push({ catalog_exo_id: { _eq: filters.catalogExoId } });
+  }
+  if (filters.from || filters.to) {
+    const inserted: Record<string, string> = {};
+    if (filters.from) inserted._gte = filters.from;
+    if (filters.to) inserted._lte = filters.to;
+    clauses.push({ inserted_at: inserted });
+  }
+  if (!clauses.length) return {};
+  if (clauses.length === 1) return clauses[0];
+  return { _and: clauses };
+}
+
+type LabSetGqlRow = {
+  id: string;
+  user_id: string | null;
+  catalog_exo_id: number;
+  rep_count: number;
+  weight_kg: number;
+  started_at: string;
+  ended_at: string;
+  labeled_at: string;
+  inserted_at: string;
+  storage_path: string;
+  catalogExercise?: { exo_id: number; display_name: string } | null;
+  user?: { id: string; email: string } | null;
+};
+
+export async function listLabSets(
+  token: string,
+  filters: LabSetFilters,
+  page: number,
+  pageSize: number = LAB_SETS_PAGE_SIZE,
+): Promise<{ sets: LabSetRow[]; total: number; page: number; pageSize: number }> {
+  const limit = Math.min(Math.max(pageSize, 1), LAB_SETS_PAGE_SIZE);
+  const safePage = Math.max(page, 1);
+  const offset = (safePage - 1) * limit;
+  const where = labSetsWhere(filters);
+
+  const data = await staffGql<{
+    lab_sets: LabSetGqlRow[];
+    lab_sets_aggregate: { aggregate?: { count?: number } | null };
+  }>(
+    token,
+    `query($where: lab_sets_bool_exp!, $limit: Int!, $offset: Int!) {
+      lab_sets(
+        where: $where
+        order_by: [{ inserted_at: desc }, { id: desc }]
+        limit: $limit
+        offset: $offset
+      ) {
+        id
+        user_id
+        catalog_exo_id
+        rep_count
+        weight_kg
+        started_at
+        ended_at
+        labeled_at
+        inserted_at
+        storage_path
+        catalogExercise { exo_id display_name }
+        user { id email }
+      }
+      lab_sets_aggregate(where: $where) {
+        aggregate { count }
+      }
+    }`,
+    { where, limit, offset },
+  );
+
+  const rows = data.lab_sets ?? [];
+  const profiles = await loadProfilesByIds(
+    token,
+    rows.map((row) => row.user_id),
+  );
+
+  return {
+    sets: rows.map((row) => ({
+      id: row.id,
+      user_id: row.user_id,
+      user_name: row.user_id
+        ? profileUserName(profiles.get(row.user_id), row.user?.email)
+        : "Deleted account",
+      catalog_exo_id: row.catalog_exo_id,
+      custom_name: exerciseCustomName(row.catalog_exo_id, row.catalogExercise),
+      rep_count: row.rep_count,
+      weight_kg: row.weight_kg,
+      started_at: row.started_at,
+      ended_at: row.ended_at,
+      labeled_at: row.labeled_at,
+      inserted_at: row.inserted_at,
+      storage_path: row.storage_path,
+    })),
+    total: data.lab_sets_aggregate.aggregate?.count ?? 0,
+    page: safePage,
+    pageSize: limit,
+  };
+}
+
+export async function listLabSetFilterOptions(token: string): Promise<LabSetFilterOptions> {
+  const data = await staffGql<{
+    collectors: { user_id: string | null; user?: { id: string; email: string } | null }[];
+    exercises: {
+      catalog_exo_id: number;
+      catalogExercise?: { exo_id: number; display_name: string } | null;
+    }[];
+  }>(
+    token,
+    `query {
+      collectors: lab_sets(distinct_on: user_id, order_by: [{ user_id: asc }]) {
+        user_id
+        user { id email }
+      }
+      exercises: lab_sets(distinct_on: catalog_exo_id, order_by: [{ catalog_exo_id: asc }]) {
+        catalog_exo_id
+        catalogExercise { exo_id display_name }
+      }
+    }`,
+  );
+
+  const profiles = await loadProfilesByIds(
+    token,
+    (data.collectors ?? []).map((row) => row.user_id),
+  );
+
+  const users = (data.collectors ?? [])
+    .map((row) => ({
+      id: row.user_id,
+      user_name: row.user_id
+        ? profileUserName(profiles.get(row.user_id), row.user?.email)
+        : "Deleted account",
+    }))
+    .sort((a, b) => a.user_name.localeCompare(b.user_name));
+
+  const exercises = (data.exercises ?? [])
+    .map((row) => ({
+      catalog_exo_id: row.catalog_exo_id,
+      custom_name: exerciseCustomName(row.catalog_exo_id, row.catalogExercise),
+    }))
+    .sort((a, b) => a.custom_name.localeCompare(b.custom_name));
+
+  return { users, exercises };
+}

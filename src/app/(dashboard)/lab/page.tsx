@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/primitives";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
@@ -46,19 +45,11 @@ export default function LabStatsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Lab dataset stats</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Global and per-collector set counts from schema <code className="text-xs">lab</code>
-          </p>
-        </div>
-        <Link
-          href="/lab/exercises"
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
-        >
-          Manage exercises
-        </Link>
+      <div>
+        <h1 className="text-2xl font-semibold">Lab dataset stats</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Global and per-collector set counts from schema <code className="text-xs">lab</code>
+        </p>
       </div>
 
       {data && (

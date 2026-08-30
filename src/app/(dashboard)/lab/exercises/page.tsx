@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Button, Card } from "@/components/ui/primitives";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
@@ -194,19 +193,11 @@ export default function LabExercisesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Lab exercises</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Add catalog exercises to the Lab dataset pool (e.g. exo 47 Resting for rest captures)
-          </p>
-        </div>
-        <Link
-          href="/lab"
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
-        >
-          View stats
-        </Link>
+      <div>
+        <h1 className="text-2xl font-semibold">Lab exercises</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Add catalog exercises to the Lab dataset pool (e.g. exo 47 Resting for rest captures)
+        </p>
       </div>
 
       <Card className="space-y-4 p-4">
