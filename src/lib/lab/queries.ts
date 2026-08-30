@@ -17,7 +17,7 @@ export type LabGlobalStatRow = {
 };
 
 export type LabUserStatRow = {
-  user_id: string;
+  user_id: string | null;
   catalog_exo_id: number;
   set_count: number;
   catalogExercise?: { exo_id: number; display_name: string } | null;
@@ -105,7 +105,7 @@ export async function listLabGlobalStats(token: string): Promise<LabGlobalStatRo
 export async function listLabUserStats(token: string): Promise<LabUserStatRow[]> {
   const data = await staffGql<{
     lab_sets: {
-      user_id: string;
+      user_id: string | null;
       catalog_exo_id: number;
       catalogExercise: { exo_id: number; display_name: string } | null;
       user: { id: string; email: string; displayName?: string | null } | null;
@@ -132,7 +132,8 @@ export async function listLabUserStats(token: string): Promise<LabUserStatRow[]>
 
   const grouped = new Map<string, LabUserStatRow>();
   for (const row of data.lab_sets ?? []) {
-    const key = `${row.user_id}:${row.catalog_exo_id}`;
+    const userKey = row.user_id ?? "__deleted__";
+    const key = `${userKey}:${row.catalog_exo_id}`;
     const prev = grouped.get(key);
     if (prev) {
       prev.set_count += 1;
@@ -149,7 +150,7 @@ export async function listLabUserStats(token: string): Promise<LabUserStatRow[]>
   }
 
   return [...grouped.values()].sort((a, b) =>
-    a.user_id.localeCompare(b.user_id) || b.set_count - a.set_count,
+    (a.user_id ?? "").localeCompare(b.user_id ?? "") || b.set_count - a.set_count,
   );
 }
 

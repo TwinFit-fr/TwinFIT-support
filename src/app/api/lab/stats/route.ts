@@ -15,13 +15,18 @@ export async function GET(request: Request) {
 
     const byUser = new Map<string, { email: string; total: number }>();
     for (const row of userStats) {
-      const email = row.user?.email ?? row.user_id;
-      const prev = byUser.get(row.user_id) ?? { email, total: 0 };
+      const userId = row.user_id ?? "__deleted__";
+      const email = row.user?.email ?? (row.user_id ? row.user_id : "Deleted account");
+      const prev = byUser.get(userId) ?? { email, total: 0 };
       prev.total += Number(row.set_count);
-      byUser.set(row.user_id, prev);
+      byUser.set(userId, prev);
     }
     const userTotals = [...byUser.entries()]
-      .map(([userId, v]) => ({ userId, email: v.email, totalSets: v.total }))
+      .map(([userId, v]) => ({
+        userId: userId === "__deleted__" ? null : userId,
+        email: v.email,
+        totalSets: v.total,
+      }))
       .sort((a, b) => b.totalSets - a.totalSets);
 
     return NextResponse.json({

@@ -158,10 +158,12 @@ export default function LabStatsPage() {
               <tbody>
                 {data.userStats.map((row) => (
                   <tr
-                    key={`${row.user_id}-${row.catalog_exo_id}`}
+                    key={`${row.user_id ?? "deleted"}-${row.catalog_exo_id}`}
                     className="border-b border-zinc-100"
                   >
-                    <td className="px-4 py-2">{row.user?.email ?? row.user_id}</td>
+                    <td className="px-4 py-2">
+                      {row.user?.email ?? (row.user_id ? row.user_id : "Deleted account")}
+                    </td>
                     <td className="px-4 py-2">{exerciseName(row)}</td>
                     <td className="px-4 py-2 font-medium">{row.set_count}</td>
                   </tr>
