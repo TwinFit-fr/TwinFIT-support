@@ -1,5 +1,6 @@
 "use client";
 
+import { useAccessToken } from "@nhost/react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
@@ -36,12 +37,23 @@ function durationSeconds(startedAt: string, endedAt: string): string {
   return `${seconds}s`;
 }
 
+function filenameFromDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const utf = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf?.[1]) return decodeURIComponent(utf[1]);
+  const ascii = header.match(/filename="([^"]+)"/i);
+  return ascii?.[1] ?? fallback;
+}
+
 export default function LabSetsPage() {
   const staffFetch = useStaffFetch();
+  const accessToken = useAccessToken();
   const [options, setOptions] = useState<LabSetFilterOptions | null>(null);
   const [data, setData] = useState<SetsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const [draftUserId, setDraftUserId] = useState("");
   const [draftExoId, setDraftExoId] = useState("");
@@ -122,6 +134,38 @@ export default function LabSetsPage() {
     [fromRow, toRow, total],
   );
 
+  async function downloadSet(row: LabSetRow) {
+    if (!accessToken) return;
+    setDownloadingId(row.id);
+    setDownloadError(null);
+    try {
+      const res = await fetch(`/api/lab/sets/${row.id}/file`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `Download failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const filename = filenameFromDisposition(
+        res.headers.get("Content-Disposition"),
+        `${row.custom_name.replace(/\s+/g, "_")}_${row.id}.json`,
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -190,6 +234,7 @@ export default function LabSetsPage() {
 
       {loading && <p className="text-sm text-zinc-500">Loading sets…</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {downloadError && <p className="text-sm text-red-600">{downloadError}</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-zinc-500">{pageLabel}</p>
@@ -251,9 +296,19 @@ export default function LabSetsPage() {
                   {formatTs(row.labeled_at)}
                 </td>
                 <td className="px-4 py-2">
-                  <Button type="button" variant="secondary" disabled title="Coming next">
-                    View data
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" disabled title="Coming next">
+                      View data
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!row.storage_path || downloadingId === row.id}
+                      onClick={() => void downloadSet(row)}
+                    >
+                      {downloadingId === row.id ? "Downloading…" : "Download data"}
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}

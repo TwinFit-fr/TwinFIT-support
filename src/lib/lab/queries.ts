@@ -1,4 +1,5 @@
 import { staffGql } from "@/lib/staff-gql";
+import { resolveSupportHasuraRole } from "@/lib/nhost/jwt";
 
 export type LabExerciseRow = {
   catalog_exo_id: number;
@@ -460,4 +461,108 @@ export async function listLabSetFilterOptions(token: string): Promise<LabSetFilt
     .sort((a, b) => a.custom_name.localeCompare(b.custom_name));
 
   return { users, exercises };
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
+function storageUrl(fileId: string): string {
+  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
+  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
+  if (!subdomain || !region) {
+    throw new Error("NEXT_PUBLIC_NHOST_SUBDOMAIN and NEXT_PUBLIC_NHOST_REGION are required");
+  }
+  return `https://${subdomain}.storage.${region}.nhost.run/v1/files/${fileId}`;
+}
+
+function safeFilenamePart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60);
+}
+
+export type LabSetFileDownload = {
+  body: ReadableStream<Uint8Array> | null;
+  contentType: string;
+  downloadName: string;
+};
+
+export async function downloadLabSetFile(
+  token: string,
+  setId: string,
+): Promise<LabSetFileDownload> {
+  const setData = await staffGql<{
+    lab_sets_by_pk: {
+      id: string;
+      storage_path: string;
+      catalogExercise?: { display_name: string } | null;
+    } | null;
+  }>(
+    token,
+    `query($id: uuid!) {
+      lab_sets_by_pk(id: $id) {
+        id
+        storage_path
+        catalogExercise { display_name }
+      }
+    }`,
+    { id: setId },
+  );
+
+  const set = setData.lab_sets_by_pk;
+  if (!set?.storage_path) {
+    throw new Error("Set not found");
+  }
+
+  const filesData = await staffGql<{
+    files: { id: string; name: string; mimeType: string | null }[];
+  }>(
+    token,
+    `query($name: String!) {
+      files(
+        where: {
+          _and: [
+            { bucketId: { _eq: "lab-sensor-samples" } }
+            { name: { _eq: $name } }
+          ]
+        }
+        limit: 1
+      ) {
+        id
+        name
+        mimeType
+      }
+    }`,
+    { name: set.storage_path },
+  );
+
+  const file = filesData.files[0];
+  if (!file) {
+    throw new Error("Sensor file not found in Storage");
+  }
+
+  const leaf = set.storage_path.split("/").pop() || `${set.id}.json`;
+  const exoPart = set.catalogExercise?.display_name
+    ? `${safeFilenamePart(set.catalogExercise.display_name)}_`
+    : "";
+  const downloadName = `${exoPart}${leaf}`;
+
+  const role = resolveSupportHasuraRole(token);
+  const res = await fetch(storageUrl(file.id), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-hasura-role": role,
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Storage download failed (${res.status})`);
+  }
+
+  return {
+    body: res.body,
+    contentType: res.headers.get("Content-Type") || file.mimeType || "application/json",
+    downloadName,
+  };
 }
