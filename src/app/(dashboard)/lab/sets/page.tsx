@@ -33,7 +33,7 @@ type SetsResponse = {
 function formatTs(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString("en-US", {
     day: "2-digit",
     month: "short",
     year: "numeric",

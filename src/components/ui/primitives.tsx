@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { forwardRef } from "react";
 
 export function Button({
   className,
@@ -22,20 +23,20 @@ export function Button({
   );
 }
 
-export function Input({
-  className,
-  ...props
-}: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      className={cn(
-        "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm transition-colors outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-400 placeholder:text-zinc-400",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
+  function Input({ className, ...props }, ref) {
+    return (
+      <input
+        ref={ref}
+        className={cn(
+          "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm transition-colors outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-400 placeholder:text-zinc-400",
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
+);
 
 export function Card({
   className,

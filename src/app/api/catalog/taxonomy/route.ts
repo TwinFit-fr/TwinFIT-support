@@ -30,7 +30,13 @@ export async function POST(request: Request) {
     if (kind === "relation" && action === "unlink") {
       const token = requireAdminToken(request);
       bindCatalogStaffToken(token);
-      await manageRelation(body);
+      await manageRelation({
+        action: body.action,
+        kind: body.relationKind ?? body.relation_kind,
+        muscle_group_code: body.muscle_group_code,
+        code: body.code,
+        role: body.role,
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -38,7 +44,13 @@ export async function POST(request: Request) {
     bindCatalogStaffToken(token);
 
     if (kind === "relation") {
-      await manageRelation(body);
+      await manageRelation({
+        action: body.action,
+        kind: body.relationKind ?? body.relation_kind,
+        muscle_group_code: body.muscle_group_code,
+        code: body.code,
+        role: body.role,
+      });
       return NextResponse.json({ ok: true });
     }
     if (kind === "update") {

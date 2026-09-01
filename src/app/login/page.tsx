@@ -4,6 +4,7 @@ import { useSignInEmailPassword } from "@nhost/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useIsStaff } from "@/hooks/use-is-staff";
+import { mapAuthErrorMessage } from "@/lib/auth-errors";
 import { Button, Input } from "@/components/ui/primitives";
 
 function LoginForm() {
@@ -72,7 +73,7 @@ function LoginForm() {
       </div>
       {(localError || isError) && (
         <p className="text-sm text-red-600">
-          {localError ?? error?.message ?? "Sign in failed"}
+          {localError ?? mapAuthErrorMessage(error?.message)}
         </p>
       )}
       <Button type="submit" disabled={isLoading} className="w-full">
