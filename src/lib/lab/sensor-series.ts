@@ -54,7 +54,11 @@ const sampleValueSchema = z.preprocess((value) => {
     return Number(value);
   }
   return value;
-}, z.number());
+}, // z.number() rejects NaN; missing channels must stay as Number.NaN for plotting.
+z.custom<number>(
+  (value) => typeof value === "number",
+  { message: "Expected number (finite or NaN for missing channel)" },
+));
 
 const sampleRowSchema = z
   .array(sampleValueSchema)
