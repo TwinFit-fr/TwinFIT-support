@@ -62,16 +62,25 @@ const sampleRowSchema = z
     message: `Each sample must have ${SAMPLE_COLUMN_COUNT_V1} values (Lab schema v1)`,
   });
 
+/** BLE-only applied WitMotion settings. orientation / axis_algorithm are derived labels. */
 const witmotionConfigSchema = z.object({
-  rate_reg: z.string(),
-  install_orientation_reg: z.string(),
-  axis6_reg: z.string(),
-  content_reg_0x96: z.string(),
+  rate_reg: z.string().optional(),
+  install_orientation_reg: z.string().optional(),
+  axis6_reg: z.string().optional(),
+  content_reg_0x96: z.string().optional(),
+  orientation: z.string().optional(),
+  axis_algorithm: z.string().optional(),
 });
 
+/**
+ * Wear-only runtime snapshot. Fields may be omitted when unknown
+ * (e.g. orientation_fusion) — do not invent BLE install-orientation here.
+ */
 const wearConfigSchema = z.object({
-  sensors: z.array(z.string()),
-  magnetic_field_available: z.boolean(),
+  sensors: z.array(z.string()).optional(),
+  magnetic_field_available: z.boolean().optional(),
+  requested_sample_rate_hz: z.number().optional(),
+  orientation_fusion: z.string().optional(),
 });
 
 const slotConfigSchema = z.object({
@@ -97,13 +106,12 @@ const groundTruthSchema = z.object({
   weight_kg: z.number(),
 });
 
+/** Global capture config — no orientation / axis_algorithm (those are per-slot / transport-specific). */
 const configSchema = z.object({
   timebase: z.literal("phone_elapsed_realtime_ms"),
   wear_clock_offset_ms: z.record(z.string(), z.number()).default({}),
   target_sample_rate_hz: z.number(),
   measured_sample_rate_hz: z.record(z.string(), z.number()).default({}),
-  orientation: z.string(),
-  axis_algorithm: z.string(),
   prep_seconds: z.number().int(),
   work_window: workWindowSchema.default({}),
   slots: z.record(z.string(), slotConfigSchema).default({}),

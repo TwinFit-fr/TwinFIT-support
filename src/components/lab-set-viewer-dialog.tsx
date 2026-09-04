@@ -108,11 +108,27 @@ function SlotDeviceDetails({ config }: { config: LabSetSlotConfig | undefined })
     return <p className="text-xs text-zinc-500">No device config in payload.</p>;
   }
 
+  const wit = config.witmotion;
+  const wear = config.wear;
+  const witRegs = wit
+    ? (
+        [
+          wit.rate_reg != null ? `rate ${wit.rate_reg}` : null,
+          wit.install_orientation_reg != null ? `orient ${wit.install_orientation_reg}` : null,
+          wit.axis6_reg != null ? `axis6 ${wit.axis6_reg}` : null,
+          wit.content_reg_0x96 != null ? `content ${wit.content_reg_0x96}` : null,
+        ] as const
+      ).filter((v): v is string => v != null)
+    : [];
+
   return (
     <div className="space-y-2 text-xs text-zinc-700">
       <div className="flex flex-wrap gap-1.5">
         <Badge className="font-mono uppercase">{config.transport}</Badge>
         <Badge>{config.display_name}</Badge>
+        {wit?.orientation && <Badge>{wit.orientation}</Badge>}
+        {wit?.axis_algorithm && <Badge>{wit.axis_algorithm}</Badge>}
+        {wear?.orientation_fusion && <Badge>{wear.orientation_fusion}</Badge>}
       </div>
       <dl className="grid gap-1.5 sm:grid-cols-2">
         <MetaItem label="Device ID" value={<span className="font-mono text-xs">{config.device_id}</span>} />
@@ -129,30 +145,48 @@ function SlotDeviceDetails({ config }: { config: LabSetSlotConfig | undefined })
           />
         )}
       </dl>
-      {config.witmotion && (
+      {wit && (witRegs.length > 0 || wit.orientation || wit.axis_algorithm) && (
         <div className="rounded-md bg-zinc-50 px-2.5 py-2">
-          <p className="mb-1 font-medium text-zinc-800">WitMotion registers</p>
-          <div className="grid grid-cols-2 gap-1 font-mono text-[11px] text-zinc-600">
-            <span>rate {config.witmotion.rate_reg}</span>
-            <span>orient {config.witmotion.install_orientation_reg}</span>
-            <span>axis6 {config.witmotion.axis6_reg}</span>
-            <span>content {config.witmotion.content_reg_0x96}</span>
-          </div>
-        </div>
-      )}
-      {config.wear && (
-        <div className="rounded-md bg-zinc-50 px-2.5 py-2">
-          <p className="mb-1 font-medium text-zinc-800">Wear sensors</p>
-          <p className="text-zinc-600">
-            Mag: {config.wear.magnetic_field_available ? "available" : "unavailable"}
-          </p>
-          {config.wear.sensors.length > 0 && (
-            <p className="mt-1 break-all font-mono text-[11px] text-zinc-500">
-              {config.wear.sensors.join(", ")}
+          <p className="mb-1 font-medium text-zinc-800">WitMotion</p>
+          {(wit.orientation || wit.axis_algorithm) && (
+            <p className="mb-1 text-zinc-600">
+              {[wit.orientation, wit.axis_algorithm].filter(Boolean).join(" · ")}
             </p>
+          )}
+          {witRegs.length > 0 && (
+            <div className="grid grid-cols-2 gap-1 font-mono text-[11px] text-zinc-600">
+              {witRegs.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </div>
           )}
         </div>
       )}
+      {wear &&
+        (wear.sensors != null ||
+          wear.magnetic_field_available != null ||
+          wear.orientation_fusion != null ||
+          wear.requested_sample_rate_hz != null) && (
+          <div className="rounded-md bg-zinc-50 px-2.5 py-2">
+            <p className="mb-1 font-medium text-zinc-800">Wear</p>
+            {wear.magnetic_field_available != null && (
+              <p className="text-zinc-600">
+                Mag: {wear.magnetic_field_available ? "available" : "unavailable"}
+              </p>
+            )}
+            {wear.orientation_fusion && (
+              <p className="text-zinc-600">Fusion: {wear.orientation_fusion}</p>
+            )}
+            {wear.requested_sample_rate_hz != null && (
+              <p className="text-zinc-600">Requested: {wear.requested_sample_rate_hz} Hz</p>
+            )}
+            {wear.sensors && wear.sensors.length > 0 && (
+              <p className="mt-1 break-all font-mono text-[11px] text-zinc-500">
+                {wear.sensors.join(", ")}
+              </p>
+            )}
+          </div>
+        )}
     </div>
   );
 }
@@ -410,14 +444,15 @@ export function LabSetViewerDialog({
                       label="Target rate"
                       value={formatHz(summary.config.target_sample_rate_hz)}
                     />
-                    <MetaItem label="Orientation" value={summary.config.orientation} />
-                    <MetaItem label="Axis algo" value={summary.config.axis_algorithm} />
                     <MetaItem label="Prep" value={`${summary.config.prep_seconds}s`} />
                     <MetaItem
                       label="Total samples"
                       value={summary.totalSamples.toLocaleString()}
                     />
                   </dl>
+                  <p className="mt-3 text-[11px] text-zinc-500">
+                    Orientation / axis fusion live on each slot (BLE WitMotion or Wear), not globally.
+                  </p>
                 </SectionCard>
 
                 <SectionCard title="Work window">
