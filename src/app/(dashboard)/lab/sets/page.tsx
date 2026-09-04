@@ -380,7 +380,7 @@ function LabSetsContent() {
                           disabled={!row.storage_path}
                           onClick={() => setViewingRow(row)}
                           className="px-2.5 py-1 text-xs"
-                          title="View plotted acceleration and gyroscope signal"
+                          title="View schema v1 payload, config, and IMU plots"
                         >
                           <Eye className="h-3.5 w-3.5" /> View
                         </Button>
