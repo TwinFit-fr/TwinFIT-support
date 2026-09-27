@@ -364,6 +364,7 @@ export function formCreateFingerprint(form: {
   primary_muscle_group_code: string;
   movement_type_code: string;
   equipment_code: string;
+  support_equipment_code?: string;
   position_code: string;
   grip_code: string;
   variation_code: string;
@@ -377,6 +378,7 @@ export function formCreateFingerprint(form: {
     primary_muscle_group_code: normTaxonomy(form.primary_muscle_group_code),
     movement_type_code: normTaxonomy(form.movement_type_code),
     equipment_code: normTaxonomy(form.equipment_code),
+    support_equipment_code: normTaxonomy(form.support_equipment_code),
     position_code: normTaxonomy(form.position_code),
     grip_code: normTaxonomy(form.grip_code),
     variation_code: normTaxonomy(form.variation_code),
@@ -393,6 +395,7 @@ export function exerciseFingerprintFromCatalog(ex: {
   primary_muscle_group?: { code: string };
   movement_type?: { code: string };
   equipment?: { code: string };
+  support_equipment?: { code: string } | null;
   position?: { code: string };
   grip?: { code: string };
   variation?: { code: string };
@@ -406,6 +409,7 @@ export function exerciseFingerprintFromCatalog(ex: {
     primary_muscle_group_code: normTaxonomy(ex.primary_muscle_group?.code),
     movement_type_code: normTaxonomy(ex.movement_type?.code),
     equipment_code: normTaxonomy(ex.equipment?.code),
+    support_equipment_code: normTaxonomy(ex.support_equipment?.code),
     position_code: normTaxonomy(ex.position?.code),
     grip_code: normTaxonomy(ex.grip?.code),
     variation_code: normTaxonomy(ex.variation?.code),

@@ -15,7 +15,7 @@ function normalizeMuscleCode(v) {
     .replace(/^_|_$/g, '');
 }
 
-async function ensureLookup(table, code) {
+async function ensureLookup(table, code, extra = {}) {
   const isMuscle = table === 'catalog_muscles';
   const c = isMuscle ? normalizeMuscleCode(code) : normalizeTaxonomy(code);
   if (!c) throw new Error(`Empty code for ${table}`);
@@ -29,13 +29,36 @@ async function ensureLookup(table, code) {
   const name = isMuscle
     ? c.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())
     : c.replace(/_/g, ' ');
+  const object = { code: c, name, active: true, ...extra };
   const ins = await staffGql(
     `mutation($o: ${table}_insert_input!) {
       insert_${table}_one(object: $o) { id code }
     }`,
-    { o: { code: c, name, active: true } }
+    { o: object }
   );
   return ins[`insert_${table}_one`];
+}
+
+/**
+ * Lookup-only resolve for optional SUPPORT equipment.
+ * Empty → null. Missing code → error. Wrong kind left for Postgres trigger.
+ */
+async function resolveSupportEquipmentId(payload) {
+  const raw =
+    payload.support_equipment_code ??
+    payload.support_equipment ??
+    '';
+  const code = normalizeTaxonomy(raw);
+  if (!code) return null;
+  const data = await staffGql(
+    `query($code: String!) {
+      catalog_equipment(where: { code: { _eq: $code } }, limit: 1) { id code kind }
+    }`,
+    { code }
+  );
+  const hit = data.catalog_equipment?.[0];
+  if (!hit) throw new Error(`Unknown support equipment code: ${code}`);
+  return hit.id;
 }
 
 function inferLoadModalityCode(payload) {
@@ -116,7 +139,9 @@ async function resolveXcatIds(payload) {
     secondaryIds.push(id);
   }
 
-  return { mg, mt, eq, va, po, gr, lm, logm, targetId, secondaryIds };
+  const supportEquipmentId = await resolveSupportEquipmentId(payload);
+
+  return { mg, mt, eq, va, po, gr, lm, logm, targetId, secondaryIds, supportEquipmentId };
 }
 
 function firstFreeExoId(ids) {
@@ -258,6 +283,7 @@ async function composeXcatExercise(payload) {
     target_muscle_id: ids.targetId,
     movement_type_id: ids.mt.id,
     equipment_id: ids.eq.id,
+    support_equipment_id: ids.supportEquipmentId,
     variation_id: ids.va.id,
     position_id: ids.po.id,
     grip_id: ids.gr.id,
@@ -389,7 +415,8 @@ async function listXcatLibraryAdmin() {
         primary_muscle_group { code name }
         target_muscle { code name }
         movement_type { code name }
-        equipment { code name }
+        equipment { code name kind }
+        support_equipment { code kind }
         variation { code name }
         position { code name }
         grip { code name }
@@ -415,7 +442,7 @@ async function listXcatLibraryAdmin() {
         id code name
       }
       catalog_equipment(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {
-        id code name
+        id code name kind
       }
       catalog_load_modalities(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {
         id code name
@@ -548,7 +575,16 @@ const LOOKUP_TABLES = new Set([
 async function upsertLookup(payload) {
   const table = String(payload.table || '');
   if (!LOOKUP_TABLES.has(table)) throw new Error('Invalid lookup table');
-  const row = await ensureLookup(table, payload.code);
+  const extra = {};
+  if (table === 'catalog_equipment') {
+    const rawKind = payload.equipment_kind ?? payload.kind ?? 'LOAD';
+    const kind = String(rawKind).trim().toUpperCase();
+    if (kind !== 'LOAD' && kind !== 'SUPPORT') {
+      throw new Error('equipment kind must be LOAD or SUPPORT');
+    }
+    extra.kind = kind;
+  }
+  const row = await ensureLookup(table, payload.code, extra);
   if (table === 'catalog_muscles' && payload.muscle_group_code) {
     const g = await ensureLookup('catalog_muscle_groups', payload.muscle_group_code);
     const role = ['target', 'secondary'].includes(payload.role) ? payload.role : 'target';
@@ -653,14 +689,43 @@ async function updateLookup(payload) {
   if (payload.name != null) set.name = String(payload.name).trim();
   if (payload.active != null) set.active = Boolean(payload.active);
   if (payload.sort_order != null) set.sort_order = Number(payload.sort_order);
+  if (table === 'catalog_equipment') {
+    const rawKind = payload.equipment_kind ?? payload.kind;
+    if (rawKind != null && String(rawKind).trim() !== '' && String(rawKind).trim().toUpperCase() !== 'UPDATE') {
+      const kind = String(rawKind).trim().toUpperCase();
+      if (kind !== 'LOAD' && kind !== 'SUPPORT') {
+        throw new Error('equipment kind must be LOAD or SUPPORT');
+      }
+      set.kind = kind;
+    }
+  }
   if (!Object.keys(set).length) throw new Error('nothing to update');
+  const returnFields =
+    table === 'catalog_equipment'
+      ? '{ id code name active sort_order kind }'
+      : '{ id code name active sort_order }';
   const data = await staffGql(
     `mutation($id: uuid!, $set: ${table}_set_input!) {
-      update_${table}_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order }
+      update_${table}_by_pk(pk_columns: { id: $id }, _set: $set) ${returnFields}
     }`,
     { id, set }
   );
   return data[`update_${table}_by_pk`];
+}
+
+async function setExerciseSupportEquipment(exoId, supportEquipmentId) {
+  const n = Number(exoId);
+  if (!Number.isFinite(n)) throw new Error('exo_id required');
+  const data = await staffGql(
+    `mutation($exo_id: Int!, $support_equipment_id: uuid) {
+      update_catalog_exercises(
+        where: { exo_id: { _eq: $exo_id } }
+        _set: { support_equipment_id: $support_equipment_id }
+      ) { affected_rows }
+    }`,
+    { exo_id: n, support_equipment_id: supportEquipmentId }
+  );
+  return data.update_catalog_exercises;
 }
 
 async function fetchTaxonomyAdmin() {
@@ -673,7 +738,7 @@ async function fetchTaxonomyAdmin() {
       }
       catalog_muscles(order_by: { code: asc }) { id code name sort_order active }
       catalog_movement_types(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
-      catalog_equipment(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
+      catalog_equipment(order_by: { sort_order: asc, code: asc }) { id code name sort_order active kind }
       catalog_variations(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
       catalog_positions(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
       catalog_grips(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
@@ -685,6 +750,7 @@ async function fetchTaxonomyAdmin() {
 
 module.exports = {
   ensureLookup,
+  resolveSupportEquipmentId,
   nextXcatExoId,
   composeXcatExercise,
   composeCustomXcatExercise,
@@ -695,5 +761,6 @@ module.exports = {
   upsertLookup,
   manageRelation,
   updateLookup,
+  setExerciseSupportEquipment,
   fetchTaxonomyAdmin,
 };

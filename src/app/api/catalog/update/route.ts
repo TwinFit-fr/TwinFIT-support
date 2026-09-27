@@ -1,11 +1,24 @@
 import { NextResponse } from "next/server";
 import { callStaffFunction, requireStaffToken } from "@/lib/api-auth";
+import {
+  bindCatalogStaffToken,
+  resolveSupportEquipmentId,
+  setExerciseSupportEquipment,
+} from "@/lib/catalog";
 
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
     const body = await request.json();
     const result = await callStaffFunction(token, "staff-catalog-update", body);
+    if (result.status < 200 || result.status >= 300) {
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
+    bindCatalogStaffToken(token);
+    const supportEquipmentId = await resolveSupportEquipmentId(body);
+    await setExerciseSupportEquipment(body.exo_id, supportEquipmentId);
+
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {
     if (error instanceof Response) return error;

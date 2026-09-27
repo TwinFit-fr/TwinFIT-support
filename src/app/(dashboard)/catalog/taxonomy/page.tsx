@@ -42,12 +42,19 @@ export default function CatalogTaxonomyPage() {
     void load();
   }, [load]);
 
-  async function addEntry(table: string, code: string, name: string) {
+  async function addEntry(table: string, code: string, name: string, kind?: string) {
     setMessage(null);
     try {
       await staffFetch("/api/catalog/taxonomy", {
         method: "POST",
-        body: JSON.stringify({ table, code, name }),
+        body: JSON.stringify({
+          table,
+          code,
+          name,
+          ...(table === "catalog_equipment" && kind
+            ? { equipment_kind: kind }
+            : {}),
+        }),
       });
       setMessage(`Added ${code}`);
       await load();
@@ -59,7 +66,12 @@ export default function CatalogTaxonomyPage() {
   async function saveRow(
     table: string,
     id: string,
-    fields: { name: string; sort_order: number; active: boolean },
+    fields: {
+      name: string;
+      sort_order: number;
+      active: boolean;
+      kind?: string;
+    },
   ) {
     setMessage(null);
     try {
@@ -72,6 +84,9 @@ export default function CatalogTaxonomyPage() {
           name: fields.name,
           sort_order: fields.sort_order,
           active: fields.active,
+          ...(table === "catalog_equipment" && fields.kind
+            ? { equipment_kind: fields.kind }
+            : {}),
         }),
       });
       setMessage("Saved");
@@ -176,7 +191,7 @@ export default function CatalogTaxonomyPage() {
         <TaxonomyLookupTable
           table={tab}
           rows={lookupRows}
-          onAdd={(code, name) => addEntry(tab, code, name)}
+          onAdd={(code, name, kind) => addEntry(tab, code, name, kind)}
           onSave={(id, fields) => saveRow(tab, id, fields)}
         />
       )}

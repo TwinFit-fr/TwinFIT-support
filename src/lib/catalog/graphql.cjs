@@ -1,4 +1,4 @@
-const { GraphQLClient } = require("graphql-request");
+const { GraphQLClient, ClientError } = require("graphql-request");
 
 const HASURA_CLAIMS = "https://hasura.io/jwt/claims";
 
@@ -44,6 +44,31 @@ function resolveSupportHasuraRole(accessToken) {
   throw new Error("JWT has no staff or admin Hasura role");
 }
 
+/**
+ * Hasura wraps Postgres RAISE as "database query error".
+ * The useful text is at errors[0].extensions.internal.error.message.
+ */
+function unwrapHasuraError(error) {
+  const gqlErrors =
+    (error instanceof ClientError && error.response?.errors) ||
+    error?.response?.errors ||
+    error?.errors ||
+    null;
+  if (Array.isArray(gqlErrors) && gqlErrors.length) {
+    const messages = gqlErrors.map((e) => {
+      const internal =
+        e?.extensions?.internal?.error?.message ||
+        e?.extensions?.internal?.message;
+      if (typeof internal === "string" && internal.trim()) return internal.trim();
+      if (typeof e?.message === "string" && e.message.trim()) return e.message.trim();
+      return null;
+    }).filter(Boolean);
+    if (messages.length) return messages.join("; ");
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return String(error || "GraphQL request failed");
+}
+
 let boundToken = null;
 let client = null;
 
@@ -68,7 +93,11 @@ function bindStaffToken(token) {
 }
 
 async function staffGql(query, variables) {
-  return getClient().request(query, variables);
+  try {
+    return await getClient().request(query, variables);
+  } catch (error) {
+    throw new Error(unwrapHasuraError(error));
+  }
 }
 
-module.exports = { staffGql, bindStaffToken };
+module.exports = { staffGql, bindStaffToken, unwrapHasuraError };
