@@ -1,3 +1,5 @@
+import type { LocalizationRow } from "@/lib/catalog/locales";
+
 export type TaxonomyTabId =
   | "anatomy"
   | "catalog_movement_types"
@@ -23,6 +25,13 @@ export const TAXONOMY_TABS: Array<{ id: TaxonomyTabId; label: string }> = [
   { id: "catalog_muscle_groups", label: "Groups" },
 ];
 
+export const LOCALIZED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
+  "catalog_equipment",
+  "catalog_movement_types",
+  "catalog_muscles",
+  "catalog_muscle_groups",
+]);
+
 export type LookupRowFull = {
   id: string;
   code: string;
@@ -30,6 +39,7 @@ export type LookupRowFull = {
   sort_order?: number;
   active?: boolean;
   kind?: string;
+  localizations?: LocalizationRow[];
 };
 
 export type MuscleGroupRow = {
@@ -37,12 +47,25 @@ export type MuscleGroupRow = {
   code: string;
   name: string;
   active?: boolean;
+  localizations?: LocalizationRow[];
   group_muscles: Array<{
     role: string;
-    muscle: { id: string; code: string; name: string; active?: boolean };
+    muscle: {
+      id: string;
+      code: string;
+      name: string;
+      active?: boolean;
+      localizations?: LocalizationRow[];
+    };
   }>;
   group_movement_types: Array<{
-    movement_type: { id: string; code: string; name: string; active?: boolean };
+    movement_type: {
+      id: string;
+      code: string;
+      name: string;
+      active?: boolean;
+      localizations?: LocalizationRow[];
+    };
   }>;
 };
 

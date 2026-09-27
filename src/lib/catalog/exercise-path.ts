@@ -58,10 +58,16 @@ export type ExerciseWithPath = {
   primary_muscle_group?: { code: string };
   movement_type?: { code: string };
   equipment?: { code: string };
+  support_equipment?: { code: string } | null;
   position?: { code: string };
   grip?: { code: string };
   variation?: { code: string };
   load_modality?: { code: string };
+  localizations?: Array<{
+    locale: string;
+    display_name?: string | null;
+    description?: string | null;
+  }>;
 };
 
 export type LookupRow = { code: string; name?: string };
@@ -360,7 +366,11 @@ export function exerciseTaxonomyPath(ex: ExerciseWithPath): string[] {
 
 export function formCreateFingerprint(form: {
   display_name: string;
-  description: string;
+  description?: string;
+  localizations?: Record<
+    string,
+    { display_name?: string; description?: string }
+  >;
   primary_muscle_group_code: string;
   movement_type_code: string;
   equipment_code: string;
@@ -374,7 +384,10 @@ export function formCreateFingerprint(form: {
 }): string {
   return JSON.stringify({
     display_name: String(form.display_name || "").trim().toLowerCase(),
-    description: String(form.description || "").trim(),
+    description: String(
+      form.localizations?.en?.description ?? form.description ?? "",
+    ).trim(),
+    localizations: form.localizations ?? {},
     primary_muscle_group_code: normTaxonomy(form.primary_muscle_group_code),
     movement_type_code: normTaxonomy(form.movement_type_code),
     equipment_code: normTaxonomy(form.equipment_code),
@@ -401,11 +414,23 @@ export function exerciseFingerprintFromCatalog(ex: {
   variation?: { code: string };
   load_modality?: { code: string };
   target_muscle?: { code: string };
-  localizations?: Array<{ description?: string | null }>;
+  localizations?: Array<{
+    locale: string;
+    display_name?: string | null;
+    description?: string | null;
+  }>;
 }): string {
+  const locMap: Record<string, { display_name: string; description: string }> = {};
+  for (const loc of ex.localizations ?? []) {
+    locMap[loc.locale] = {
+      display_name: String(loc.display_name || "").trim(),
+      description: String(loc.description || "").trim(),
+    };
+  }
   return JSON.stringify({
     display_name: String(ex.display_name || "").trim().toLowerCase(),
-    description: String(ex.localizations?.[0]?.description || "").trim(),
+    description: String(locMap.en?.description || "").trim(),
+    localizations: locMap,
     primary_muscle_group_code: normTaxonomy(ex.primary_muscle_group?.code),
     movement_type_code: normTaxonomy(ex.movement_type?.code),
     equipment_code: normTaxonomy(ex.equipment?.code),

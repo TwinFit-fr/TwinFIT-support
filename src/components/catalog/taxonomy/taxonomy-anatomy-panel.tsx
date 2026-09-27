@@ -2,6 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
+import {
+  resolveLocalizedName,
+  type CatalogLocale,
+  type LocalizedLookup,
+} from "@/lib/catalog/locales";
 import type { LookupRowFull, MuscleGroupRow } from "./types";
 
 export type RelationApplyItem = {
@@ -11,6 +16,7 @@ export type RelationApplyItem = {
 };
 
 type AnatomyPanelProps = {
+  locale: CatalogLocale;
   groups: MuscleGroupRow[];
   muscles: LookupRowFull[];
   movements: LookupRowFull[];
@@ -25,6 +31,7 @@ type AnatomyPanelProps = {
 };
 
 export function TaxonomyAnatomyPanel({
+  locale,
   groups,
   muscles,
   movements,
@@ -51,7 +58,7 @@ export function TaxonomyAnatomyPanel({
       return group.group_muscles
         .map((x) => ({
           code: x.muscle.code,
-          name: x.muscle.name,
+          name: resolveLocalizedName(x.muscle as LocalizedLookup, locale),
           role: x.role === "target" ? "target" : "secondary",
         }))
         .sort((a, b) => {
@@ -62,11 +69,11 @@ export function TaxonomyAnatomyPanel({
     return group.group_movement_types
       .map((x) => ({
         code: x.movement_type.code,
-        name: x.movement_type.name,
+        name: resolveLocalizedName(x.movement_type as LocalizedLookup, locale),
         role: "",
       }))
       .sort((a, b) => a.code.localeCompare(b.code));
-  }, [group, relationKind]);
+  }, [group, relationKind, locale]);
 
   const linkedCodes = new Set(linked.map((x) => x.code));
   const q = poolFilter.trim().toLowerCase();
@@ -168,6 +175,9 @@ export function TaxonomyAnatomyPanel({
               } ${g.active === false ? "text-zinc-400" : ""}`}
             >
               <span className="font-mono">{g.code}</span>
+              <span className="ml-1 text-zinc-500">
+                {resolveLocalizedName(g as LocalizedLookup, locale)}
+              </span>
             </button>
           ))}
         </div>
@@ -181,7 +191,9 @@ export function TaxonomyAnatomyPanel({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="font-medium">{group.code}</h3>
-                <p className="text-sm text-zinc-500">{group.name}</p>
+                <p className="text-sm text-zinc-500">
+                  {resolveLocalizedName(group as LocalizedLookup, locale)}
+                </p>
               </div>
               <div className="flex gap-1">
                 <SegButton
@@ -308,8 +320,11 @@ export function TaxonomyAnatomyPanel({
                       }`}
                     >
                       <span className="font-mono text-sm">{item.code}</span>
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        {resolveLocalizedName(item as LocalizedLookup, locale)}
+                      </p>
                       {linkRow?.role && (
-                        <span className="ml-1 text-xs text-zinc-500">{linkRow.role}</span>
+                        <span className="text-xs text-zinc-500">{linkRow.role}</span>
                       )}
                     </button>
                   );

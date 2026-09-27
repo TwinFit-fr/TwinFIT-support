@@ -276,9 +276,10 @@ async function composeXcatExercise(payload) {
 
   const biomech = parseBiomechanicalFields(payload);
   const description = payload.description ? String(payload.description).trim() : null;
+  const localizationRows = buildExerciseLocalizationRows(payload, displayName, description);
   const obj = {
     exo_id: exoId,
-    display_name: displayName,
+    display_name: localizationRows.find((l) => l.locale === 'en')?.display_name || displayName,
     primary_muscle_group_id: ids.mg.id,
     target_muscle_id: ids.targetId,
     movement_type_id: ids.mt.id,
@@ -296,13 +297,7 @@ async function composeXcatExercise(payload) {
     taxonomy_notes: payload.taxonomy_notes || null,
     active: true,
     localizations: {
-      data: [
-        {
-          locale: 'en',
-          display_name: displayName,
-          description,
-        },
-      ],
+      data: localizationRows,
     },
     secondary_muscles: {
       data: ids.secondaryIds.map((muscle_id, i) => ({
@@ -405,7 +400,7 @@ async function listXcatLibraryAdmin() {
         id
         exo_id
         display_name
-        localizations(where: { locale: { _eq: "en" } }, limit: 1) {
+        localizations(order_by: { locale: asc }) {
           locale
           display_name
           description
@@ -572,6 +567,117 @@ const LOOKUP_TABLES = new Set([
   'catalog_logging_modes'
 ]);
 
+const TAXONOMY_LOCALIZATION_TABLES = {
+  catalog_equipment: {
+    locTable: 'catalog_equipment_localizations',
+    fk: 'equipment_id',
+    constraint: 'equipment_localizations_equipment_id_locale_key',
+  },
+  catalog_movement_types: {
+    locTable: 'catalog_movement_type_localizations',
+    fk: 'movement_type_id',
+    constraint: 'movement_type_localizations_movement_type_id_locale_key',
+  },
+  catalog_muscle_groups: {
+    locTable: 'catalog_muscle_group_localizations',
+    fk: 'muscle_group_id',
+    constraint: 'muscle_group_localizations_muscle_group_id_locale_key',
+  },
+  catalog_muscles: {
+    locTable: 'catalog_muscle_localizations',
+    fk: 'muscle_id',
+    constraint: 'muscle_localizations_muscle_id_locale_key',
+  },
+};
+
+function buildExerciseLocalizationRows(payload, displayName, description) {
+  const locs = payload.localizations && typeof payload.localizations === 'object'
+    ? payload.localizations
+    : {};
+  const rows = [];
+  const enName = String(locs.en?.display_name || displayName || '').trim();
+  if (!enName) throw new Error('English display name is required');
+  const enDesc =
+    locs.en?.description != null
+      ? String(locs.en.description).trim() || null
+      : description;
+  rows.push({ locale: 'en', display_name: enName, description: enDesc });
+  for (const locale of ['es', 'fr']) {
+    const name = String(locs[locale]?.display_name || '').trim();
+    if (!name) continue;
+    const desc =
+      locs[locale]?.description != null
+        ? String(locs[locale].description).trim() || null
+        : null;
+    rows.push({ locale, display_name: name, description: desc });
+  }
+  return rows;
+}
+
+async function upsertExerciseLocalizations(exoId, localizations) {
+  const current = await fetchXcatByExoId(exoId);
+  if (!current) throw new Error(`No xcat exercise for exo_id ${exoId}`);
+  const exerciseId = current.id;
+  for (const locale of ['en', 'es', 'fr']) {
+    const entry = localizations?.[locale];
+    const displayName = String(entry?.display_name || '').trim();
+    if (locale !== 'en' && !displayName) continue;
+    if (locale === 'en' && !displayName) {
+      throw new Error('English display name is required');
+    }
+    const description =
+      entry?.description != null ? String(entry.description).trim() || null : null;
+    await staffGql(
+      `mutation($o: catalog_exercise_localizations_insert_input!) {
+        insert_catalog_exercise_localizations_one(
+          object: $o
+          on_conflict: {
+            constraint: exercise_localizations_exercise_id_locale_key
+            update_columns: [display_name, description]
+          }
+        ) { id locale }
+      }`,
+      {
+        o: {
+          exercise_id: exerciseId,
+          locale,
+          display_name: displayName,
+          description,
+        },
+      }
+    );
+  }
+}
+
+async function upsertTaxonomyLocalizations(table, parentId, labels) {
+  const cfg = TAXONOMY_LOCALIZATION_TABLES[table];
+  if (!cfg || !labels || typeof labels !== 'object') return;
+  for (const locale of ['en', 'es', 'fr']) {
+    const displayName = String(labels[locale] || '').trim();
+    if (locale !== 'en' && !displayName) continue;
+    if (locale === 'en' && !displayName) {
+      throw new Error('English label is required');
+    }
+    const object = {
+      [cfg.fk]: parentId,
+      locale,
+      display_name: displayName,
+    };
+    await staffGql(
+      `mutation($o: ${cfg.locTable}_insert_input!) {
+        insert_${cfg.locTable}_one(
+          object: $o
+          on_conflict: {
+            constraint: ${cfg.constraint}
+            update_columns: [display_name]
+          }
+        ) { id locale }
+      }`,
+      { o: object }
+    );
+  }
+}
+
 async function upsertLookup(payload) {
   const table = String(payload.table || '');
   if (!LOOKUP_TABLES.has(table)) throw new Error('Invalid lookup table');
@@ -585,6 +691,14 @@ async function upsertLookup(payload) {
     extra.kind = kind;
   }
   const row = await ensureLookup(table, payload.code, extra);
+  if (TAXONOMY_LOCALIZATION_TABLES[table]) {
+    const enName = String(payload.name || payload.code).replace(/_/g, ' ').trim();
+    await upsertTaxonomyLocalizations(table, row.id, {
+      en: enName,
+      es: payload.labels?.es || '',
+      fr: payload.labels?.fr || '',
+    });
+  }
   if (table === 'catalog_muscles' && payload.muscle_group_code) {
     const g = await ensureLookup('catalog_muscle_groups', payload.muscle_group_code);
     const role = ['target', 'secondary'].includes(payload.role) ? payload.role : 'target';
@@ -686,7 +800,14 @@ async function updateLookup(payload) {
   const id = String(payload.id || '');
   if (!id) throw new Error('id required');
   const set = {};
+  const hasLabels =
+    payload.labels &&
+    typeof payload.labels === 'object' &&
+    TAXONOMY_LOCALIZATION_TABLES[table];
   if (payload.name != null) set.name = String(payload.name).trim();
+  if (hasLabels) {
+    set.name = String(payload.labels.en || payload.name || '').trim();
+  }
   if (payload.active != null) set.active = Boolean(payload.active);
   if (payload.sort_order != null) set.sort_order = Number(payload.sort_order);
   if (table === 'catalog_equipment') {
@@ -699,18 +820,33 @@ async function updateLookup(payload) {
       set.kind = kind;
     }
   }
-  if (!Object.keys(set).length) throw new Error('nothing to update');
+  if (!Object.keys(set).length && !hasLabels) throw new Error('nothing to update');
   const returnFields =
     table === 'catalog_equipment'
       ? '{ id code name active sort_order kind }'
       : '{ id code name active sort_order }';
-  const data = await staffGql(
-    `mutation($id: uuid!, $set: ${table}_set_input!) {
-      update_${table}_by_pk(pk_columns: { id: $id }, _set: $set) ${returnFields}
-    }`,
-    { id, set }
-  );
-  return data[`update_${table}_by_pk`];
+  let row = null;
+  if (Object.keys(set).length) {
+    const data = await staffGql(
+      `mutation($id: uuid!, $set: ${table}_set_input!) {
+        update_${table}_by_pk(pk_columns: { id: $id }, _set: $set) ${returnFields}
+      }`,
+      { id, set }
+    );
+    row = data[`update_${table}_by_pk`];
+  } else {
+    const data = await staffGql(
+      `query($id: uuid!) {
+        ${table}_by_pk(id: $id) ${returnFields}
+      }`,
+      { id }
+    );
+    row = data[`${table}_by_pk`];
+  }
+  if (hasLabels) {
+    await upsertTaxonomyLocalizations(table, id, payload.labels);
+  }
+  return row;
 }
 
 async function setExerciseSupportEquipment(exoId, supportEquipmentId) {
@@ -733,12 +869,22 @@ async function fetchTaxonomyAdmin() {
     query TaxonomyAdmin {
       catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {
         id code name sort_order active
-        group_muscles { role muscle { id code name active } }
-        group_movement_types { movement_type { id code name active } }
+        localizations(order_by: { locale: asc }) { locale display_name }
+        group_muscles { role muscle { id code name active localizations(order_by: { locale: asc }) { locale display_name } } }
+        group_movement_types { movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } } }
       }
-      catalog_muscles(order_by: { code: asc }) { id code name sort_order active }
-      catalog_movement_types(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
-      catalog_equipment(order_by: { sort_order: asc, code: asc }) { id code name sort_order active kind }
+      catalog_muscles(order_by: { code: asc }) {
+        id code name sort_order active
+        localizations(order_by: { locale: asc }) { locale display_name }
+      }
+      catalog_movement_types(order_by: { sort_order: asc, code: asc }) {
+        id code name sort_order active
+        localizations(order_by: { locale: asc }) { locale display_name }
+      }
+      catalog_equipment(order_by: { sort_order: asc, code: asc }) {
+        id code name sort_order active kind
+        localizations(order_by: { locale: asc }) { locale display_name }
+      }
       catalog_variations(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
       catalog_positions(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
       catalog_grips(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
@@ -762,5 +908,7 @@ module.exports = {
   manageRelation,
   updateLookup,
   setExerciseSupportEquipment,
+  upsertExerciseLocalizations,
+  upsertTaxonomyLocalizations,
   fetchTaxonomyAdmin,
 };
