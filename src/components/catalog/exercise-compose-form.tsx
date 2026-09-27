@@ -12,6 +12,11 @@ import {
   withExercisePaths,
   type ExerciseWithPath,
 } from "@/lib/catalog/exercise-path";
+import {
+  CATALOG_LOCALES,
+  emptyLocaleFields,
+  type CatalogLocale,
+} from "@/lib/catalog/locales";
 import { useIsAdmin } from "@/hooks/use-is-staff";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
@@ -35,7 +40,11 @@ type CatalogExerciseRow = {
   variation?: { code: string };
   load_modality?: { code: string };
   target_muscle?: { code: string };
-  localizations?: Array<{ description?: string | null }>;
+  localizations?: Array<{
+    locale: string;
+    display_name?: string | null;
+    description?: string | null;
+  }>;
 };
 
 export type ExerciseFormState = {
@@ -50,7 +59,10 @@ export type ExerciseFormState = {
   load_modality_code: string;
   target_muscle_code: string;
   taxonomy_status: string;
-  description: string;
+  localizations: Record<
+    CatalogLocale,
+    { display_name: string; description: string }
+  >;
 };
 
 const DEFAULT_FORM: ExerciseFormState = {
@@ -65,7 +77,7 @@ const DEFAULT_FORM: ExerciseFormState = {
   load_modality_code: "",
   target_muscle_code: "",
   taxonomy_status: "migrated",
-  description: "",
+  localizations: emptyLocaleFields(),
 };
 
 type ExerciseComposeFormProps = {
@@ -114,6 +126,7 @@ export function ExerciseComposeForm({
   const [nextExoId, setNextExoId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [localeTab, setLocaleTab] = useState<CatalogLocale>("en");
 
   const isCreate = !editExoId;
   const isCopy = isCreate && copyFromExoId != null;
@@ -220,7 +233,7 @@ export function ExerciseComposeForm({
       return { warnings: [] as string[], canCreate: true };
     }
 
-    const name = form.display_name.trim();
+    const name = form.localizations.en.display_name.trim();
     const nameKey = name.toLowerCase();
     const warnings: string[] = [];
 
@@ -273,6 +286,9 @@ export function ExerciseComposeForm({
     try {
       const payload: Record<string, unknown> = {
         ...form,
+        display_name: form.localizations.en.display_name.trim(),
+        description: form.localizations.en.description.trim() || null,
+        localizations: form.localizations,
         secondary_muscle_codes: [],
       };
       if (form.load_modality_code) {
@@ -340,14 +356,63 @@ export function ExerciseComposeForm({
         </ul>
       )}
       <Card className="grid gap-4 md:grid-cols-2">
-        <Field label="Display name">
-          <Input
-            ref={nameInputRef}
-            value={form.display_name}
-            onChange={(e) => setForm({ ...form, display_name: e.target.value })}
-            required
-          />
-        </Field>
+        <div className="md:col-span-2 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {CATALOG_LOCALES.map((loc) => (
+              <button
+                key={loc}
+                type="button"
+                onClick={() => setLocaleTab(loc)}
+                className={`rounded-md px-3 py-1.5 text-sm ${
+                  localeTab === loc
+                    ? "bg-zinc-900 text-white"
+                    : "border border-zinc-300 hover:bg-zinc-50"
+                }`}
+              >
+                {loc.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <Field label={`Display name (${localeTab.toUpperCase()})`}>
+            <Input
+              ref={localeTab === "en" ? nameInputRef : undefined}
+              value={form.localizations[localeTab].display_name}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  display_name:
+                    localeTab === "en" ? e.target.value : form.display_name,
+                  localizations: {
+                    ...form.localizations,
+                    [localeTab]: {
+                      ...form.localizations[localeTab],
+                      display_name: e.target.value,
+                    },
+                  },
+                })
+              }
+              required={localeTab === "en"}
+            />
+          </Field>
+          <Field label={`Description (${localeTab.toUpperCase()})`}>
+            <textarea
+              className="min-h-24 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              value={form.localizations[localeTab].description}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  localizations: {
+                    ...form.localizations,
+                    [localeTab]: {
+                      ...form.localizations[localeTab],
+                      description: e.target.value,
+                    },
+                  },
+                })
+              }
+            />
+          </Field>
+        </div>
         <Field label="Taxonomy status">
           <select
             className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
@@ -415,13 +480,6 @@ export function ExerciseComposeForm({
           options={lookups.muscles}
           onChange={(value) => setForm({ ...form, target_muscle_code: value })}
         />
-        <Field label="Description (EN)" className="md:col-span-2">
-          <textarea
-            className="min-h-24 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-          />
-        </Field>
       </Card>
       {message && <p className="text-sm text-red-600">{message}</p>}
       <div className="flex flex-wrap gap-2">
@@ -442,8 +500,21 @@ export function ExerciseComposeForm({
 }
 
 function formFromExercise(ex: CatalogExerciseRow): ExerciseFormState {
+  const localizations = emptyLocaleFields();
+  for (const loc of ex.localizations ?? []) {
+    const key = loc.locale as CatalogLocale;
+    if (key in localizations) {
+      localizations[key] = {
+        display_name: loc.display_name ?? "",
+        description: loc.description ?? "",
+      };
+    }
+  }
+  if (!localizations.en.display_name) {
+    localizations.en.display_name = ex.display_name;
+  }
   return {
-    display_name: ex.display_name,
+    display_name: localizations.en.display_name || ex.display_name,
     primary_muscle_group_code: ex.primary_muscle_group?.code ?? "CHEST",
     movement_type_code: ex.movement_type?.code ?? "PRESS",
     equipment_code: ex.equipment?.code ?? "BARBELL",
@@ -454,7 +525,7 @@ function formFromExercise(ex: CatalogExerciseRow): ExerciseFormState {
     load_modality_code: ex.load_modality?.code ?? "",
     target_muscle_code: ex.target_muscle?.code ?? "",
     taxonomy_status: ex.taxonomy_status,
-    description: ex.localizations?.[0]?.description ?? "",
+    localizations,
   };
 }
 

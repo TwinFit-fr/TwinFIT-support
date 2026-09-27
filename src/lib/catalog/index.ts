@@ -17,6 +17,8 @@ export {
   manageRelation,
   updateLookup,
   setExerciseSupportEquipment,
+  upsertExerciseLocalizations,
+  upsertTaxonomyLocalizations,
   resolveSupportEquipmentId,
   fetchTaxonomyAdmin,
 } from "./crud.js";

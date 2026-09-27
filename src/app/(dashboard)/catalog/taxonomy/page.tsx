@@ -5,6 +5,7 @@ import { TaxonomyAnatomyPanel } from "@/components/catalog/taxonomy/taxonomy-ana
 import { TaxonomyLookupTable } from "@/components/catalog/taxonomy/taxonomy-lookup-table";
 import { TaxonomySubnav } from "@/components/catalog/taxonomy/taxonomy-subnav";
 import type { LookupRowFull, TaxonomyData, TaxonomyTabId } from "@/components/catalog/taxonomy/types";
+import { CATALOG_LOCALES, type CatalogLocale } from "@/lib/catalog/locales";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
 const LOOKUP_TABLES: TaxonomyTabId[] = [
@@ -25,6 +26,7 @@ export default function CatalogTaxonomyPage() {
   const [data, setData] = useState<TaxonomyData | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [locale, setLocale] = useState<CatalogLocale>("en");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,7 +44,13 @@ export default function CatalogTaxonomyPage() {
     void load();
   }, [load]);
 
-  async function addEntry(table: string, code: string, name: string, kind?: string) {
+  async function addEntry(
+    table: string,
+    code: string,
+    name: string,
+    kind?: string,
+    labels?: Record<CatalogLocale, string>,
+  ) {
     setMessage(null);
     try {
       await staffFetch("/api/catalog/taxonomy", {
@@ -51,6 +59,7 @@ export default function CatalogTaxonomyPage() {
           table,
           code,
           name,
+          ...(labels ? { labels } : {}),
           ...(table === "catalog_equipment" && kind
             ? { equipment_kind: kind }
             : {}),
@@ -71,6 +80,7 @@ export default function CatalogTaxonomyPage() {
       sort_order: number;
       active: boolean;
       kind?: string;
+      labels?: Record<CatalogLocale, string>;
     },
   ) {
     setMessage(null);
@@ -84,6 +94,7 @@ export default function CatalogTaxonomyPage() {
           name: fields.name,
           sort_order: fields.sort_order,
           active: fields.active,
+          ...(fields.labels ? { labels: fields.labels } : {}),
           ...(table === "catalog_equipment" && fields.kind
             ? { equipment_kind: fields.kind }
             : {}),
@@ -165,13 +176,30 @@ export default function CatalogTaxonomyPage() {
         </p>
       </div>
 
-      <TaxonomySubnav active={tab} onChange={setTab} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <TaxonomySubnav active={tab} onChange={setTab} />
+        <label className="flex items-center gap-2 text-sm">
+          <span className="font-medium text-zinc-700">Labels</span>
+          <select
+            className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as CatalogLocale)}
+          >
+            {CATALOG_LOCALES.map((loc) => (
+              <option key={loc} value={loc}>
+                {loc.toUpperCase()}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       {loading && <p className="text-sm text-zinc-500">Loading taxonomy…</p>}
       {message && <p className="text-sm text-zinc-700">{message}</p>}
 
       {data && tab === "anatomy" && (
         <TaxonomyAnatomyPanel
+          locale={locale}
           groups={data.catalog_muscle_groups}
           muscles={data.catalog_muscles}
           movements={data.catalog_movement_types}
@@ -191,7 +219,7 @@ export default function CatalogTaxonomyPage() {
         <TaxonomyLookupTable
           table={tab}
           rows={lookupRows}
-          onAdd={(code, name, kind) => addEntry(tab, code, name, kind)}
+          onAdd={(code, name, kind, labels) => addEntry(tab, code, name, kind, labels)}
           onSave={(id, fields) => saveRow(tab, id, fields)}
         />
       )}

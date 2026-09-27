@@ -4,6 +4,7 @@ import {
   bindCatalogStaffToken,
   resolveSupportEquipmentId,
   setExerciseSupportEquipment,
+  upsertExerciseLocalizations,
 } from "@/lib/catalog";
 
 export async function POST(request: Request) {
@@ -18,6 +19,9 @@ export async function POST(request: Request) {
     bindCatalogStaffToken(token);
     const supportEquipmentId = await resolveSupportEquipmentId(body);
     await setExerciseSupportEquipment(body.exo_id, supportEquipmentId);
+    if (body.localizations) {
+      await upsertExerciseLocalizations(body.exo_id, body.localizations);
+    }
 
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {
