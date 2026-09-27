@@ -5,13 +5,27 @@ import { Button, Card, Input } from "@/components/ui/primitives";
 import type { LookupRowFull, TaxonomyTabId } from "./types";
 import { TAXONOMY_TABS } from "./types";
 
+type EquipmentKind = "LOAD" | "SUPPORT";
+
+type DraftFields = {
+  name: string;
+  sort_order: number;
+  active: boolean;
+  kind?: EquipmentKind;
+};
+
 type TaxonomyLookupTableProps = {
   table: TaxonomyTabId;
   rows: LookupRowFull[];
-  onAdd: (code: string, name: string) => Promise<void>;
+  onAdd: (code: string, name: string, kind?: EquipmentKind) => Promise<void>;
   onSave: (
     id: string,
-    fields: { name: string; sort_order: number; active: boolean },
+    fields: {
+      name: string;
+      sort_order: number;
+      active: boolean;
+      kind?: EquipmentKind;
+    },
   ) => Promise<void>;
 };
 
@@ -21,13 +35,13 @@ export function TaxonomyLookupTable({
   onAdd,
   onSave,
 }: TaxonomyLookupTableProps) {
+  const isEquipment = table === "catalog_equipment";
   const [filter, setFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
-  const [drafts, setDrafts] = useState<
-    Record<string, { name: string; sort_order: number; active: boolean }>
-  >({});
+  const [newKind, setNewKind] = useState<EquipmentKind>("LOAD");
+  const [drafts, setDrafts] = useState<Record<string, DraftFields>>({});
 
   const meta = TAXONOMY_TABS.find((t) => t.id === table);
   const q = filter.trim().toLowerCase();
@@ -38,23 +52,26 @@ export function TaxonomyLookupTable({
         (r) =>
           !q ||
           r.code.toLowerCase().includes(q) ||
-          (r.name || "").toLowerCase().includes(q),
+          (r.name || "").toLowerCase().includes(q) ||
+          (r.kind || "").toLowerCase().includes(q),
       ),
     [rows, q],
   );
 
-  function getDraft(row: LookupRowFull) {
-    return drafts[row.id] ?? {
-      name: row.name ?? "",
-      sort_order: Number(row.sort_order) || 0,
-      active: row.active !== false,
-    };
+  function getDraft(row: LookupRowFull): DraftFields {
+    return (
+      drafts[row.id] ?? {
+        name: row.name ?? "",
+        sort_order: Number(row.sort_order) || 0,
+        active: row.active !== false,
+        ...(isEquipment
+          ? { kind: (row.kind === "SUPPORT" ? "SUPPORT" : "LOAD") as EquipmentKind }
+          : {}),
+      }
+    );
   }
 
-  function setDraft(
-    id: string,
-    patch: Partial<{ name: string; sort_order: number; active: boolean }>,
-  ) {
+  function setDraft(id: string, patch: Partial<DraftFields>) {
     const row = rows.find((r) => r.id === id);
     if (!row) return;
     const current = getDraft(row);
@@ -68,6 +85,7 @@ export function TaxonomyLookupTable({
           <h3 className="font-medium">{meta?.label ?? table}</h3>
           <p className="text-sm text-zinc-500">
             {filtered.length} / {rows.length} items
+            {isEquipment && " · LOAD = implement · SUPPORT = station"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -87,12 +105,27 @@ export function TaxonomyLookupTable({
         <div className="mt-4 flex flex-wrap gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
           <Input placeholder="CODE" value={newCode} onChange={(e) => setNewCode(e.target.value)} />
           <Input placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} />
+          {isEquipment && (
+            <select
+              className="rounded-md border border-zinc-300 px-2 py-1 text-sm"
+              value={newKind}
+              onChange={(e) => setNewKind(e.target.value as EquipmentKind)}
+            >
+              <option value="LOAD">LOAD</option>
+              <option value="SUPPORT">SUPPORT</option>
+            </select>
+          )}
           <Button
             type="button"
             onClick={() => {
-              void onAdd(newCode, newName || newCode).then(() => {
+              void onAdd(
+                newCode,
+                newName || newCode,
+                isEquipment ? newKind : undefined,
+              ).then(() => {
                 setNewCode("");
                 setNewName("");
+                setNewKind("LOAD");
                 setShowAdd(false);
               });
             }}
@@ -111,6 +144,7 @@ export function TaxonomyLookupTable({
             <tr>
               <th className="px-3 py-2">Code</th>
               <th className="px-3 py-2">Name</th>
+              {isEquipment && <th className="px-3 py-2">Kind</th>}
               <th className="px-3 py-2">Sort</th>
               <th className="px-3 py-2">Active</th>
               <th className="px-3 py-2" />
@@ -131,6 +165,20 @@ export function TaxonomyLookupTable({
                       onChange={(e) => setDraft(row.id, { name: e.target.value })}
                     />
                   </td>
+                  {isEquipment && (
+                    <td className="px-3 py-2">
+                      <select
+                        className="rounded-md border border-zinc-300 px-2 py-1 text-sm"
+                        value={draft.kind ?? "LOAD"}
+                        onChange={(e) =>
+                          setDraft(row.id, { kind: e.target.value as EquipmentKind })
+                        }
+                      >
+                        <option value="LOAD">LOAD</option>
+                        <option value="SUPPORT">SUPPORT</option>
+                      </select>
+                    </td>
+                  )}
                   <td className="px-3 py-2">
                     <input
                       type="number"

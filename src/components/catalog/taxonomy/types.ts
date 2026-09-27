@@ -29,6 +29,7 @@ export type LookupRowFull = {
   name: string;
   sort_order?: number;
   active?: boolean;
+  kind?: string;
 };
 
 export type MuscleGroupRow = {

@@ -15,7 +15,7 @@ import {
 import { useIsAdmin } from "@/hooks/use-is-staff";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
-export type LookupRow = { code: string; name: string };
+export type LookupRow = { code: string; name: string; kind?: string };
 
 type MuscleGroup = {
   code: string;
@@ -28,7 +28,8 @@ type CatalogExerciseRow = {
   taxonomy_status: string;
   primary_muscle_group?: { code: string };
   movement_type?: { code: string };
-  equipment?: { code: string };
+  equipment?: { code: string; kind?: string };
+  support_equipment?: { code: string; kind?: string } | null;
   position?: { code: string };
   grip?: { code: string };
   variation?: { code: string };
@@ -42,6 +43,7 @@ export type ExerciseFormState = {
   primary_muscle_group_code: string;
   movement_type_code: string;
   equipment_code: string;
+  support_equipment_code: string;
   position_code: string;
   grip_code: string;
   variation_code: string;
@@ -56,6 +58,7 @@ const DEFAULT_FORM: ExerciseFormState = {
   primary_muscle_group_code: "CHEST",
   movement_type_code: "PRESS",
   equipment_code: "BARBELL",
+  support_equipment_code: "",
   position_code: "NEUTRAL",
   grip_code: "STANDARD",
   variation_code: "STANDARD",
@@ -88,6 +91,7 @@ export function ExerciseComposeForm({
     muscle_groups: LookupRow[];
     movement_types: LookupRow[];
     equipment: LookupRow[];
+    support_equipment: LookupRow[];
     positions: LookupRow[];
     grips: LookupRow[];
     variations: LookupRow[];
@@ -97,6 +101,7 @@ export function ExerciseComposeForm({
     muscle_groups: [],
     movement_types: [],
     equipment: [],
+    support_equipment: [],
     positions: [],
     grips: [],
     variations: [],
@@ -139,10 +144,12 @@ export function ExerciseComposeForm({
       const exercises = withExercisePaths(libRes.data.catalog_exercises ?? []);
       setAllExercises(exercises);
 
+      const allEquipment = libRes.data.catalog_equipment ?? [];
       setLookups({
         muscle_groups: libRes.data.catalog_muscle_groups ?? [],
         movement_types: libRes.data.catalog_movement_types ?? [],
-        equipment: libRes.data.catalog_equipment ?? [],
+        equipment: allEquipment.filter((row) => row.kind !== "SUPPORT"),
+        support_equipment: allEquipment.filter((row) => row.kind === "SUPPORT"),
         positions: taxRes.data.catalog_positions ?? [],
         grips: taxRes.data.catalog_grips ?? [],
         variations: taxRes.data.catalog_variations ?? [],
@@ -370,6 +377,14 @@ export function ExerciseComposeForm({
           onChange={(value) => setForm({ ...form, equipment_code: value })}
         />
         <LookupSelect
+          label="Support (optional)"
+          value={form.support_equipment_code}
+          options={lookups.support_equipment}
+          onChange={(value) => setForm({ ...form, support_equipment_code: value })}
+          allowEmpty
+          emptyLabel="— (none)"
+        />
+        <LookupSelect
           label="Position"
           value={form.position_code}
           options={lookups.positions}
@@ -432,6 +447,7 @@ function formFromExercise(ex: CatalogExerciseRow): ExerciseFormState {
     primary_muscle_group_code: ex.primary_muscle_group?.code ?? "CHEST",
     movement_type_code: ex.movement_type?.code ?? "PRESS",
     equipment_code: ex.equipment?.code ?? "BARBELL",
+    support_equipment_code: ex.support_equipment?.code ?? "",
     position_code: ex.position?.code ?? "NEUTRAL",
     grip_code: ex.grip?.code ?? "STANDARD",
     variation_code: ex.variation?.code ?? "STANDARD",
@@ -465,12 +481,14 @@ function LookupSelect({
   options,
   onChange,
   allowEmpty,
+  emptyLabel,
 }: {
   label: string;
   value: string;
   options: LookupRow[];
   onChange: (value: string) => void;
   allowEmpty?: boolean;
+  emptyLabel?: string;
 }) {
   return (
     <Field label={label}>
@@ -479,7 +497,7 @@ function LookupSelect({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
-        {allowEmpty && <option value="">— (infer)</option>}
+        {allowEmpty && <option value="">{emptyLabel ?? "— (infer)"}</option>}
         {options.map((opt) => (
           <option key={opt.code} value={opt.code}>
             {opt.code} — {opt.name}

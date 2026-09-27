@@ -20,6 +20,8 @@ import {
 } from "@/lib/catalog/exercise-path";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
+type EquipmentLookupRow = LookupRow & { kind?: string };
+
 type CatalogExercise = {
   exo_id: number;
   display_name: string;
@@ -27,6 +29,7 @@ type CatalogExercise = {
   primary_muscle_group?: { code: string };
   movement_type?: { code: string };
   equipment?: { code: string };
+  support_equipment?: { code: string } | null;
   position?: { code: string };
   grip?: { code: string };
   variation?: { code: string };
@@ -36,7 +39,7 @@ type CatalogExercise = {
 type TaxonomyData = {
   catalog_muscle_groups: LookupRow[];
   catalog_movement_types: LookupRow[];
-  catalog_equipment: LookupRow[];
+  catalog_equipment: EquipmentLookupRow[];
   catalog_positions: LookupRow[];
   catalog_grips: LookupRow[];
   catalog_variations: LookupRow[];
@@ -129,7 +132,9 @@ export default function CatalogPage() {
     return {
       catalog_muscle_groups: taxonomy.catalog_muscle_groups,
       catalog_movement_types: taxonomy.catalog_movement_types,
-      catalog_equipment: taxonomy.catalog_equipment,
+      catalog_equipment: taxonomy.catalog_equipment.filter(
+        (row) => row.kind !== "SUPPORT",
+      ),
       catalog_positions: taxonomy.catalog_positions,
       catalog_grips: taxonomy.catalog_grips,
       catalog_variations: taxonomy.catalog_variations,
@@ -216,6 +221,15 @@ export default function CatalogPage() {
     for (const raw of values) {
       const v = raw.trim().toUpperCase().replace(/\s+/g, " ");
       if (!v || seen.has(v)) continue;
+      if (level.key === "equipment") {
+        const existing = taxonomy.catalog_equipment.find((row) => row.code === v);
+        if (existing?.kind === "SUPPORT") {
+          setStatus(
+            `${v} is SUPPORT equipment and cannot be used as a load implement in the path`,
+          );
+          return;
+        }
+      }
       seen.add(v);
       cleaned.push(v);
       nextExtras = rememberExtra(nextExtras, prefixPartsForExtra, v);
