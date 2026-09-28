@@ -19,6 +19,7 @@ const topNav: NavItem[] = [
   { href: "/", label: "Home", match: "exact" },
   { href: "/support", label: "Support" },
   { href: "/catalog", label: "Catalog" },
+  { href: "/images", label: "Images" },
   { href: "/lab", label: "Lab" },
 ];
 
@@ -26,6 +27,11 @@ const catalogSubNav: NavItem[] = [
   { href: "/catalog", label: "Exercises", match: "exact" },
   { href: "/catalog/compose", label: "New exercise" },
   { href: "/catalog/taxonomy", label: "Taxonomy" },
+];
+
+const imagesSubNav: NavItem[] = [
+  { href: "/images", label: "Board", match: "exact" },
+  { href: "/images/styles", label: "Styles" },
 ];
 
 const labSubNav: NavItem[] = [
@@ -81,9 +87,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   const subNav = pathname.startsWith("/catalog")
     ? catalogSubNav
-    : pathname.startsWith("/lab")
-      ? labSubNav
-      : null;
+    : pathname.startsWith("/images")
+      ? imagesSubNav
+      : pathname.startsWith("/lab")
+        ? labSubNav
+        : null;
 
   return (
     <ToastProvider>
