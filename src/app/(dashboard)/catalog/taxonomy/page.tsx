@@ -11,6 +11,7 @@ import { useStaffFetch } from "@/hooks/use-staff-fetch";
 const LOOKUP_TABLES: TaxonomyTabId[] = [
   "catalog_movement_types",
   "catalog_equipment",
+  "catalog_support_equipment",
   "catalog_variations",
   "catalog_positions",
   "catalog_grips",
@@ -48,7 +49,6 @@ export default function CatalogTaxonomyPage() {
     table: string,
     code: string,
     name: string,
-    kind?: string,
     labels?: Record<CatalogLocale, string>,
   ) {
     setMessage(null);
@@ -60,9 +60,6 @@ export default function CatalogTaxonomyPage() {
           code,
           name,
           ...(labels ? { labels } : {}),
-          ...(table === "catalog_equipment" && kind
-            ? { equipment_kind: kind }
-            : {}),
         }),
       });
       setMessage(`Added ${code}`);
@@ -79,7 +76,6 @@ export default function CatalogTaxonomyPage() {
       name: string;
       sort_order: number;
       active: boolean;
-      kind?: string;
       labels?: Record<CatalogLocale, string>;
     },
   ) {
@@ -95,9 +91,6 @@ export default function CatalogTaxonomyPage() {
           sort_order: fields.sort_order,
           active: fields.active,
           ...(fields.labels ? { labels: fields.labels } : {}),
-          ...(table === "catalog_equipment" && fields.kind
-            ? { equipment_kind: fields.kind }
-            : {}),
         }),
       });
       setMessage("Saved");
@@ -204,13 +197,13 @@ export default function CatalogTaxonomyPage() {
           muscles={data.catalog_muscles}
           movements={data.catalog_movement_types}
           onAddGroup={(code) =>
-            addEntry("catalog_muscle_groups", code, code.replace(/_/g, " "))
+            addEntry("catalog_muscle_groups", code, "")
           }
           onApplyRelations={applyRelations}
           onAddPoolEntry={async (kind, code) => {
             const table =
               kind === "muscle" ? "catalog_muscles" : "catalog_movement_types";
-            await addEntry(table, code, code.replace(/_/g, " "));
+            await addEntry(table, code, "");
           }}
         />
       )}
@@ -219,7 +212,7 @@ export default function CatalogTaxonomyPage() {
         <TaxonomyLookupTable
           table={tab}
           rows={lookupRows}
-          onAdd={(code, name, kind, labels) => addEntry(tab, code, name, kind, labels)}
+          onAdd={(code, name, labels) => addEntry(tab, code, name, labels)}
           onSave={(id, fields) => saveRow(tab, id, fields)}
         />
       )}

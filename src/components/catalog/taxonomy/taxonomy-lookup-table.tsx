@@ -11,13 +11,10 @@ import {
 import type { LookupRowFull, TaxonomyTabId } from "./types";
 import { LOCALIZED_TAXONOMY_TABLES, TAXONOMY_TABS } from "./types";
 
-type EquipmentKind = "LOAD" | "SUPPORT";
-
 type DraftFields = {
   name: string;
   sort_order: number;
   active: boolean;
-  kind?: EquipmentKind;
   labels: Record<CatalogLocale, string>;
 };
 
@@ -27,7 +24,6 @@ type TaxonomyLookupTableProps = {
   onAdd: (
     code: string,
     name: string,
-    kind?: EquipmentKind,
     labels?: Record<CatalogLocale, string>,
   ) => Promise<void>;
   onSave: (
@@ -36,10 +32,14 @@ type TaxonomyLookupTableProps = {
       name: string;
       sort_order: number;
       active: boolean;
-      kind?: EquipmentKind;
       labels?: Record<CatalogLocale, string>;
     },
   ) => Promise<void>;
+};
+
+const TABLE_HINTS: Partial<Record<TaxonomyTabId, string>> = {
+  catalog_equipment: "load implement (NONE = bodyweight)",
+  catalog_support_equipment: "station / auxiliary (not the load)",
 };
 
 function labelsFromRow(row: LookupRowFull): Record<CatalogLocale, string> {
@@ -60,13 +60,11 @@ export function TaxonomyLookupTable({
   onAdd,
   onSave,
 }: TaxonomyLookupTableProps) {
-  const isEquipment = table === "catalog_equipment";
   const isLocalized = LOCALIZED_TAXONOMY_TABLES.has(table);
   const [filter, setFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newCode, setNewCode] = useState("");
   const [newLabels, setNewLabels] = useState(emptyLocaleLabels());
-  const [newKind, setNewKind] = useState<EquipmentKind>("LOAD");
   const [drafts, setDrafts] = useState<Record<string, DraftFields>>({});
 
   const meta = TAXONOMY_TABS.find((t) => t.id === table);
@@ -78,7 +76,6 @@ export function TaxonomyLookupTable({
         if (!q) return true;
         if (r.code.toLowerCase().includes(q)) return true;
         if ((r.name || "").toLowerCase().includes(q)) return true;
-        if ((r.kind || "").toLowerCase().includes(q)) return true;
         return (r.localizations ?? []).some((loc) =>
           (loc.display_name || "").toLowerCase().includes(q),
         );
@@ -94,9 +91,6 @@ export function TaxonomyLookupTable({
         sort_order: Number(row.sort_order) || 0,
         active: row.active !== false,
         labels,
-        ...(isEquipment
-          ? { kind: (row.kind === "SUPPORT" ? "SUPPORT" : "LOAD") as EquipmentKind }
-          : {}),
       }
     );
   }
@@ -126,7 +120,7 @@ export function TaxonomyLookupTable({
           <h3 className="font-medium">{meta?.label ?? table}</h3>
           <p className="text-sm text-zinc-500">
             {filtered.length} / {rows.length} items
-            {isEquipment && " · LOAD = implement · SUPPORT = station"}
+            {TABLE_HINTS[table] && ` · ${TABLE_HINTS[table]}`}
             {isLocalized && " · edit EN / ES / FR labels"}
           </p>
         </div>
@@ -168,30 +162,19 @@ export function TaxonomyLookupTable({
               onChange={(e) => setNewLabels({ ...newLabels, en: e.target.value })}
             />
           )}
-          {isEquipment && (
-            <select
-              className="rounded-md border border-zinc-300 px-2 py-1 text-sm"
-              value={newKind}
-              onChange={(e) => setNewKind(e.target.value as EquipmentKind)}
-            >
-              <option value="LOAD">LOAD</option>
-              <option value="SUPPORT">SUPPORT</option>
-            </select>
-          )}
           <div className="flex gap-2">
             <Button
               type="button"
               onClick={() => {
-                const enName = newLabels.en.trim() || newCode.replace(/_/g, " ");
+                // Empty name: the server derives a Title Case label from the code.
+                const enName = newLabels.en.trim();
                 void onAdd(
                   newCode,
                   enName,
-                  isEquipment ? newKind : undefined,
                   isLocalized ? { ...newLabels, en: enName } : undefined,
                 ).then(() => {
                   setNewCode("");
                   setNewLabels(emptyLocaleLabels());
-                  setNewKind("LOAD");
                   setShowAdd(false);
                 });
               }}
@@ -219,7 +202,6 @@ export function TaxonomyLookupTable({
               ) : (
                 <th className="px-3 py-2">Name</th>
               )}
-              {isEquipment && <th className="px-3 py-2">Kind</th>}
               <th className="px-3 py-2">Sort</th>
               <th className="px-3 py-2">Active</th>
               <th className="px-3 py-2" />
@@ -252,20 +234,6 @@ export function TaxonomyLookupTable({
                       />
                     </td>
                   )}
-                  {isEquipment && (
-                    <td className="px-3 py-2">
-                      <select
-                        className="rounded-md border border-zinc-300 px-2 py-1 text-sm"
-                        value={draft.kind ?? "LOAD"}
-                        onChange={(e) =>
-                          setDraft(row.id, { kind: e.target.value as EquipmentKind })
-                        }
-                      >
-                        <option value="LOAD">LOAD</option>
-                        <option value="SUPPORT">SUPPORT</option>
-                      </select>
-                    </td>
-                  )}
                   <td className="px-3 py-2">
                     <input
                       type="number"
@@ -295,7 +263,6 @@ export function TaxonomyLookupTable({
                           name: draft.labels.en || draft.name,
                           sort_order: draft.sort_order,
                           active: draft.active,
-                          kind: draft.kind,
                           labels: isLocalized ? draft.labels : undefined,
                         })
                       }

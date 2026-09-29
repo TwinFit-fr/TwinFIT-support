@@ -4,6 +4,7 @@ export type TaxonomyTabId =
   | "anatomy"
   | "catalog_movement_types"
   | "catalog_equipment"
+  | "catalog_support_equipment"
   | "catalog_variations"
   | "catalog_positions"
   | "catalog_grips"
@@ -16,6 +17,7 @@ export const TAXONOMY_TABS: Array<{ id: TaxonomyTabId; label: string }> = [
   { id: "anatomy", label: "Anatomy" },
   { id: "catalog_movement_types", label: "Movements" },
   { id: "catalog_equipment", label: "Equipment" },
+  { id: "catalog_support_equipment", label: "Support" },
   { id: "catalog_variations", label: "Variations" },
   { id: "catalog_positions", label: "Positions" },
   { id: "catalog_grips", label: "Grips" },
@@ -27,6 +29,7 @@ export const TAXONOMY_TABS: Array<{ id: TaxonomyTabId; label: string }> = [
 
 export const LOCALIZED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
   "catalog_equipment",
+  "catalog_support_equipment",
   "catalog_movement_types",
   "catalog_muscles",
   "catalog_muscle_groups",
@@ -38,7 +41,6 @@ export type LookupRowFull = {
   name: string;
   sort_order?: number;
   active?: boolean;
-  kind?: string;
   localizations?: LocalizationRow[];
 };
 
@@ -74,6 +76,7 @@ export type TaxonomyData = {
   catalog_muscles: LookupRowFull[];
   catalog_movement_types: LookupRowFull[];
   catalog_equipment: LookupRowFull[];
+  catalog_support_equipment: LookupRowFull[];
   catalog_variations: LookupRowFull[];
   catalog_positions: LookupRowFull[];
   catalog_grips: LookupRowFull[];

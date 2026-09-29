@@ -11,6 +11,10 @@ export function mapAuthErrorMessage(raw: string | undefined | null): string {
   if (lower.includes("email") && lower.includes("not verified")) {
     return "Email not verified.";
   }
+  // Email OTP: Nhost reports a wrong or expired code as "Invalid ticket".
+  if (lower.includes("ticket") || lower.includes("otp")) {
+    return "Invalid or expired code.";
+  }
   if (lower.includes("rate limit") || lower.includes("too many")) {
     return "Too many attempts. Try again later.";
   }

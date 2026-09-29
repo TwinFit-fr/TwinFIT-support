@@ -121,7 +121,7 @@ export function CommandMenu({
       {
         id: "nav-taxonomy",
         title: "Taxonomy & Lookups",
-        subtitle: "Manage muscle groups, equipment, and movement types",
+        subtitle: "Manage muscle groups, equipment, support equipment and movement types",
         category: "Navigation",
         icon: <Layers className="h-4 w-4 text-zinc-500" />,
         perform: () => router.push("/catalog/taxonomy"),

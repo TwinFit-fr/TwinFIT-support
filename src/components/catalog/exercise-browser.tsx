@@ -6,6 +6,8 @@ import {
   filterExercisesForBrowser,
   filtersToCreateSelection,
   groupExercises,
+  SUPPORT_FILTER_KEY,
+  SUPPORT_FILTER_NONE,
   type AxisFilters,
 } from "@/lib/catalog/catalog-browser";
 import {
@@ -133,12 +135,7 @@ export function ExerciseBrowser({
 
         <div className="flex flex-wrap gap-3">
           {CATALOG_LEVELS.filter((l) => l.key !== groupByKey).map((level) => {
-            const tableRows =
-              level.key === "equipment"
-                ? (lookups[level.table] ?? []).filter(
-                    (r) => (r as { kind?: string }).kind !== "SUPPORT",
-                  )
-                : lookups[level.table] ?? [];
+            const tableRows = lookups[level.table] ?? [];
             return (
               <label key={level.key} className="flex min-w-[140px] flex-col gap-1 text-xs">
                 <span className="font-medium text-zinc-600">{level.label}</span>
@@ -157,6 +154,22 @@ export function ExerciseBrowser({
               </label>
             );
           })}
+          <label className="flex min-w-[140px] flex-col gap-1 text-xs">
+            <span className="font-medium text-zinc-600">Support</span>
+            <select
+              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+              value={filters[SUPPORT_FILTER_KEY] ?? ""}
+              onChange={(e) => setFilter(SUPPORT_FILTER_KEY, e.target.value)}
+            >
+              <option value="">All</option>
+              <option value={SUPPORT_FILTER_NONE}>None</option>
+              {(lookups.catalog_support_equipment ?? []).map((row) => (
+                <option key={row.code} value={row.code}>
+                  {row.code} — {resolveLocalizedName(row as LocalizedLookup, locale)}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </Card>
 
