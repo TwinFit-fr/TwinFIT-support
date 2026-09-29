@@ -13,6 +13,7 @@ import {
   Home,
   ArrowRight,
   X,
+  Image,
 } from "lucide-react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
@@ -124,6 +125,30 @@ export function CommandMenu({
         category: "Navigation",
         icon: <Layers className="h-4 w-4 text-zinc-500" />,
         perform: () => router.push("/catalog/taxonomy"),
+      },
+      {
+        id: "nav-images",
+        title: "Catalog Images",
+        subtitle: "Generate frames and assign GIF positions",
+        category: "Navigation",
+        icon: <Image className="h-4 w-4 text-zinc-500" />,
+        perform: () => router.push("/images"),
+      },
+      {
+        id: "nav-images-prompts",
+        title: "Image Prompts",
+        subtitle: "Edit system and per-position prompt templates",
+        category: "Navigation",
+        icon: <Image className="h-4 w-4 text-zinc-500" />,
+        perform: () => router.push("/images/prompts"),
+      },
+      {
+        id: "nav-images-settings",
+        title: "Image Settings",
+        subtitle: "Model, size, background and format for generation",
+        category: "Navigation",
+        icon: <Image className="h-4 w-4 text-zinc-500" />,
+        perform: () => router.push("/images/settings"),
       },
       {
         id: "nav-lab-stats",
