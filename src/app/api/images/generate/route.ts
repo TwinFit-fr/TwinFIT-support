@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import { editImage, generateImage } from "@/lib/images/openai";
-import { assembleImagePrompt, selectedPrompts } from "@/lib/images/prompt";
+import { assembleImagePrompt, exerciseDetails, selectedPrompts } from "@/lib/images/prompt";
 import { invalidSystemPrompt } from "@/lib/images/prompt-checks";
 import {
   clearActivePosition,
@@ -90,6 +90,7 @@ export async function POST(request: Request) {
       id: exercise.id,
       subject,
       background_color: params.background_color,
+      details: exerciseDetails(exercise),
     });
     const logo = params.logo_in_exercises ? await loadLogoInput(token, settings) : null;
     const directives = [

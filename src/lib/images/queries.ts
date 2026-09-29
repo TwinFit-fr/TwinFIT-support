@@ -1,5 +1,6 @@
 import { staffGql } from "@/lib/staff-gql";
 import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
+import { exerciseDetails, type ExerciseTaxonomy } from "./prompt";
 import { MID_POSITION, framePositionsFor } from "./types";
 import type {
   ExerciseImage,
@@ -37,13 +38,33 @@ const PROMPT_FIELDS = `
   updated_at
 `;
 
-type RawExercise = {
+const EXERCISE_FIELDS = `
+  id
+  exo_id
+  display_name
+  active
+  primary_muscle_group { id name }
+  equipment { id code name }
+  support_equipment { code name }
+  position { code name }
+  grip { code name }
+  variation { code name }
+  localizations { locale display_name description }
+`;
+
+type TaxonomyRef = { code: string | null; name: string } | null;
+
+type RawExercise = ExerciseTaxonomy & {
   id: string;
   exo_id: number;
   display_name: string;
   active: boolean;
   primary_muscle_group: { id: string; name: string } | null;
-  equipment: { id: string; name: string } | null;
+  equipment: ({ id: string } & NonNullable<TaxonomyRef>) | null;
+  support_equipment: TaxonomyRef;
+  position: TaxonomyRef;
+  grip: TaxonomyRef;
+  variation: TaxonomyRef;
   localizations: { locale: string; display_name: string; description: string | null }[];
 };
 
@@ -92,6 +113,7 @@ function toBoardItem(
       image_url: img.image_url,
     })),
     preview_image: preview,
+    prompt_details: exerciseDetails(exercise),
     two_frames: twoFrames,
     frame_positions: framePositions,
     status: boardStatus(images, framePositions),
@@ -108,13 +130,7 @@ export async function listImageExercises(token: string): Promise<ExerciseImageBo
     `query {
       images_exercise_options(where: { two_frames: { _eq: true } }) { exo_id two_frames }
       catalog_exercises(order_by: [{ exo_id: asc }]) {
-        id
-        exo_id
-        display_name
-        active
-        primary_muscle_group { id name }
-        equipment { id name }
-        localizations { locale display_name description }
+        ${EXERCISE_FIELDS}
       }
       images_exercise_images(order_by: [{ created_at: desc }]) {
         ${IMAGE_FIELDS}
@@ -148,13 +164,7 @@ export async function getImageExercise(
     `query($exoId: Int!) {
       images_exercise_options_by_pk(exo_id: $exoId) { two_frames }
       catalog_exercises(where: { exo_id: { _eq: $exoId } }, limit: 1) {
-        id
-        exo_id
-        display_name
-        active
-        primary_muscle_group { id name }
-        equipment { id name }
-        localizations { locale display_name description }
+        ${EXERCISE_FIELDS}
       }
       images_exercise_images(
         where: { exo_id: { _eq: $exoId } }
@@ -185,13 +195,7 @@ export async function getExerciseSummary(
     token,
     `query($exoId: Int!) {
       catalog_exercises(where: { exo_id: { _eq: $exoId } }, limit: 1) {
-        id
-        exo_id
-        display_name
-        active
-        primary_muscle_group { id name }
-        equipment { id name }
-        localizations { locale display_name description }
+        ${EXERCISE_FIELDS}
       }
     }`,
     { exoId },

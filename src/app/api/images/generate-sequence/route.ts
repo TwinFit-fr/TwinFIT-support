@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import { resolveSize, sequenceStripSize } from "@/lib/images/capabilities";
 import { editImage, generateImage } from "@/lib/images/openai";
-import { assembleSequencePrompt, selectedPrompts } from "@/lib/images/prompt";
+import { assembleSequencePrompt, exerciseDetails, selectedPrompts } from "@/lib/images/prompt";
 import { invalidSystemPrompt } from "@/lib/images/prompt-checks";
 import {
   clearActivePosition,
@@ -94,6 +94,7 @@ export async function POST(request: Request) {
       id: exercise.id,
       subject,
       background_color: params.background_color,
+      details: exerciseDetails(exercise),
     });
     const logo = params.logo_in_exercises ? await loadLogoInput(token, settings) : null;
     const prompt = [

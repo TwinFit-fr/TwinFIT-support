@@ -17,7 +17,12 @@ type PromptsResponse = {
 };
 
 type ListResponse = {
-  exercises: { exo_id: number; display_name: string; description: string | null }[];
+  exercises: {
+    exo_id: number;
+    display_name: string;
+    description: string | null;
+    prompt_details: string;
+  }[];
 };
 
 function PromptEditorPanel({
@@ -148,7 +153,11 @@ export function ImagePromptsPage() {
   const [previewSubject, setPreviewSubject] = useState<Subject>("man");
 
   const preview = useMemo(() => {
-    const chosen = selectedPrompts(settings, data ? [...data.system, ...data.position] : [], previewPosition);
+    const chosen = selectedPrompts(
+      settings,
+      data ? [...data.system, ...data.position] : [],
+      previewPosition,
+    );
     if (!chosen.system || !chosen.position || !sample) return "";
     return assembleImagePrompt({
       systemContent: chosen.system.content,
@@ -158,6 +167,7 @@ export function ImagePromptsPage() {
       exo_id: sample.exo_id,
       subject: previewSubject,
       background_color: settings?.params.background_color,
+      details: sample.prompt_details,
     });
   }, [data, settings, sample, previewPosition, previewSubject]);
 
@@ -193,7 +203,11 @@ export function ImagePromptsPage() {
             kind="position"
             position={frame.id}
             prompts={(data?.position ?? []).filter((p) => p.position === frame.id)}
-            inUseId={settings ? [settings.start_prompt_id, settings.mid_prompt_id, settings.end_prompt_id][i] : null}
+            inUseId={
+              settings
+                ? [settings.start_prompt_id, settings.mid_prompt_id, settings.end_prompt_id][i]
+                : null
+            }
           />
         ))}
       </div>
@@ -204,7 +218,12 @@ export function ImagePromptsPage() {
           </h2>
           <div className="flex flex-wrap gap-1.5">
             {SUBJECTS.map((s) => (
-              <button key={s} type="button" onClick={() => setPreviewSubject(s)} className={pill(previewSubject === s)}>
+              <button
+                key={s}
+                type="button"
+                onClick={() => setPreviewSubject(s)}
+                className={pill(previewSubject === s)}
+              >
                 {s}
               </button>
             ))}
