@@ -14,7 +14,12 @@ import {
   loadSettings,
 } from "@/lib/images/queries";
 import { alignFeetBaseline } from "@/lib/images/align";
-import { REFERENCE_USE_DIRECTIVE, START_GUIDE_DIRECTIVE } from "@/lib/images/reference";
+import { loadLogoInput } from "@/lib/images/logo";
+import {
+  LOGO_DIRECTIVE,
+  REFERENCE_USE_DIRECTIVE,
+  START_GUIDE_DIRECTIVE,
+} from "@/lib/images/reference";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { REFERENCE_KEYS } from "@/lib/images/types";
 import type { Subject } from "@/lib/images/types";
@@ -86,26 +91,23 @@ export async function POST(request: Request) {
       subject,
       background_color: params.background_color,
     });
-    const directive = usableGuide
-      ? START_GUIDE_DIRECTIVE
-      : referenceFileId
-        ? REFERENCE_USE_DIRECTIVE
-        : null;
-    const prompt = directive ? `${basePrompt}\n\n${directive}` : basePrompt;
+    const logo = params.logo_in_exercises ? await loadLogoInput(token, settings) : null;
+    const directives = [
+      usableGuide ? START_GUIDE_DIRECTIVE : referenceFileId ? REFERENCE_USE_DIRECTIVE : null,
+      logo ? LOGO_DIRECTIVE : null,
+    ].filter(Boolean);
+    const prompt = [basePrompt, ...directives].join("\n\n");
 
     const inputFileId = usableGuide?.file_id ?? referenceFileId;
-    let result;
+    const inputs = [];
     if (inputFileId) {
       const input = await downloadImageFile(token, inputFileId);
-      result = await editImage(
-        prompt,
-        params,
-        { bytes: input.bytes, mimeType: input.contentType },
-        { useFidelity: true },
-      );
-    } else {
-      result = await generateImage(prompt, params);
+      inputs.push({ bytes: input.bytes, mimeType: input.contentType });
     }
+    if (logo) inputs.push(logo);
+    const result = inputs.length
+      ? await editImage(prompt, params, inputs, { useFidelity: Boolean(inputFileId) })
+      : await generateImage(prompt, params);
 
     const aligned = await alignFeetBaseline(
       result.bytes,
@@ -127,6 +129,7 @@ export async function POST(request: Request) {
       subject,
       reference_file_id: referenceFileId,
       guide_image_id: usableGuide?.id ?? null,
+      logo_sent: Boolean(logo),
       feet_shift_px: aligned.shiftPx,
       system_prompt_id: chosen.system.id,
       position_prompt_id: chosen.position.id,

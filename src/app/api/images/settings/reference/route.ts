@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
-import { generateImage } from "@/lib/images/openai";
+import { loadLogoInput } from "@/lib/images/logo";
+import { editImage, generateImage } from "@/lib/images/openai";
 import { fillPromptTemplate } from "@/lib/images/prompt";
 import { listImagePrompts, loadSettings, updateImageSettings } from "@/lib/images/queries";
-import { referenceFileName, referenceSheetDirective } from "@/lib/images/reference";
+import { LOGO_DIRECTIVE, referenceFileName, referenceSheetDirective } from "@/lib/images/reference";
 import { deleteImageFile, uploadImageFile } from "@/lib/images/storage";
 import { REFERENCE_KEYS } from "@/lib/images/types";
 import type { Subject } from "@/lib/images/types";
@@ -61,10 +62,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const [settings, prompts] = await Promise.all([
-      loadSettings(token),
-      listImagePrompts(token),
-    ]);
+    const [settings, prompts] = await Promise.all([loadSettings(token), listImagePrompts(token)]);
     const system =
       prompts.find((p) => p.id === settings.system_prompt_id) ??
       prompts.find((p) => p.kind === "system");
@@ -80,8 +78,13 @@ export async function POST(request: Request) {
         background_color: settings.params.background_color,
       }).trim(),
       referenceSheetDirective(body.subject),
-    ].join("\n\n");
-    const result = await generateImage(prompt, settings.params);
+    ];
+    // The avatar always carries the brand logo when one is configured.
+    const logo = await loadLogoInput(token, settings);
+    if (logo) prompt.push(LOGO_DIRECTIVE);
+    const result = logo
+      ? await editImage(prompt.join("\n\n"), settings.params, [logo])
+      : await generateImage(prompt.join("\n\n"), settings.params);
     return NextResponse.json(
       await replaceReference(token, body.subject, {
         bytes: result.bytes,
@@ -103,7 +106,9 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const token = requireStaffToken(request);
-    const subject = z.enum(["man", "woman"]).parse(new URL(request.url).searchParams.get("subject"));
+    const subject = z
+      .enum(["man", "woman"])
+      .parse(new URL(request.url).searchParams.get("subject"));
     const settings = await loadSettings(token);
     const previous = settings[REFERENCE_KEYS[subject]];
     const updated = await updateImageSettings(token, { [REFERENCE_KEYS[subject]]: null });

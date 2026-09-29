@@ -14,7 +14,8 @@ import {
   isTwoFrameExercise,
   loadSettings,
 } from "@/lib/images/queries";
-import { REFERENCE_USE_DIRECTIVE } from "@/lib/images/reference";
+import { loadLogoInput } from "@/lib/images/logo";
+import { LOGO_DIRECTIVE, REFERENCE_USE_DIRECTIVE } from "@/lib/images/reference";
 import { SplitError, sequenceDirective, splitSequence } from "@/lib/images/sequence";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { REFERENCE_KEYS, framePositionsFor } from "@/lib/images/types";
@@ -94,20 +95,27 @@ export async function POST(request: Request) {
       subject,
       background_color: params.background_color,
     });
-    const prompt = referenceFileId ? `${basePrompt}\n\n${REFERENCE_USE_DIRECTIVE}` : basePrompt;
+    const logo = params.logo_in_exercises ? await loadLogoInput(token, settings) : null;
+    const prompt = [
+      basePrompt,
+      referenceFileId ? REFERENCE_USE_DIRECTIVE : null,
+      logo ? LOGO_DIRECTIVE : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
 
-    let result;
+    const inputs = [];
     if (referenceFileId) {
       const reference = await downloadImageFile(token, referenceFileId);
-      result = await editImage(
-        prompt,
-        params,
-        { bytes: reference.bytes, mimeType: reference.contentType },
-        { size: stripSize, useFidelity: true },
-      );
-    } else {
-      result = await generateImage(prompt, params, { size: stripSize });
+      inputs.push({ bytes: reference.bytes, mimeType: reference.contentType });
     }
+    if (logo) inputs.push(logo);
+    const result = inputs.length
+      ? await editImage(prompt, params, inputs, {
+          size: stripSize,
+          useFidelity: Boolean(referenceFileId),
+        })
+      : await generateImage(prompt, params, { size: stripSize });
 
     const format = params.format as "png" | "webp" | "jpeg";
     const { frames, cuts } = await splitSequence(
@@ -147,6 +155,7 @@ export async function POST(request: Request) {
             target_position: position,
             subject,
             reference_file_id: referenceFileId,
+            logo_sent: Boolean(logo),
             system_prompt_id: system.id,
             position_prompt_id: positionPrompts[i]!.id,
             system_prompt_edited: systemOverride != null,

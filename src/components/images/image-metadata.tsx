@@ -81,6 +81,7 @@ export function ImageMetadataPanel({
       "Position prompt",
       `${promptName(prompts, p.position_prompt_id)}${p.position_prompt_edited ? " (edited for this run)" : ""}`,
     ],
+    ["Logo sent", p.logo_sent == null ? "—" : p.logo_sent ? "yes" : "no"],
     ["Feet shift", p.feet_shift_px != null ? `${p.feet_shift_px}px` : "—"],
     ["Tokens", usageLabel(image.usage)],
     ["Created", new Date(image.created_at).toLocaleString()],
