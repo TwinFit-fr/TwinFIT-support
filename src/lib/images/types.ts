@@ -1,4 +1,4 @@
-export type ImagePromptKind = "system" | "exercise" | "position";
+export type ImagePromptKind = "system" | "position";
 
 export type GenerationParams = {
   model: string;
