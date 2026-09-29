@@ -103,6 +103,8 @@ export type ExerciseImageBoardItem = {
   /** Positions this exercise's sequence uses: [0, 2] or [0, 1, 2]. */
   frame_positions: number[];
   preview_image: ExerciseImage | null;
+  /** EXERCISE DETAILS block appended to generation prompts (may be empty). */
+  prompt_details: string;
   status: "complete" | "partial" | "inactive_only" | "empty";
 };
 
