@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 
 /** Edited texts only; a missing key means "use the template from settings". */
 export type PromptOverrides = {
+  /** System prompt chosen for this run instead of the settings one. */
+  systemPromptId?: string;
   system?: string;
   positions: Partial<Record<number, string>>;
   /** False = do not send the active Start frame as context for Mid/End. */
@@ -16,8 +18,48 @@ export const NO_OVERRIDES: PromptOverrides = { positions: {} };
 
 export function countOverrides(overrides: PromptOverrides, positions: number[]): number {
   return (
+    (overrides.systemPromptId != null ? 1 : 0) +
     (overrides.system != null ? 1 : 0) +
     positions.filter((p) => overrides.positions[p] != null).length
+  );
+}
+
+/** Ephemeral choice of system prompt; empty value = the one selected in settings. */
+export function SystemPromptSelect({
+  prompts,
+  settingsPromptId,
+  value,
+  onChange,
+  disabled,
+  className,
+}: {
+  prompts: { id: string; name: string }[];
+  settingsPromptId: string | null | undefined;
+  value: string | undefined;
+  onChange: (next: string | undefined) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const settingsName = prompts.find((p) => p.id === settingsPromptId)?.name ?? prompts[0]?.name;
+  return (
+    <select
+      aria-label="System prompt for this generation"
+      value={value ?? ""}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value || undefined)}
+      className={cn(
+        "rounded-md border bg-white px-2 py-1.5 text-xs",
+        value ? "border-amber-300 bg-amber-50/40" : "border-zinc-300",
+        className,
+      )}
+    >
+      <option value="">System: from settings{settingsName ? ` (${settingsName})` : ""}</option>
+      {prompts.map((p) => (
+        <option key={p.id} value={p.id}>
+          System: {p.name}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -80,6 +122,8 @@ export function PromptOverridesPanel({
   disabled,
   startThumbUrl,
   usesStrip,
+  systemPrompts,
+  settingsSystemPromptId,
 }: {
   positions: number[];
   systemTemplate: string;
@@ -91,6 +135,8 @@ export function PromptOverridesPanel({
   startThumbUrl: string | null;
   /** The run draws all positions in one strip, so no frame is sent as context. */
   usesStrip: boolean;
+  systemPrompts: { id: string; name: string }[];
+  settingsSystemPromptId: string | null | undefined;
 }) {
   const showStartContext = positions.some((p) => p !== 0) && !usesStrip;
   const edits = countOverrides(value, positions);
@@ -108,6 +154,7 @@ export function PromptOverridesPanel({
           type="button"
           disabled={disabled || edits === 0}
           onClick={() => onChange({ positions: {}, startContext: value.startContext })}
+          title="Restores the settings system prompt and all texts"
           className="text-xs text-zinc-500 underline hover:text-zinc-800 disabled:no-underline disabled:opacity-40"
         >
           Reset all
@@ -142,6 +189,19 @@ export function PromptOverridesPanel({
           </label>
         </div>
       )}
+      <div className="flex flex-wrap items-center gap-2">
+        <SystemPromptSelect
+          prompts={systemPrompts}
+          settingsPromptId={settingsSystemPromptId}
+          value={value.systemPromptId}
+          disabled={disabled}
+          // A text edit belongs to the previous prompt, so switching prompts drops it.
+          onChange={(systemPromptId) => onChange({ ...value, systemPromptId, system: undefined })}
+        />
+        {value.systemPromptId && (
+          <span className="text-[11px] text-zinc-500">Only for this generation; settings unchanged.</span>
+        )}
+      </div>
       <OverrideField
         label="System (style)"
         template={systemTemplate}

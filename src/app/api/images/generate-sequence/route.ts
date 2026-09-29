@@ -4,6 +4,7 @@ import { requireStaffToken } from "@/lib/api-auth";
 import { resolveSize, sequenceStripSize } from "@/lib/images/capabilities";
 import { editImage, generateImage } from "@/lib/images/openai";
 import { assembleSequencePrompt, selectedPrompts } from "@/lib/images/prompt";
+import { invalidSystemPrompt } from "@/lib/images/prompt-checks";
 import {
   clearActivePosition,
   getExerciseSummary,
@@ -28,6 +29,8 @@ const bodySchema = z.object({
   subject: z.enum(["man", "woman"]),
   /** One-off prompt texts for this generation only; never persisted as templates. */
   systemOverride: promptText.optional(),
+  /** Use this system prompt instead of the one selected in settings (this run only). */
+  systemPromptId: z.string().uuid().optional(),
   /** Indexed by position (0 start, 1 mid, 2 end); null keeps the template. */
   positionOverrides: z.array(promptText.nullable()).length(3).optional(),
 });
@@ -36,7 +39,7 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
-    const { exoId, subject, systemOverride, positionOverrides } = bodySchema.parse(
+    const { exoId, subject, systemOverride, positionOverrides, systemPromptId } = bodySchema.parse(
       await request.json(),
     );
 
@@ -59,7 +62,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const chosen = positions.map((position) => selectedPrompts(settings, prompts, position));
+    const unknownSystem = invalidSystemPrompt(prompts, systemPromptId);
+    if (unknownSystem) return unknownSystem;
+    const selection = {
+      ...settings,
+      system_prompt_id: systemPromptId ?? settings.system_prompt_id,
+    };
+    const chosen = positions.map((position) => selectedPrompts(selection, prompts, position));
     const system = chosen[0].system;
     const positionPrompts = chosen.map((c) => c.position);
     if (!system || positionPrompts.some((p) => !p)) {

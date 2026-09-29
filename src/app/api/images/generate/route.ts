@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import { editImage, generateImage } from "@/lib/images/openai";
 import { assembleImagePrompt, selectedPrompts } from "@/lib/images/prompt";
+import { invalidSystemPrompt } from "@/lib/images/prompt-checks";
 import {
   clearActivePosition,
   getActiveImageAtPosition,
@@ -28,6 +29,8 @@ const bodySchema = z.object({
   subject: z.enum(["man", "woman"]),
   /** One-off prompt texts for this generation only; never persisted as templates. */
   systemOverride: promptText.optional(),
+  /** Use this system prompt instead of the one selected in settings (this run only). */
+  systemPromptId: z.string().uuid().optional(),
   positionOverride: promptText.optional(),
   /** Mid/End: edit the active Start frame (default). False generates from the reference. */
   useStartContext: z.boolean().default(true),
@@ -46,7 +49,13 @@ export async function POST(request: Request) {
 
     const [settings, prompts] = await Promise.all([loadSettings(token), listImagePrompts(token)]);
     const { params } = settings;
-    const chosen = selectedPrompts(settings, prompts, position);
+    const unknownSystem = invalidSystemPrompt(prompts, body.systemPromptId);
+    if (unknownSystem) return unknownSystem;
+    const chosen = selectedPrompts(
+      { ...settings, system_prompt_id: body.systemPromptId ?? settings.system_prompt_id },
+      prompts,
+      position,
+    );
     if (!chosen.system || !chosen.position) {
       return NextResponse.json(
         { error: `Prompt templates missing (system or position ${position})` },

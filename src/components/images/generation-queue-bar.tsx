@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/primitives";
 import { StepTrail } from "@/components/images/generation-progress";
 import { PositionSelector, SubjectSelector } from "@/components/images/position-selector";
+import { SystemPromptSelect } from "@/components/images/prompt-overrides";
 import type { QueueItem } from "@/hooks/use-generation-queue";
 import type { SubjectChoice } from "@/lib/images/types";
 
@@ -12,6 +13,10 @@ export function GenerationQueueBar({
   onPositionsChange,
   subject,
   onSubjectChange,
+  systemPrompts,
+  settingsSystemPromptId,
+  systemPromptId,
+  onSystemPromptChange,
   running,
   items,
   exercisesDone,
@@ -26,6 +31,10 @@ export function GenerationQueueBar({
   onPositionsChange: (next: number[]) => void;
   subject: SubjectChoice;
   onSubjectChange: (next: SubjectChoice) => void;
+  systemPrompts: { id: string; name: string }[];
+  settingsSystemPromptId: string | null | undefined;
+  systemPromptId: string | undefined;
+  onSystemPromptChange: (next: string | undefined) => void;
   running: boolean;
   items: QueueItem[];
   exercisesDone: number;
@@ -57,6 +66,13 @@ export function GenerationQueueBar({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <SystemPromptSelect
+            prompts={systemPrompts}
+            settingsPromptId={settingsSystemPromptId}
+            value={systemPromptId}
+            onChange={onSystemPromptChange}
+            disabled={running}
+          />
           <SubjectSelector value={subject} onChange={onSubjectChange} disabled={running} />
           <PositionSelector value={positions} onChange={onPositionsChange} disabled={running} />
           {running ? (

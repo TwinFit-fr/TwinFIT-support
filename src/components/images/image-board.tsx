@@ -13,7 +13,12 @@ import {
   useSubjectChoice,
 } from "@/hooks/use-generation-queue";
 import { sequenceStripSize } from "@/lib/images/capabilities";
-import type { ExerciseImageBoardItem, ImageSettings, Subject } from "@/lib/images/types";
+import type {
+  ExerciseImageBoardItem,
+  ImagePrompt,
+  ImageSettings,
+  Subject,
+} from "@/lib/images/types";
 
 type ListResponse = { exercises: ExerciseImageBoardItem[]; count: number };
 
@@ -26,6 +31,9 @@ export function ImageBoard() {
   const [positions, setPositions] = usePositionSelection();
   const [subject, setSubject] = useSubjectChoice();
   const { data: settings } = useStaffSWR<ImageSettings>("/api/images/settings");
+  const { data: promptsData } = useStaffSWR<{ system: ImagePrompt[] }>("/api/images/prompts");
+  // Ephemeral: applies to the next queue runs on this page only.
+  const [systemPromptId, setSystemPromptId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [muscle, setMuscle] = useState("all");
@@ -97,7 +105,7 @@ export function ImageBoard() {
   async function generateStep(exoId: number, position: number, stepSubject: Subject) {
     await staffFetch("/api/images/generate", {
       method: "POST",
-      body: JSON.stringify({ exoId, position, subject: stepSubject }),
+      body: JSON.stringify({ exoId, position, subject: stepSubject, systemPromptId }),
     });
     await mutate("/api/images/exercises");
   }
@@ -105,7 +113,7 @@ export function ImageBoard() {
   async function generateSequence(exoId: number, stepSubject: Subject) {
     await staffFetch("/api/images/generate-sequence", {
       method: "POST",
-      body: JSON.stringify({ exoId, subject: stepSubject }),
+      body: JSON.stringify({ exoId, subject: stepSubject, systemPromptId }),
     });
     await mutate("/api/images/exercises");
   }
@@ -252,6 +260,10 @@ export function ImageBoard() {
         onPositionsChange={setPositions}
         subject={subject}
         onSubjectChange={setSubject}
+        systemPrompts={promptsData?.system ?? []}
+        settingsSystemPromptId={settings?.system_prompt_id}
+        systemPromptId={systemPromptId}
+        onSystemPromptChange={setSystemPromptId}
         running={queue.running}
         items={queue.items}
         exercisesDone={queue.exercisesDone}

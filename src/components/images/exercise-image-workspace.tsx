@@ -134,12 +134,19 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     const prompts = promptsData?.prompts ?? [];
     const byPosition = FRAME_POSITIONS.map((f) => selectedPrompts(settings, prompts, f.id));
     return {
-      system: byPosition[0].system?.content ?? "",
+      system:
+        prompts.find((p) => p.id === overrides.systemPromptId && p.kind === "system")?.content ??
+        byPosition[0].system?.content ??
+        "",
       positions: Object.fromEntries(
         byPosition.map((chosen, i) => [FRAME_POSITIONS[i].id, chosen.position?.content ?? ""]),
       ) as Record<number, string>,
     };
-  }, [promptsData, settings]);
+  }, [promptsData, settings, overrides.systemPromptId]);
+  const systemPrompts = useMemo(
+    () => (promptsData?.prompts ?? []).filter((p) => p.kind === "system"),
+    [promptsData],
+  );
   const framePositions = exercise?.frame_positions ?? FRAME_POSITIONS.map((f) => f.id as number);
   const runPositions = positions.filter((p) => framePositions.includes(p));
   const editedCount = countOverrides(overrides, runPositions);
@@ -192,6 +199,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             position,
             subject: stepSubject,
             systemOverride: run.system,
+            systemPromptId: run.systemPromptId,
             positionOverride: run.positions[position],
             useStartContext: run.startContext !== false,
           }),
@@ -205,6 +213,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             exoId,
             subject: stepSubject,
             systemOverride: run.system,
+            systemPromptId: run.systemPromptId,
             positionOverrides: FRAME_POSITIONS.map((f) => run.positions[f.id] ?? null),
           }),
         });
@@ -384,6 +393,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         <PromptOverridesPanel
           positions={runPositions}
           startThumbUrl={imageThumbUrl(activeByPosition.get(0)?.image_url, 160)}
+          systemPrompts={systemPrompts}
+          settingsSystemPromptId={settings?.system_prompt_id}
           usesStrip={
             runPositions.length === framePositions.length &&
             Boolean(settings && sequenceStripSize(settings.params, framePositions.length))
