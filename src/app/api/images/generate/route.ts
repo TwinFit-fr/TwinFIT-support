@@ -16,19 +16,28 @@ import { alignFeetBaseline } from "@/lib/images/align";
 import { REFERENCE_USE_DIRECTIVE, START_GUIDE_DIRECTIVE } from "@/lib/images/reference";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { REFERENCE_KEYS } from "@/lib/images/types";
+import type { Subject } from "@/lib/images/types";
 
 export const maxDuration = 300;
+
+const promptText = z.string().trim().min(1).max(32000);
 
 const bodySchema = z.object({
   exoId: z.number().int().positive(),
   position: z.number().int().min(0).max(2),
   subject: z.enum(["man", "woman"]),
+  /** One-off prompt texts for this generation only; never persisted as templates. */
+  systemOverride: promptText.optional(),
+  positionOverride: promptText.optional(),
+  /** Mid/End: edit the active Start frame (default). False generates from the reference. */
+  useStartContext: z.boolean().default(true),
 });
 
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
-    const { exoId, position, subject } = bodySchema.parse(await request.json());
+    const body = bodySchema.parse(await request.json());
+    const { exoId, position, systemOverride, positionOverride } = body;
 
     const exercise = await getExerciseSummary(token, exoId);
     if (!exercise) {
@@ -45,10 +54,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // Mid/End are edits of the active Start frame (same subject) so camera and scale match it.
-    const guide =
-      position !== 0 ? await getActiveImageAtPosition(token, exercise.exo_id, 0) : null;
-    const usableGuide = guide && (guide.params?.subject ?? subject) === subject ? guide : null;
+    // Mid/End are edits of the active Start frame so camera, scale and character match it;
+    // the subject then follows the Start's so one exercise never mixes man and woman.
+    const usableGuide =
+      position !== 0 && body.useStartContext
+        ? await getActiveImageAtPosition(token, exercise.exo_id, 0)
+        : null;
+    const subject: Subject = usableGuide?.params?.subject ?? body.subject;
     const referenceFileId = usableGuide ? null : settings[REFERENCE_KEYS[subject]];
 
     const description =
@@ -56,8 +68,8 @@ export async function POST(request: Request) {
       exercise.localizations.find((l) => l.description)?.description ??
       "";
     const basePrompt = assembleImagePrompt({
-      systemContent: chosen.system.content,
-      positionContent: chosen.position.content,
+      systemContent: systemOverride ?? chosen.system.content,
+      positionContent: positionOverride ?? chosen.position.content,
       name: exercise.display_name,
       description,
       exo_id: exercise.exo_id,
@@ -109,6 +121,8 @@ export async function POST(request: Request) {
       feet_shift_px: aligned.shiftPx,
       system_prompt_id: chosen.system.id,
       position_prompt_id: chosen.position.id,
+      system_prompt_edited: systemOverride != null,
+      position_prompt_edited: positionOverride != null,
     };
     const insert = () =>
       insertExerciseImage(token, {

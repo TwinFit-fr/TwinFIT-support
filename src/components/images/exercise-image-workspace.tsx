@@ -16,6 +16,13 @@ import {
 import { GenerationProgress, processingSteps } from "@/components/images/generation-progress";
 import { FramePlayer } from "@/components/images/frame-player";
 import { ImageMetadataPanel } from "@/components/images/image-metadata";
+import {
+  NO_OVERRIDES,
+  PromptOverridesPanel,
+  countOverrides,
+  type PromptOverrides,
+} from "@/components/images/prompt-overrides";
+import { selectedPrompts } from "@/lib/images/prompt";
 import { PositionSelector, SubjectSelector } from "@/components/images/position-selector";
 import type {
   ExerciseImage,
@@ -25,6 +32,7 @@ import type {
 } from "@/lib/images/types";
 import {
   FRAME_POSITIONS,
+  MID_POSITION,
   framePositionLabel,
   isDeletableImage,
   targetPosition,
@@ -63,9 +71,15 @@ function imageLabel(img: ExerciseImage): string {
   return target != null ? `${framePositionLabel(target)} · inactive` : "Inactive";
 }
 
-function SequencePreview({ images }: { images: ExerciseImage[] }) {
+function SequencePreview({
+  images,
+  framePositions,
+}: {
+  images: ExerciseImage[];
+  framePositions: number[];
+}) {
   const frames = images
-    .filter((img) => img.active && img.position != null)
+    .filter((img) => img.active && img.position != null && framePositions.includes(img.position))
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
     .map((img) => ({ position: img.position as number, image_url: img.image_url }));
   const order = gifPlaybackOrder(frames.map((f) => f.position));
@@ -75,7 +89,7 @@ function SequencePreview({ images }: { images: ExerciseImage[] }) {
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium text-zinc-800">GIF preview (0→1→2→1→0)</div>
         <div className="text-xs text-zinc-500">
-          {frames.length}/3 active · order {order.join("→") || "—"}
+          {frames.length}/{framePositions.length} active · loop {order.join("→") || "—"}
         </div>
       </div>
       <div
@@ -110,6 +124,25 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const exercise = data?.exercise;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showOverrides, setShowOverrides] = useState(false);
+  const [overrides, setOverrides] = useState<PromptOverrides>(NO_OVERRIDES);
+
+  // Per-run edits belong to one exercise; drop them when navigating to another.
+  useEffect(() => setOverrides(NO_OVERRIDES), [exoId]);
+
+  const templates = useMemo(() => {
+    const prompts = promptsData?.prompts ?? [];
+    const byPosition = FRAME_POSITIONS.map((f) => selectedPrompts(settings, prompts, f.id));
+    return {
+      system: byPosition[0].system?.content ?? "",
+      positions: Object.fromEntries(
+        byPosition.map((chosen, i) => [FRAME_POSITIONS[i].id, chosen.position?.content ?? ""]),
+      ) as Record<number, string>,
+    };
+  }, [promptsData, settings]);
+  const framePositions = exercise?.frame_positions ?? FRAME_POSITIONS.map((f) => f.id as number);
+  const runPositions = positions.filter((p) => framePositions.includes(p));
+  const editedCount = countOverrides(overrides, runPositions);
 
   useEffect(() => {
     if (!exercise) return;
@@ -139,8 +172,15 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
 
   async function runGenerate() {
     if (!exercise || queue.running) return;
+    const run = overrides;
     await queue.start({
-      exercises: [{ exoId: exercise.exo_id, name: exercise.display_name }],
+      exercises: [
+        {
+          exoId: exercise.exo_id,
+          name: exercise.display_name,
+          framePositions: exercise.frame_positions,
+        },
+      ],
       positions,
       subject,
       maxConcurrency: settings?.params.max_concurrency ?? 3,
@@ -151,21 +191,51 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             exoId,
             position,
             subject: stepSubject,
+            systemOverride: run.system,
+            positionOverride: run.positions[position],
+            useStartContext: run.startContext !== false,
           }),
         });
         await refresh();
       },
-      generateSequence:
-        settings && sequenceStripSize(settings.params)
-          ? async (exoId, stepSubject) => {
-              await staffFetch("/api/images/generate-sequence", {
-                method: "POST",
-                body: JSON.stringify({ exoId, subject: stepSubject }),
-              });
-              await refresh();
-            }
-          : undefined,
+      generateSequence: async (exoId, stepSubject) => {
+        await staffFetch("/api/images/generate-sequence", {
+          method: "POST",
+          body: JSON.stringify({
+            exoId,
+            subject: stepSubject,
+            systemOverride: run.system,
+            positionOverrides: FRAME_POSITIONS.map((f) => run.positions[f.id] ?? null),
+          }),
+        });
+        await refresh();
+      },
+      canSequence: (panels) => Boolean(settings && sequenceStripSize(settings.params, panels)),
     });
+  }
+
+  async function toggleTwoFrames(next: boolean) {
+    if (!exercise) return;
+    if (
+      next &&
+      activeByPosition.has(MID_POSITION) &&
+      !window.confirm("Use only Start and End? The active Mid frame will be deactivated.")
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await staffFetch(`/api/images/exercises/${exercise.exo_id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ two_frames: next }),
+      });
+      success(next ? "Two frames: Start + End" : "Three frames: Start + Mid + End");
+      await refresh();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function setPosition(imageId: string, position: number | null, active: boolean) {
@@ -213,7 +283,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         event.preventDefault();
         void removeImage(selected);
       } else if (event.key === "0" || event.key === "1" || event.key === "2") {
-        if (!selected) return;
+        if (!selected || !framePositions.includes(Number(event.key))) return;
         event.preventDefault();
         void setPosition(selected.id, Number(event.key), true);
       } else if (event.key === "x" || event.key === "X") {
@@ -265,31 +335,71 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           <h1 className="text-xl font-semibold text-zinc-900">{exercise.display_name}</h1>
           <p className="text-sm text-zinc-500">
             {exercise.primary_muscle_group?.name ?? "—"} · {exercise.equipment?.name ?? "—"} ·{" "}
-            {exercise.active_count}/3 active frames
+            {exercise.active_count}/{framePositions.length} active frames
           </p>
+          <label className="mt-1 inline-flex items-center gap-2 text-xs text-zinc-700">
+            <input
+              type="checkbox"
+              checked={exercise.two_frames}
+              disabled={busy || queue.running}
+              onChange={(e) => void toggleTwoFrames(e.target.checked)}
+              className="h-4 w-4 rounded border-zinc-300"
+            />
+            Two frames (Start + End)
+          </label>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SubjectSelector value={subject} onChange={setSubject} disabled={queue.running} />
-          <PositionSelector value={positions} onChange={setPositions} disabled={queue.running} />
+          <PositionSelector
+            value={positions}
+            onChange={setPositions}
+            available={framePositions}
+            disabled={queue.running}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            aria-expanded={showOverrides}
+            onClick={() => setShowOverrides((v) => !v)}
+          >
+            {showOverrides ? "Hide prompts" : "Edit prompts"}
+            {editedCount > 0 ? ` (${editedCount} edited)` : ""}
+          </Button>
           <Button
             type="button"
             variant="secondary"
-            disabled={busy || queue.running}
+            disabled={busy || queue.running || runPositions.length === 0}
             onClick={() => void runGenerate()}
           >
             {queue.running
               ? "Generating…"
-              : positions.length > 1
-                ? `Generate (${positions.length})`
+              : runPositions.length > 1
+                ? `Generate (${runPositions.length})`
                 : "Generate"}
           </Button>
         </div>
       </div>
 
+      {showOverrides && (
+        <PromptOverridesPanel
+          positions={runPositions}
+          startThumbUrl={imageThumbUrl(activeByPosition.get(0)?.image_url, 160)}
+          usesStrip={
+            runPositions.length === framePositions.length &&
+            Boolean(settings && sequenceStripSize(settings.params, framePositions.length))
+          }
+          systemTemplate={templates.system}
+          positionTemplates={templates.positions}
+          value={overrides}
+          onChange={setOverrides}
+          disabled={queue.running}
+        />
+      )}
+
       <GenerationProgress item={generation} running={queue.running} onCancel={queue.cancel} />
 
       <div className="grid gap-4 lg:grid-cols-4">
-        {FRAME_POSITIONS.map((frame) => {
+        {FRAME_POSITIONS.filter((frame) => framePositions.includes(frame.id)).map((frame) => {
           const img = activeByPosition.get(frame.id) ?? null;
           return (
             <CheckerFrame
@@ -300,7 +410,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             />
           );
         })}
-        <SequencePreview images={exercise.images} />
+        <SequencePreview images={exercise.images} framePositions={framePositions} />
       </div>
 
       <div className="space-y-2">
@@ -381,7 +491,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         <div className="rounded-xl border border-zinc-200 bg-white p-4 space-y-3">
           <div className="text-sm font-medium text-zinc-800">Selected image</div>
           <div className="flex flex-wrap gap-2">
-            {FRAME_POSITIONS.map((frame) => (
+            {FRAME_POSITIONS.filter((frame) => framePositions.includes(frame.id)).map((frame) => (
               <Button
                 key={frame.id}
                 type="button"

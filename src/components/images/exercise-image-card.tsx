@@ -70,7 +70,9 @@ export function ExerciseImageCard({
           </div>
           <div className="truncate text-[11px] text-zinc-500">
             {exercise.primary_muscle_group?.name ?? "—"} · {exercise.equipment?.name ?? "—"}
-            {exercise.active_count > 0 ? ` · ${exercise.active_count}/3` : ""}
+            {exercise.active_count > 0
+              ? ` · ${exercise.active_count}/${exercise.frame_positions.length}`
+              : ""}
           </div>
         </div>
       </Link>

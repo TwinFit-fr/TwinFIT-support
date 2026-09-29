@@ -9,8 +9,6 @@ import {
 } from "./align";
 import { SPLIT_FAILED } from "./types";
 
-
-const PANELS = 3;
 /** Columns with at most this many drawn pixels count as empty gutter. */
 const GUTTER_MAX_PIXELS = 1;
 /** Horizontal breathing room around the widest figure, as a ratio of its width. */
@@ -24,9 +22,17 @@ export class SplitError extends Error {
   }
 }
 
-/** Instruction block appended to the prompt when the 3 positions are drawn in one strip. */
-export function sequenceDirective(): string {
-  return `LAYOUT OVERRIDE — THREE POSES IN ONE IMAGE: ignore any instruction about a single character or a single frame. This image is one horizontal strip showing the SAME character THREE times side by side, left to right: PANEL 1 = start position, PANEL 2 = mid position, PANEL 3 = end position, as described below. All three figures share the same camera, the same scale and the same ground line, each centered in its own third of the image with clear empty space between figures. Figures and equipment must never overlap or touch each other. No dividers, no borders, no labels, no numbers.`;
+const COUNT_WORDS = ["", "ONE", "TWO", "THREE"];
+const POSITION_WORDS = ["start", "mid", "end"];
+
+/** Instruction block appended to the prompt when several positions are drawn in one strip. */
+export function sequenceDirective(positions: number[]): string {
+  const n = positions.length;
+  const panels = positions
+    .map((position, i) => `PANEL ${i + 1} = ${POSITION_WORDS[position]} position`)
+    .join(", ");
+  const share = n === 2 ? "half" : "third";
+  return `LAYOUT OVERRIDE — ${COUNT_WORDS[n]} POSES IN ONE IMAGE: ignore any instruction about a single character or a single frame. This image is one horizontal strip showing the SAME character ${COUNT_WORDS[n]} times side by side, left to right: ${panels}, as described below. All figures share the same camera, the same scale and the same ground line, each centered in its own ${share} of the image with clear empty space between figures. Figures and equipment must never overlap or touch each other. No dividers, no borders, no labels, no numbers.`;
 }
 
 function columnCounts(img: Rgba): number[] {
@@ -85,11 +91,12 @@ function contentBox(img: Rgba, counts: number[], x0: number, x1: number) {
 }
 
 /**
- * Splits a strip into its 3 poses and returns them as frames of `frameSize` ("WxH").
+ * Splits a strip into `panels` poses and returns them as frames of `frameSize` ("WxH").
  * All frames share one canvas scale, so relative figure sizes from the strip are preserved.
  */
 export async function splitSequence(
   strip: Buffer,
+  panels: number,
   frameSize: string,
   format: ImageFormat,
   quality: number,
@@ -99,23 +106,23 @@ export async function splitSequence(
   const window = Math.round(img.width / 8);
 
   const cuts: number[] = [];
-  for (let i = 1; i < PANELS; i++) {
-    const target = Math.round((img.width * i) / PANELS);
+  for (let i = 1; i < panels; i++) {
+    const target = Math.round((img.width * i) / panels);
     const cut = findGutter(counts, target - window, target + window, target);
     if (cut == null) throw new SplitError(`no empty gap near panel boundary ${i}`);
     cuts.push(cut);
   }
   const bounds = [0, ...cuts, img.width];
-  const boxes = bounds.slice(0, PANELS).map((x0, i) => contentBox(img, counts, x0, bounds[i + 1]));
+  const boxes = bounds.slice(0, panels).map((x0, i) => contentBox(img, counts, x0, bounds[i + 1]));
   if (boxes.some((b) => !b)) throw new SplitError("a panel is empty");
 
   const [outW, outH] = frameSize.split("x").map(Number);
   const ratio = outW / outH;
-  const panels = boxes as NonNullable<(typeof boxes)[number]>[];
+  const panelBoxes = boxes as NonNullable<(typeof boxes)[number]>[];
   // One canvas for all three: wide enough for the widest pose and tall enough for the tallest
   // (feet on the baseline, headroom above), so every frame keeps the strip's common scale.
-  const widest = Math.max(...panels.map((b) => b.width));
-  const tallest = Math.max(...panels.map((b) => b.height));
+  const widest = Math.max(...panelBoxes.map((b) => b.width));
+  const tallest = Math.max(...panelBoxes.map((b) => b.height));
   const canvasH = Math.max(
     img.height,
     Math.ceil(tallest / (FEET_BASELINE - TOP_MARGIN)),
@@ -126,7 +133,7 @@ export async function splitSequence(
   const rawStrip = sharp(img.data, { raw: { width: img.width, height: img.height, channels: 4 } });
 
   const frames = [];
-  for (const box of panels) {
+  for (const box of panelBoxes) {
     const panel = await rawStrip
       .clone()
       .extract({ left: box.left, top: box.top, width: box.width, height: box.height })

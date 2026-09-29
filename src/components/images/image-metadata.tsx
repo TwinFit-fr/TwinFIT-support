@@ -7,7 +7,8 @@ import { framePositionLabel, targetPosition } from "@/lib/images/types";
 function generationMethod(image: ExerciseImage): string {
   const p = image.params;
   if (!p) return "—";
-  if (p.sequence) return `3-pose strip ${p.sequence.strip_size} (cuts at ${p.sequence.cuts.join(" / ")})`;
+  if (p.sequence)
+    return `3-pose strip ${p.sequence.strip_size} (cuts at ${p.sequence.cuts.join(" / ")})`;
   if (p.guide_image_id) return "Edit of the Start frame";
   if (p.reference_file_id) return "From character reference";
   return "Prompt only";
@@ -68,9 +69,18 @@ export function ImageMetadataPanel({
     ],
     ["Quality", p.quality ?? "—"],
     ["Moderation", p.moderation ?? "—"],
-    ["Reference fidelity", p.reference_file_id || p.guide_image_id ? (p.input_fidelity ?? "—") : "—"],
-    ["System prompt", promptName(prompts, p.system_prompt_id)],
-    ["Position prompt", promptName(prompts, p.position_prompt_id)],
+    [
+      "Reference fidelity",
+      p.reference_file_id || p.guide_image_id ? (p.input_fidelity ?? "—") : "—",
+    ],
+    [
+      "System prompt",
+      `${promptName(prompts, p.system_prompt_id)}${p.system_prompt_edited ? " (edited for this run)" : ""}`,
+    ],
+    [
+      "Position prompt",
+      `${promptName(prompts, p.position_prompt_id)}${p.position_prompt_edited ? " (edited for this run)" : ""}`,
+    ],
     ["Feet shift", p.feet_shift_px != null ? `${p.feet_shift_px}px` : "—"],
     ["Tokens", usageLabel(image.usage)],
     ["Created", new Date(image.created_at).toLocaleString()],

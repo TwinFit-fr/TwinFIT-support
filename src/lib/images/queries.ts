@@ -1,5 +1,6 @@
 import { staffGql } from "@/lib/staff-gql";
 import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
+import { MID_POSITION, framePositionsFor } from "./types";
 import type {
   ExerciseImage,
   ExerciseImageBoardItem,
@@ -48,26 +49,33 @@ type RawExercise = {
 
 function englishDescription(localizations: RawExercise["localizations"]): string {
   const en = localizations.find((item) => item.locale === "en");
-  return en?.description?.trim() || localizations.find((item) => item.description)?.description || "";
+  return (
+    en?.description?.trim() || localizations.find((item) => item.description)?.description || ""
+  );
 }
 
-function boardStatus(images: ExerciseImage[]): ExerciseImageBoardItem["status"] {
+function boardStatus(
+  images: ExerciseImage[],
+  framePositions: number[],
+): ExerciseImageBoardItem["status"] {
   const active = images.filter((img) => img.active && img.position != null);
-  if (active.length >= 3) return "complete";
+  const activePositions = new Set(active.map((img) => img.position));
+  if (framePositions.every((p) => activePositions.has(p))) return "complete";
   if (active.length > 0) return "partial";
   if (images.length > 0) return "inactive_only";
   return "empty";
 }
 
-function toBoardItem(exercise: RawExercise, images: ExerciseImage[]): ExerciseImageBoardItem {
+function toBoardItem(
+  exercise: RawExercise,
+  images: ExerciseImage[],
+  twoFrames: boolean,
+): ExerciseImageBoardItem {
+  const framePositions = framePositionsFor(twoFrames);
   const active = images
-    .filter((img) => img.active && img.position != null)
+    .filter((img) => img.active && img.position != null && framePositions.includes(img.position))
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-  const preview =
-    active[0] ??
-    images.find((img) => img.active) ??
-    images[0] ??
-    null;
+  const preview = active[0] ?? images.find((img) => img.active) ?? images[0] ?? null;
   return {
     id: exercise.id,
     exo_id: exercise.exo_id,
@@ -84,7 +92,9 @@ function toBoardItem(exercise: RawExercise, images: ExerciseImage[]): ExerciseIm
       image_url: img.image_url,
     })),
     preview_image: preview,
-    status: boardStatus(images),
+    two_frames: twoFrames,
+    frame_positions: framePositions,
+    status: boardStatus(images, framePositions),
   };
 }
 
@@ -92,9 +102,11 @@ export async function listImageExercises(token: string): Promise<ExerciseImageBo
   const data = await staffGql<{
     catalog_exercises: RawExercise[];
     images_exercise_images: ExerciseImage[];
+    images_exercise_options: { exo_id: number; two_frames: boolean }[];
   }>(
     token,
     `query {
+      images_exercise_options(where: { two_frames: { _eq: true } }) { exo_id two_frames }
       catalog_exercises(order_by: [{ exo_id: asc }]) {
         id
         exo_id
@@ -117,8 +129,9 @@ export async function listImageExercises(token: string): Promise<ExerciseImageBo
     byExo.set(img.exo_id, list);
   }
 
+  const twoFrames = new Set((data.images_exercise_options ?? []).map((o) => o.exo_id));
   return (data.catalog_exercises ?? []).map((ex) =>
-    toBoardItem(ex, byExo.get(ex.exo_id) ?? []),
+    toBoardItem(ex, byExo.get(ex.exo_id) ?? [], twoFrames.has(ex.exo_id)),
   );
 }
 
@@ -129,9 +142,11 @@ export async function getImageExercise(
   const data = await staffGql<{
     catalog_exercises: RawExercise[];
     images_exercise_images: ExerciseImage[];
+    images_exercise_options_by_pk: { two_frames: boolean } | null;
   }>(
     token,
     `query($exoId: Int!) {
+      images_exercise_options_by_pk(exo_id: $exoId) { two_frames }
       catalog_exercises(where: { exo_id: { _eq: $exoId } }, limit: 1) {
         id
         exo_id
@@ -156,13 +171,16 @@ export async function getImageExercise(
 
   const images = data.images_exercise_images ?? [];
   return {
-    ...toBoardItem(exercise, images),
+    ...toBoardItem(exercise, images, Boolean(data.images_exercise_options_by_pk?.two_frames)),
     images,
     localizations: exercise.localizations ?? [],
   };
 }
 
-export async function getExerciseSummary(token: string, exoId: number): Promise<RawExercise | null> {
+export async function getExerciseSummary(
+  token: string,
+  exoId: number,
+): Promise<RawExercise | null> {
   const data = await staffGql<{ catalog_exercises: RawExercise[] }>(
     token,
     `query($exoId: Int!) {
@@ -264,11 +282,9 @@ export async function deleteImagePrompt(token: string, id: string): Promise<void
   if (sameKind.length <= 1) {
     throw new Error("Cannot delete the last prompt of this kind/position");
   }
-  await staffGql(
-    token,
-    `mutation($id: uuid!) { delete_images_prompts_by_pk(id: $id) { id } }`,
-    { id },
-  );
+  await staffGql(token, `mutation($id: uuid!) { delete_images_prompts_by_pk(id: $id) { id } }`, {
+    id,
+  });
 }
 
 const SETTINGS_FIELDS = `
@@ -355,6 +371,40 @@ export async function insertExerciseImage(
     },
   );
   return data.insert_images_exercise_images_one;
+}
+
+export async function isTwoFrameExercise(token: string, exoId: number): Promise<boolean> {
+  const data = await staffGql<{ images_exercise_options_by_pk: { two_frames: boolean } | null }>(
+    token,
+    `query($exoId: Int!) { images_exercise_options_by_pk(exo_id: $exoId) { two_frames } }`,
+    { exoId },
+  );
+  return Boolean(data.images_exercise_options_by_pk?.two_frames);
+}
+
+/** Enabling two frames also deactivates the Mid frame so the sequence is Start + End. */
+export async function setTwoFrames(token: string, exoId: number, twoFrames: boolean) {
+  await staffGql(
+    token,
+    `mutation($object: images_exercise_options_insert_input!) {
+      insert_images_exercise_options_one(
+        object: $object
+        on_conflict: {
+          constraint: exercise_options_pkey
+          update_columns: [two_frames, updated_at, updated_by]
+        }
+      ) { exo_id }
+    }`,
+    {
+      object: {
+        exo_id: exoId,
+        two_frames: twoFrames,
+        updated_at: new Date().toISOString(),
+        updated_by: getUserIdFromToken(token),
+      },
+    },
+  );
+  if (twoFrames) await clearActivePosition(token, exoId, MID_POSITION);
 }
 
 export async function getActiveImageAtPosition(
@@ -464,11 +514,7 @@ export function getUserIdFromToken(token: string): string | null {
     const payload = JSON.parse(
       Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
     ) as { sub?: string; "https://hasura.io/jwt/claims"?: { "x-hasura-user-id"?: string } };
-    return (
-      payload["https://hasura.io/jwt/claims"]?.["x-hasura-user-id"] ??
-      payload.sub ??
-      null
-    );
+    return payload["https://hasura.io/jwt/claims"]?.["x-hasura-user-id"] ?? payload.sub ?? null;
   } catch {
     return null;
   }

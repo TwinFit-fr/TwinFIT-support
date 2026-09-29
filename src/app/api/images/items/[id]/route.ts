@@ -5,20 +5,18 @@ import {
   clearActivePosition,
   deleteExerciseImageRow,
   getExerciseImage,
+  isTwoFrameExercise,
   updateExerciseImage,
 } from "@/lib/images/queries";
 import { deleteImageFile } from "@/lib/images/storage";
-import { isDeletableImage } from "@/lib/images/types";
+import { MID_POSITION, isDeletableImage } from "@/lib/images/types";
 
 const patchSchema = z.object({
   position: z.number().int().min(0).nullable().optional(),
   active: z.boolean().optional(),
 });
 
-export async function PATCH(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const token = requireStaffToken(request);
     const { id } = await context.params;
@@ -30,8 +28,7 @@ export async function PATCH(
     }
 
     let nextActive = body.active ?? current.active;
-    let nextPosition =
-      body.position !== undefined ? body.position : current.position;
+    let nextPosition = body.position !== undefined ? body.position : current.position;
 
     // Deactivate always clears position.
     if (body.active === false || (nextActive === false && body.position === null)) {
@@ -44,6 +41,17 @@ export async function PATCH(
       return NextResponse.json(
         { error: "Active images require a position (0, 1, or 2)" },
         { status: 400 },
+      );
+    }
+
+    if (
+      nextActive &&
+      nextPosition === MID_POSITION &&
+      (await isTwoFrameExercise(token, current.exo_id))
+    ) {
+      return NextResponse.json(
+        { error: "This exercise uses two frames (Start + End); Mid cannot be active" },
+        { status: 409 },
       );
     }
 
@@ -68,10 +76,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const token = requireStaffToken(request);
     const { id } = await context.params;

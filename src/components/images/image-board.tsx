@@ -38,7 +38,8 @@ export function ImageBoard() {
   const muscleOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const ex of exercises) {
-      if (ex.primary_muscle_group) map.set(ex.primary_muscle_group.id, ex.primary_muscle_group.name);
+      if (ex.primary_muscle_group)
+        map.set(ex.primary_muscle_group.id, ex.primary_muscle_group.name);
     }
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [exercises]);
@@ -58,10 +59,7 @@ export function ImageBoard() {
       if (muscle !== "all" && ex.primary_muscle_group?.id !== muscle) return false;
       if (equipment !== "all" && ex.equipment?.id !== equipment) return false;
       if (!q) return true;
-      return (
-        ex.display_name.toLowerCase().includes(q) ||
-        String(ex.exo_id).includes(q)
-      );
+      return ex.display_name.toLowerCase().includes(q) || String(ex.exo_id).includes(q);
     });
   }, [exercises, search, status, muscle, equipment]);
 
@@ -115,7 +113,11 @@ export function ImageBoard() {
   async function startQueue() {
     const chosen = filtered
       .filter((ex) => selected.has(ex.exo_id))
-      .map((ex) => ({ exoId: ex.exo_id, name: ex.display_name }));
+      .map((ex) => ({
+        exoId: ex.exo_id,
+        name: ex.display_name,
+        framePositions: ex.frame_positions,
+      }));
     if (!chosen.length) return;
     try {
       await queue.start({
@@ -124,8 +126,8 @@ export function ImageBoard() {
         subject,
         maxConcurrency: settings?.params.max_concurrency ?? 3,
         generateStep,
-        generateSequence:
-          settings && sequenceStripSize(settings.params) ? generateSequence : undefined,
+        generateSequence,
+        canSequence: (panels) => Boolean(settings && sequenceStripSize(settings.params, panels)),
       });
       success(`${chosen.length} exercise(s) processed`, "Queue finished");
       await mutate("/api/images/exercises");

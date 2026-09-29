@@ -204,17 +204,18 @@ export function validateGenerationParams(params: GenerationParams): string[] {
 const MAX_STRIP_RATIO = 2.98;
 
 /**
- * Size of a single horizontal strip holding the 3 positions side by side, or null when the
+ * Size of a single horizontal strip holding `panels` poses side by side, or null when the
  * model/shape cannot produce one (fixed-size models, or landscape frames wider than 1:1).
  */
 export function sequenceStripSize(
   params: Pick<GenerationParams, "model" | "shape" | "size">,
+  panels = 3,
 ): string | null {
   if (!capabilitiesFor(params.model).customSize) return null;
   const shape = SHAPES.find((s) => s.id === params.shape);
   if (!shape?.ratio || shape.ratio > 1) return null;
   const tier = SIZE_TIERS.find((t) => t.id === params.size) ?? SIZE_TIERS[0];
-  const ratio = Math.min(shape.ratio * 3, MAX_STRIP_RATIO);
+  const ratio = Math.min(shape.ratio * panels, MAX_STRIP_RATIO);
   let height = Math.sqrt(tier.pixels / shape.ratio);
   height = Math.min(height, MAX_EDGE / ratio, Math.sqrt(MAX_PIXELS / ratio));
   height = Math.max(height, Math.sqrt(MIN_PIXELS / ratio));

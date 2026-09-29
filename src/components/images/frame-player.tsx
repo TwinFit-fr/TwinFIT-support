@@ -1,11 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { gifPlaybackOrder, imageThumbUrl } from "@/lib/images/urls";
+import { frameHoldMs, gifPlaybackOrder, imageThumbUrl } from "@/lib/images/urls";
 import { framePositionLabel } from "@/lib/images/types";
-
-// Real movement pauses at the extremes and passes quickly through the middle.
-const HOLD_MS: Record<number, number> = { 0: 600, 1: 300, 2: 600 };
 
 /** True once every URL is downloaded and decoded, so the first loop never shows a gap. */
 function useFramesDecoded(urls: string[], enabled: boolean): boolean {
@@ -56,7 +53,7 @@ function usePlaybackAllowed(ref: React.RefObject<HTMLElement | null>): boolean {
   return visible && !reducedMotion;
 }
 
-/** Plays active frames as a 0→1→2→1→0 loop; static with fewer than two frames. */
+/** Loops active frames (0→1→2→1 or 0→2) in a fixed-length cycle; static with fewer than two. */
 export function FramePlayer({
   frames,
   fallbackUrl,
@@ -87,7 +84,7 @@ export function FramePlayer({
     if (!animated || !playing || !decoded) return;
     const timer = window.setTimeout(
       () => setStep((i) => (i + 1) % order.length),
-      HOLD_MS[currentPosition] ?? 450,
+      frameHoldMs(order, step % order.length),
     );
     return () => window.clearTimeout(timer);
   }, [animated, playing, decoded, order.length, currentPosition, step]);
@@ -124,7 +121,9 @@ export function FramePlayer({
         // eslint-disable-next-line @next/next/no-img-element
         <img src={staticSrc} alt={alt} loading="lazy" className="h-full w-full object-contain" />
       ) : (
-        <div className="flex h-full items-center justify-center text-xs text-zinc-400">No image</div>
+        <div className="flex h-full items-center justify-center text-xs text-zinc-400">
+          No image
+        </div>
       )}
     </div>
   );

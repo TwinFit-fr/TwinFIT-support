@@ -69,18 +69,15 @@ export function useGenerationQueue() {
   const [running, setRunning] = useState(false);
   const cancelledRef = useRef(false);
 
-  const patchStep = useCallback(
-    (index: number, stepIndex: number, step: Partial<QueueStep>) => {
-      setItems((prev) =>
-        prev.map((item, i) => {
-          if (i !== index) return item;
-          const steps = item.steps.map((s, j) => (j === stepIndex ? { ...s, ...step } : s));
-          return { ...item, steps, status: itemStatus(steps) };
-        }),
-      );
-    },
-    [],
-  );
+  const patchStep = useCallback((index: number, stepIndex: number, step: Partial<QueueStep>) => {
+    setItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+        const steps = item.steps.map((s, j) => (j === stepIndex ? { ...s, ...step } : s));
+        return { ...item, steps, status: itemStatus(steps) };
+      }),
+    );
+  }, []);
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;
@@ -96,24 +93,34 @@ export function useGenerationQueue() {
 
   const start = useCallback(
     async (options: {
-      exercises: { exoId: number; name: string }[];
+      /** `framePositions`: positions the exercise uses ([0,2] for two-frame exercises). */
+      exercises: { exoId: number; name: string; framePositions: number[] }[];
       positions: number[];
       subject: SubjectChoice;
       maxConcurrency: number;
       generateStep: GenerateStepFn;
-      /** When set and all 3 positions are requested, one strip call produces them together. */
+      /** One strip call for all of an exercise's positions, when `canSequence(panels)` allows. */
       generateSequence?: GenerateSequenceFn;
+      canSequence?: (panels: number) => boolean;
     }) => {
-      const { exercises, positions, subject, maxConcurrency, generateStep, generateSequence } =
+      const { positions, subject, maxConcurrency, generateStep, generateSequence, canSequence } =
         options;
-      if (!exercises.length || !positions.length || running) return;
+      if (running) return;
+      const exercises = options.exercises
+        .map((exercise) => ({
+          ...exercise,
+          positions: exercise.framePositions.filter((p) => positions.includes(p)),
+        }))
+        .filter((exercise) => exercise.positions.length > 0);
+      if (!exercises.length) return;
       cancelledRef.current = false;
       const queue: QueueItem[] = exercises.map((exercise, i) => ({
-        ...exercise,
+        exoId: exercise.exoId,
+        name: exercise.name,
         ordinal: i + 1,
         subject: resolveSubject(subject),
         status: "waiting",
-        steps: positions.map((position) => ({ position, status: "waiting" })),
+        steps: exercise.positions.map((position) => ({ position, status: "waiting" })),
       }));
       setItems(queue);
       setRunning(true);
@@ -165,12 +172,19 @@ export function useGenerationQueue() {
         }
       };
 
-      const useSequence =
-        Boolean(generateSequence) && FRAME_POSITIONS.every((f) => positions.includes(f.id));
+      const useSequence = (index: number) => {
+        const { framePositions, positions: requested } = exercises[index];
+        return (
+          Boolean(generateSequence) &&
+          framePositions.length > 1 &&
+          requested.length === framePositions.length &&
+          Boolean(canSequence?.(framePositions.length))
+        );
+      };
 
       // Mid/End are generated from the exercise's Start frame, so Start must finish first.
       const runExercise = async (item: QueueItem, index: number) => {
-        if (useSequence && (await runSequence(index))) return;
+        if (useSequence(index) && (await runSequence(index))) return;
         const startIndex = item.steps.findIndex((s) => s.position === 0);
         if (startIndex >= 0) await runStep(index, startIndex);
         await Promise.all(

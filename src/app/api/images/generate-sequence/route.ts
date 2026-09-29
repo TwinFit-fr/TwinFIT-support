@@ -10,34 +10,48 @@ import {
   getUserIdFromToken,
   insertExerciseImage,
   listImagePrompts,
+  isTwoFrameExercise,
   loadSettings,
 } from "@/lib/images/queries";
 import { REFERENCE_USE_DIRECTIVE } from "@/lib/images/reference";
 import { SplitError, sequenceDirective, splitSequence } from "@/lib/images/sequence";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
-import { FRAME_POSITIONS, REFERENCE_KEYS } from "@/lib/images/types";
+import { REFERENCE_KEYS, framePositionsFor } from "@/lib/images/types";
 import type { ExerciseImage } from "@/lib/images/types";
 
 export const maxDuration = 300;
 
+const promptText = z.string().trim().min(1).max(32000);
+
 const bodySchema = z.object({
   exoId: z.number().int().positive(),
   subject: z.enum(["man", "woman"]),
+  /** One-off prompt texts for this generation only; never persisted as templates. */
+  systemOverride: promptText.optional(),
+  /** Indexed by position (0 start, 1 mid, 2 end); null keeps the template. */
+  positionOverrides: z.array(promptText.nullable()).length(3).optional(),
 });
 
-/** Generates Start, Mid and End in one strip so all three share scale, then splits it. */
+/** Generates the exercise's positions (Start/Mid/End or Start/End) in one strip so they share scale. */
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
-    const { exoId, subject } = bodySchema.parse(await request.json());
+    const { exoId, subject, systemOverride, positionOverrides } = bodySchema.parse(
+      await request.json(),
+    );
 
     const exercise = await getExerciseSummary(token, exoId);
     if (!exercise) {
       return NextResponse.json({ error: "Exercise not found" }, { status: 404 });
     }
-    const [settings, prompts] = await Promise.all([loadSettings(token), listImagePrompts(token)]);
+    const [settings, prompts, twoFrames] = await Promise.all([
+      loadSettings(token),
+      listImagePrompts(token),
+      isTwoFrameExercise(token, exoId),
+    ]);
     const { params } = settings;
-    const stripSize = sequenceStripSize(params);
+    const positions = framePositionsFor(twoFrames);
+    const stripSize = sequenceStripSize(params, positions.length);
     if (!stripSize) {
       return NextResponse.json(
         { error: "Sequence generation needs a custom-size model and a square or portrait shape" },
@@ -45,7 +59,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const chosen = FRAME_POSITIONS.map((frame) => selectedPrompts(settings, prompts, frame.id));
+    const chosen = positions.map((position) => selectedPrompts(settings, prompts, position));
     const system = chosen[0].system;
     const positionPrompts = chosen.map((c) => c.position);
     if (!system || positionPrompts.some((p) => !p)) {
@@ -58,9 +72,12 @@ export async function POST(request: Request) {
       "";
     const referenceFileId = settings[REFERENCE_KEYS[subject]];
     const basePrompt = assembleSequencePrompt({
-      systemContent: system.content,
-      positionContents: positionPrompts.map((p) => p!.content) as [string, string, string],
-      layoutDirective: sequenceDirective(),
+      systemContent: systemOverride ?? system.content,
+      panels: positions.map((position, i) => ({
+        position,
+        content: positionOverrides?.[position] ?? positionPrompts[i]!.content,
+      })),
+      layoutDirective: sequenceDirective(positions),
       name: exercise.display_name,
       description,
       exo_id: exercise.exo_id,
@@ -86,6 +103,7 @@ export async function POST(request: Request) {
     const format = params.format as "png" | "webp" | "jpeg";
     const { frames, cuts } = await splitSequence(
       result.bytes,
+      positions.length,
       resolveSize(params),
       format,
       params.compression,
@@ -94,18 +112,19 @@ export async function POST(request: Request) {
     const extension = format === "jpeg" ? "jpg" : format;
     const stamp = Date.now();
     const uploaded = await Promise.all(
-      frames.map((frame, position) =>
+      frames.map((frame, i) =>
         uploadImageFile({
           token,
           bytes: frame.bytes,
           mimeType: result.mimeType,
-          name: `exo_${exercise.exo_id}/${stamp}_seq_p${position}.${extension}`,
+          name: `exo_${exercise.exo_id}/${stamp}_seq_p${positions[i]}.${extension}`,
         }),
       ),
     );
 
     const images: ExerciseImage[] = [];
-    for (const [position, file] of uploaded.entries()) {
+    for (const [i, file] of uploaded.entries()) {
+      const position = positions[i];
       await clearActivePosition(token, exercise.exo_id, position);
       images.push(
         await insertExerciseImage(token, {
@@ -120,11 +139,13 @@ export async function POST(request: Request) {
             subject,
             reference_file_id: referenceFileId,
             system_prompt_id: system.id,
-            position_prompt_id: positionPrompts[position]!.id,
-            feet_shift_px: frames[position].shiftPx,
+            position_prompt_id: positionPrompts[i]!.id,
+            system_prompt_edited: systemOverride != null,
+            position_prompt_edited: positionOverrides?.[position] != null,
+            feet_shift_px: frames[i].shiftPx,
             sequence: { strip_size: stripSize, cuts },
           },
-          usage: position === 0 ? result.usage : null,
+          usage: i === 0 ? result.usage : null,
           created_by: getUserIdFromToken(token),
           position,
           active: true,

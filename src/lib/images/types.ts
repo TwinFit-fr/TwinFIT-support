@@ -51,6 +51,8 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   sequence?: { strip_size: string; cuts: number[] };
   system_prompt_id?: string | null;
   position_prompt_id?: string | null;
+  system_prompt_edited?: boolean;
+  position_prompt_edited?: boolean;
 };
 
 export type ImagePrompt = {
@@ -91,6 +93,10 @@ export type ExerciseImageBoardItem = {
   active_count: number;
   active_positions: number[];
   active_frames: { position: number; image_url: string }[];
+  /** Start + End only (position 1 unused). */
+  two_frames: boolean;
+  /** Positions this exercise's sequence uses: [0, 2] or [0, 1, 2]. */
+  frame_positions: number[];
   preview_image: ExerciseImage | null;
   status: "complete" | "partial" | "inactive_only" | "empty";
 };
@@ -108,6 +114,14 @@ export const FRAME_POSITIONS = [
 ] as const;
 
 export type FramePosition = (typeof FRAME_POSITIONS)[number]["id"];
+
+export const MID_POSITION = 1;
+
+export function framePositionsFor(twoFrames: boolean): number[] {
+  return FRAME_POSITIONS.map((p) => p.id as number).filter(
+    (id) => !twoFrames || id !== MID_POSITION,
+  );
+}
 
 export function framePositionLabel(position: number | null | undefined): string {
   return FRAME_POSITIONS.find((p) => p.id === position)?.label ?? "—";
