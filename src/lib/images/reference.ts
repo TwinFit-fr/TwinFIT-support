@@ -14,3 +14,10 @@ export function referenceFileName(subject: Subject, extension: string): string {
 
 /** Appended when Mid/End are produced by editing the exercise's active Start frame. */
 export const START_GUIDE_DIRECTIVE = `EDIT OF THE START FRAME: the input image is the start position of this same exercise. Keep EXACTLY the same character, face, clothing, colors, illustration style, background, camera angle, zoom level and scale. Keep the feet in exactly the same place and do not move, resize or re-frame the person. Change ONLY the body pose (and the equipment it holds) to the position described above.`;
+
+/** Appended whenever the brand logo is one of the input images. */
+export const LOGO_DIRECTIVE = `BRAND LOGO: one of the input images is the TwinFIT brand symbol (a stylized letter "T" on a transparent background). Print exactly this symbol — same shape and same colors, no added text or letters — small and centered on the chest of the navy t-shirt. Do not draw the symbol anywhere else and do not copy its background.`;
+
+export function logoFileName(extension: string): string {
+  return `brand/logo_${Date.now()}.${extension}`;
+}

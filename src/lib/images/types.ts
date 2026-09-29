@@ -12,6 +12,10 @@ export type GenerationParams = {
   background_color: string;
   input_fidelity: string;
   max_concurrency: number;
+  /** Also send the brand logo as input image when generating exercise frames. */
+  logo_in_exercises: boolean;
+  /** Brand logo in the exercise-images bucket; managed only by the logo endpoint. */
+  logo_file_id?: string | null;
 };
 
 export type Subject = "man" | "woman";
@@ -47,6 +51,7 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   subject?: Subject;
   reference_file_id?: string | null;
   guide_image_id?: string | null;
+  logo_sent?: boolean;
   feet_shift_px?: number;
   sequence?: { strip_size: string; cuts: number[] };
   system_prompt_id?: string | null;

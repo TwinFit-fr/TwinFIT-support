@@ -129,6 +129,7 @@ export const DEFAULT_GENERATION_PARAMS: GenerationParams = {
   background_color: "#F2E4CE",
   input_fidelity: "high",
   max_concurrency: 3,
+  logo_in_exercises: false,
 };
 
 function roundTo16(value: number): number {

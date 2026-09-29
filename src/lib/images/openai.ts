@@ -142,18 +142,21 @@ export async function generateImage(
 export async function editImage(
   prompt: string,
   params: GenerationParams,
-  input: { bytes: Buffer; mimeType: string },
+  inputs: { bytes: Buffer; mimeType: string }[],
   options: RequestOptions & { useFidelity?: boolean } = {},
 ): Promise<GeneratedImageResult> {
   const client = createOpenAIClient();
   const request = buildImageRequest(prompt, params, options);
-  const extension = input.mimeType === "image/jpeg" ? "jpg" : input.mimeType.split("/")[1] || "png";
-  const file = new File([new Uint8Array(input.bytes)], `input.${extension}`, {
-    type: input.mimeType,
+  const files = inputs.map((input, i) => {
+    const extension =
+      input.mimeType === "image/jpeg" ? "jpg" : input.mimeType.split("/")[1] || "png";
+    return new File([new Uint8Array(input.bytes)], `input_${i}.${extension}`, {
+      type: input.mimeType,
+    });
   });
   const response = await client.images.edit({
     model: request.model,
-    image: file,
+    image: files.length === 1 ? files[0] : files,
     prompt: request.prompt,
     size: request.size as "1024x1024",
     quality: request.quality as "auto",

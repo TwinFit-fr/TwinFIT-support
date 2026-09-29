@@ -22,7 +22,12 @@ import {
   validateGenerationParams,
 } from "@/lib/images/capabilities";
 import type { GenerationParams, ImagePrompt, ImageSettings, Subject } from "@/lib/images/types";
-import { FRAME_POSITIONS, POSITION_PROMPT_KEYS, REFERENCE_KEYS, SUBJECTS } from "@/lib/images/types";
+import {
+  FRAME_POSITIONS,
+  POSITION_PROMPT_KEYS,
+  REFERENCE_KEYS,
+  SUBJECTS,
+} from "@/lib/images/types";
 import { imageThumbUrl, storageFileUrl } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 
@@ -34,8 +39,10 @@ type Draft = Pick<
 >;
 
 function toDraft(settings: ImageSettings): Draft {
+  // The logo is managed by its own endpoint, never through Save.
+  const { logo_file_id: _logo, ...params } = settings.params;
   return {
-    params: settings.params,
+    params,
     system_prompt_id: settings.system_prompt_id,
     start_prompt_id: settings.start_prompt_id,
     mid_prompt_id: settings.mid_prompt_id,
@@ -85,7 +92,15 @@ function Chip({
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <fieldset className="space-y-1.5">
       <legend className="text-xs font-medium text-zinc-600">{label}</legend>
@@ -95,7 +110,15 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="space-y-4 rounded-xl border border-zinc-200 bg-white p-4">
       <div>
@@ -116,6 +139,58 @@ function readAsBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Could not read file"));
     reader.readAsDataURL(file);
   });
+}
+
+const MAX_LOGO_BYTES = 3 * 1024 * 1024;
+
+function LogoCard({
+  fileId,
+  busy,
+  onUpload,
+}: {
+  fileId: string | null | undefined;
+  busy: boolean;
+  onUpload: (file: File) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const url = imageThumbUrl(storageFileUrl(fileId), 480);
+  return (
+    <div className="space-y-2 rounded-lg border border-zinc-200 p-3">
+      <div className="text-sm font-medium text-zinc-800">Brand logo</div>
+      <div className="flex aspect-square items-center justify-center overflow-hidden rounded-md bg-zinc-100 p-4">
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt="Brand logo" className="h-full w-full object-contain" />
+        ) : (
+          <span className="px-4 text-center text-xs text-zinc-400">
+            No logo — references are generated from the prompt only.
+          </span>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/webp,image/jpeg"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) onUpload(file);
+        }}
+      />
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
+      >
+        {busy ? "Uploading…" : fileId ? "Replace" : "Upload"}
+      </Button>
+      <p className="text-[11px] text-zinc-500">
+        Sent with every reference generation. Replacing keeps the previous file in storage.
+      </p>
+    </div>
+  );
 }
 
 function ReferenceCard({
@@ -156,10 +231,20 @@ function ReferenceCard({
         }}
       />
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
           Upload
         </Button>
-        <Button type="button" variant="secondary" disabled={busy} onClick={() => onAction(subject, "generate")}>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={busy}
+          onClick={() => onAction(subject, "generate")}
+        >
           {busy ? "Working…" : "Generate"}
         </Button>
         <Button
@@ -184,6 +269,7 @@ export function ImageSettingsPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [referenceBusy, setReferenceBusy] = useState<Subject | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
 
   // Initialise once; later refreshes (e.g. reference changes) must not wipe unsaved edits.
   useEffect(() => {
@@ -228,6 +314,26 @@ export function ImageSettingsPage() {
       toastError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function uploadLogo(file: File) {
+    if (file.size > MAX_LOGO_BYTES) {
+      toastError("Logo must be under 3 MB");
+      return;
+    }
+    setLogoBusy(true);
+    try {
+      const updated = (await staffFetch("/api/images/settings/logo", {
+        method: "POST",
+        body: JSON.stringify({ mimeType: file.type, data: await readAsBase64(file) }),
+      })) as ImageSettings;
+      await mutate("/api/images/settings", updated, { revalidate: false });
+      success("Logo updated");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Logo upload failed");
+    } finally {
+      setLogoBusy(false);
     }
   }
 
@@ -356,7 +462,11 @@ export function ImageSettingsPage() {
         {caps.customSize && (
           <Field label="Resolution">
             {SIZE_TIERS.map((tier) => (
-              <Chip key={tier.id} selected={params.size === tier.id} onClick={() => setParams({ size: tier.id })}>
+              <Chip
+                key={tier.id}
+                selected={params.size === tier.id}
+                onClick={() => setParams({ size: tier.id })}
+              >
                 {tier.label}
               </Chip>
             ))}
@@ -375,7 +485,9 @@ export function ImageSettingsPage() {
                 onClick={() =>
                   setParams({
                     background: bg.id,
-                    ...(bg.id === "transparent" && params.format === "jpeg" ? { format: "png" } : {}),
+                    ...(bg.id === "transparent" && params.format === "jpeg"
+                      ? { format: "png" }
+                      : {}),
                   })
                 }
               >
@@ -392,7 +504,11 @@ export function ImageSettingsPage() {
           <input
             type="color"
             aria-label="Background color"
-            value={/^#[0-9a-fA-F]{6}$/.test(params.background_color) ? params.background_color : "#000000"}
+            value={
+              /^#[0-9a-fA-F]{6}$/.test(params.background_color)
+                ? params.background_color
+                : "#000000"
+            }
             onChange={(e) => setParams({ background_color: e.target.value.toUpperCase() })}
             className="h-8 w-10 cursor-pointer rounded border border-zinc-300"
           />
@@ -517,7 +633,7 @@ export function ImageSettingsPage() {
         title="Character references"
         description="One global reference per subject. When present, every generation for that subject starts from it (OpenAI image edit) so the same character appears across the catalog. Upload, Generate and Remove apply immediately."
       >
-        <div className="grid gap-3 sm:grid-cols-2 lg:max-w-2xl">
+        <div className="grid gap-3 sm:grid-cols-2 lg:max-w-4xl lg:grid-cols-3">
           {SUBJECTS.map((subject) => (
             <ReferenceCard
               key={subject}
@@ -527,7 +643,28 @@ export function ImageSettingsPage() {
               onAction={(s, a) => void referenceAction(s, a)}
             />
           ))}
+          <LogoCard
+            fileId={data.params.logo_file_id}
+            busy={logoBusy}
+            onUpload={(file) => void uploadLogo(file)}
+          />
         </div>
+        <label className="flex items-start gap-2 text-xs text-zinc-700">
+          <input
+            type="checkbox"
+            checked={params.logo_in_exercises}
+            disabled={!data.params.logo_file_id}
+            onChange={(e) => setParams({ logo_in_exercises: e.target.checked })}
+            className="mt-0.5 h-4 w-4 rounded border-zinc-300"
+          />
+          <span>
+            Also send the logo when generating exercises
+            <span className="block text-[11px] text-zinc-500">
+              Usually not needed: exercises copy the character (and its logo) from the reference.
+              Enable it if the chest logo comes out distorted. Saved with Save.
+            </span>
+          </span>
+        </label>
         <Field
           label="Reference fidelity"
           hint="High keeps face and features closer to the reference; lower it if poses copy the reference too much."
