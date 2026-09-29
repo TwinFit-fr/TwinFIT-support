@@ -4,24 +4,29 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { mutate } from "swr";
+import { Trash2 } from "lucide-react";
 import { Button, Input, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
-import { usePresetState } from "@/hooks/use-generation-queue";
-import type { ExerciseImage, ExerciseImageDetail } from "@/lib/images/types";
-import { FRAME_POSITIONS } from "@/lib/images/types";
-import { gifPlaybackOrder, imageDisplayUrl } from "@/lib/images/urls";
+import {
+  useGenerationQueue,
+  usePositionSelection,
+  useSubjectChoice,
+} from "@/hooks/use-generation-queue";
+import { GenerationProgress, processingSteps } from "@/components/images/generation-progress";
+import { FramePlayer } from "@/components/images/frame-player";
+import { PositionSelector, SubjectSelector } from "@/components/images/position-selector";
+import type { ExerciseImage, ExerciseImageDetail, ImageSettings } from "@/lib/images/types";
+import {
+  FRAME_POSITIONS,
+  framePositionLabel,
+  isDeletableImage,
+  targetPosition,
+} from "@/lib/images/types";
+import { gifPlaybackOrder, imageDisplayUrl, imageThumbUrl } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 
-function CheckerFrame({
-  src,
-  alt,
-  label,
-}: {
-  src: string | null;
-  alt: string;
-  label: string;
-}) {
+function CheckerFrame({ src, alt, label }: { src: string | null; alt: string; label: string }) {
   return (
     <div className="space-y-2">
       <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</div>
@@ -45,37 +50,38 @@ function CheckerFrame({
   );
 }
 
+function imageLabel(img: ExerciseImage): string {
+  if (img.active) return `Pos ${img.position} · ${framePositionLabel(img.position)}`;
+  const target = targetPosition(img);
+  return target != null ? `${framePositionLabel(target)} · inactive` : "Inactive";
+}
+
 function SequencePreview({ images }: { images: ExerciseImage[] }) {
-  const active = images
+  const frames = images
     .filter((img) => img.active && img.position != null)
-    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-  const byPos = new Map(active.map((img) => [img.position as number, img]));
-  const order = gifPlaybackOrder(active.map((img) => img.position as number));
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    if (order.length < 2) return;
-    const timer = window.setInterval(() => {
-      setFrame((i) => (i + 1) % order.length);
-    }, 450);
-    return () => window.clearInterval(timer);
-  }, [order.join(",")]);
-
-  const current = byPos.get(order[frame] ?? -1) ?? null;
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    .map((img) => ({ position: img.position as number, image_url: img.image_url }));
+  const order = gifPlaybackOrder(frames.map((f) => f.position));
 
   return (
     <div className="space-y-2 rounded-xl border border-zinc-200 bg-white p-4">
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium text-zinc-800">GIF preview (0→1→2→1→0)</div>
         <div className="text-xs text-zinc-500">
-          {active.length}/3 active · order {order.join("→") || "—"}
+          {frames.length}/3 active · order {order.join("→") || "—"}
         </div>
       </div>
-      <CheckerFrame
-        src={imageDisplayUrl(current?.image_url)}
-        alt="Sequence preview"
-        label={current ? `Position ${current.position}` : "Need active frames"}
-      />
+      <div
+        className="aspect-square overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100"
+        style={{
+          backgroundImage:
+            "linear-gradient(45deg,#e4e4e7 25%,transparent 25%),linear-gradient(-45deg,#e4e4e7 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e4e4e7 75%),linear-gradient(-45deg,transparent 75%,#e4e4e7 75%)",
+          backgroundSize: "18px 18px",
+          backgroundPosition: "0 0,0 9px,9px -9px,-9px 0",
+        }}
+      >
+        <FramePlayer frames={frames} fallbackUrl={null} alt="Sequence preview" width={800} />
+      </div>
     </div>
   );
 }
@@ -84,11 +90,15 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const router = useRouter();
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
-  const [preset] = usePresetState();
-  const { data, isLoading, error } = useStaffSWR<{ exercise: ExerciseImageDetail }>(
-    `/api/images/exercises/${exoId}`,
-    { refreshInterval: 5000 },
-  );
+  const [positions, setPositions] = usePositionSelection();
+  const [subject, setSubject] = useSubjectChoice();
+  const { data: settings } = useStaffSWR<ImageSettings>("/api/images/settings");
+  const queue = useGenerationQueue();
+  const generation = queue.items[0];
+  const inFlight = processingSteps(generation);
+  const { data, isLoading, error } = useStaffSWR<{
+    exercise: ExerciseImageDetail;
+  }>(`/api/images/exercises/${exoId}`, { refreshInterval: 5000 });
   const exercise = data?.exercise;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [instruction, setInstruction] = useState("");
@@ -121,34 +131,46 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     await mutate("/api/images/exercises");
   }, [exoId]);
 
-  async function runGenerate(mode: "generate" | "refine") {
-    if (!exercise) return;
+  async function runGenerate() {
+    if (!exercise || queue.running) return;
+    await queue.start({
+      exercises: [{ exoId: exercise.exo_id, name: exercise.display_name }],
+      positions,
+      subject,
+      maxConcurrency: settings?.params.max_concurrency ?? 3,
+      generateStep: async (exoId, position, stepSubject) => {
+        await staffFetch("/api/images/generate", {
+          method: "POST",
+          body: JSON.stringify({
+            exoId,
+            mode: "generate",
+            position,
+            subject: stepSubject,
+          }),
+        });
+        await refresh();
+      },
+    });
+  }
+
+  async function runRefine() {
+    if (!exercise || !selected) return;
     setBusy(true);
     try {
       await staffFetch("/api/images/generate", {
         method: "POST",
         body: JSON.stringify({
           exoId: exercise.exo_id,
-          mode,
-          sourceImageId: mode === "refine" ? selected?.id : null,
-          instruction: mode === "refine" ? instruction : null,
-          systemPromptId: preset.systemPromptId,
-          exercisePromptId: preset.exercisePromptId,
-          params: {
-            model: preset.model,
-            shape: preset.shape,
-            size: preset.size,
-            background: preset.background,
-            format: preset.format,
-            quality: preset.quality,
-          },
+          mode: "refine",
+          sourceImageId: selected.id,
+          instruction,
         }),
       });
-      success(mode === "refine" ? "Refine finished" : "Image generated");
+      success("Refine finished");
       setInstruction("");
       await refresh();
     } catch (err) {
-      toastError(err instanceof Error ? err.message : "Generation failed");
+      toastError(err instanceof Error ? err.message : "Refine failed");
     } finally {
       setBusy(false);
     }
@@ -170,14 +192,14 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
-  async function removeImage() {
-    if (!selected) return;
-    if (!window.confirm("Delete this image permanently?")) return;
+  async function removeImage(image: ExerciseImage | null) {
+    if (!image || !isDeletableImage(image) || busy) return;
+    if (!window.confirm(`Delete this ${imageLabel(image)} image permanently?`)) return;
     setBusy(true);
     try {
-      await staffFetch(`/api/images/items/${selected.id}`, { method: "DELETE" });
+      await staffFetch(`/api/images/items/${image.id}`, { method: "DELETE" });
       success("Image deleted");
-      setSelectedId(null);
+      if (selectedId === image.id) setSelectedId(null);
       await refresh();
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Delete failed");
@@ -193,10 +215,11 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       }
       if (event.key === "r" || event.key === "R") {
         event.preventDefault();
-        void runGenerate("generate");
+        void runGenerate();
       } else if (event.key === "Delete" || event.key === "Backspace") {
+        if (!selected || !isDeletableImage(selected)) return;
         event.preventDefault();
-        void removeImage();
+        void removeImage(selected);
       } else if (event.key === "0" || event.key === "1" || event.key === "2") {
         if (!selected) return;
         event.preventDefault();
@@ -253,20 +276,25 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             {exercise.active_count}/3 active frames
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" disabled={busy} onClick={() => void runGenerate("generate")}>
-            Generate
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <SubjectSelector value={subject} onChange={setSubject} disabled={queue.running} />
+          <PositionSelector value={positions} onChange={setPositions} disabled={queue.running} />
           <Button
             type="button"
-            variant="danger"
-            disabled={busy || !selected}
-            onClick={() => void removeImage()}
+            variant="secondary"
+            disabled={busy || queue.running}
+            onClick={() => void runGenerate()}
           >
-            Delete
+            {queue.running
+              ? "Generating…"
+              : positions.length > 1
+                ? `Generate (${positions.length})`
+                : "Generate"}
           </Button>
         </div>
       </div>
+
+      <GenerationProgress item={generation} running={queue.running} onCancel={queue.cancel} />
 
       <div className="grid gap-4 lg:grid-cols-4">
         {FRAME_POSITIONS.map((frame) => {
@@ -286,40 +314,72 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       <div className="space-y-2">
         <div className="text-sm font-medium text-zinc-800">All images</div>
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {exercise.images.map((img) => (
-            <button
-              key={img.id}
-              type="button"
-              onClick={() => setSelectedId(img.id)}
-              className={cn(
-                "min-w-[120px] rounded-lg border p-2 text-left",
-                selectedId === img.id
-                  ? "border-zinc-900 ring-1 ring-zinc-900"
-                  : "border-zinc-200 hover:border-zinc-300",
-              )}
+          {inFlight.map((step) => (
+            <div
+              key={step.position}
+              className="min-w-[120px] rounded-lg border border-dashed border-zinc-300 p-2"
+              aria-label={`Generating ${framePositionLabel(step.position)}`}
             >
-              <div
-                className="mb-2 aspect-square overflow-hidden rounded-md bg-zinc-100"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(45deg,#e4e4e7 25%,transparent 25%),linear-gradient(-45deg,#e4e4e7 25%,transparent 25%)",
-                  backgroundSize: "12px 12px",
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={img.image_url}
-                  alt=""
-                  className="h-full w-full object-contain"
-                />
-              </div>
+              <Skeleton className="mb-2 aspect-square w-full rounded-md" />
               <div className="truncate text-[11px] font-medium text-zinc-800">
-                {img.active ? `Pos ${img.position}` : "Inactive"}
+                {framePositionLabel(step.position)} · generating…
               </div>
-              <div className="truncate text-[10px] text-zinc-500">{img.model}</div>
-            </button>
+              <div className="truncate text-[10px] text-zinc-500">{generation?.subject}</div>
+            </div>
           ))}
-          {exercise.images.length === 0 && (
+          {exercise.images.map((img) => (
+            <div key={img.id} className="relative min-w-[120px]">
+              <button
+                type="button"
+                onClick={() => setSelectedId(img.id)}
+                className={cn(
+                  "w-full rounded-lg border p-2 text-left",
+                  selectedId === img.id
+                    ? "border-zinc-900 ring-1 ring-zinc-900"
+                    : "border-zinc-200 hover:border-zinc-300",
+                )}
+              >
+                <div
+                  className="mb-2 aspect-square overflow-hidden rounded-md bg-zinc-100"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(45deg,#e4e4e7 25%,transparent 25%),linear-gradient(-45deg,#e4e4e7 25%,transparent 25%)",
+                    backgroundSize: "12px 12px",
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imageThumbUrl(img.image_url, 240) ?? undefined}
+                    alt={imageLabel(img)}
+                    loading="lazy"
+                    width={120}
+                    height={120}
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                <div className="truncate text-[11px] font-medium text-zinc-800">
+                  {imageLabel(img)}
+                </div>
+                <div className="truncate text-[10px] text-zinc-500">
+                  {img.model}
+                  {img.params?.subject ? ` · ${img.params.subject}` : ""}
+                </div>
+              </button>
+              {isDeletableImage(img) && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void removeImage(img)}
+                  aria-label={`Delete ${imageLabel(img)} image`}
+                  title="Delete image"
+                  className="absolute right-3 top-3 rounded-md bg-white/90 p-1 text-red-600 shadow-sm hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ))}
+          {exercise.images.length === 0 && inFlight.length === 0 && (
             <div className="text-sm text-zinc-500">No images yet. Generate one.</div>
           )}
         </div>
@@ -333,7 +393,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
               <Button
                 key={frame.id}
                 type="button"
-                variant={selected.active && selected.position === frame.id ? "default" : "secondary"}
+                variant={
+                  selected.active && selected.position === frame.id ? "default" : "secondary"
+                }
                 disabled={busy}
                 onClick={() => void setPosition(selected.id, frame.id, true)}
               >
@@ -367,7 +429,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             type="button"
             variant="secondary"
             disabled={busy || !selected || !instruction.trim()}
-            onClick={() => void runGenerate("refine")}
+            onClick={() => void runRefine()}
           >
             Refine selected
           </Button>
@@ -392,8 +454,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       </div>
 
       <p className="text-xs text-zinc-400">
-        Shortcuts: R generate · 0/1/2 set position · X deactivate · Del delete · ←/→ images · [/]
-        prev/next · Esc back
+        Shortcuts: R generate selected positions · 0/1/2 set position · X deactivate · Del delete
+        (images without position) · ←/→ images · [/] prev/next · Esc back
       </p>
     </div>
   );

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/primitives";
 import type { ExerciseImageBoardItem } from "@/lib/images/types";
-import { imageDisplayUrl, statusLabel } from "@/lib/images/urls";
+import { FramePlayer } from "@/components/images/frame-player";
+import { statusLabel } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 
 export function ExerciseImageCard({
@@ -15,8 +16,6 @@ export function ExerciseImageCard({
   selected: boolean;
   onToggle: () => void;
 }) {
-  const thumb = imageDisplayUrl(exercise.preview_image?.image_url);
-
   return (
     <div
       className={cn(
@@ -44,18 +43,12 @@ export function ExerciseImageCard({
             backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
           }}
         >
-          {thumb ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={thumb}
-              alt={exercise.display_name}
-              className="h-full w-full object-contain"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-xs text-zinc-400">
-              No image
-            </div>
-          )}
+          <FramePlayer
+            frames={exercise.active_frames}
+            fallbackUrl={exercise.preview_image?.image_url ?? null}
+            alt={exercise.display_name}
+            width={400}
+          />
         </div>
         <div className="space-y-1 p-3">
           <div className="flex items-start justify-between gap-2">

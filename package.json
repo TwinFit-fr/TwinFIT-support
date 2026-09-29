@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@nhost/nhost-js": "^3.3.1",
     "@nhost/react": "^3.11.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -20,6 +21,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
+    "sharp": "^0.35.5",
     "swr": "^2.5.1",
     "tailwind-merge": "^3.3.1",
     "zod": "^3.25.76"

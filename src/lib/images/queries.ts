@@ -1,12 +1,14 @@
 import { staffGql } from "@/lib/staff-gql";
-import { assembleImagePrompt } from "./prompt";
+import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
+import { assembleImagePrompt, selectedPrompts } from "./prompt";
 import type {
   ExerciseImage,
   ExerciseImageBoardItem,
   ExerciseImageDetail,
-  GenerationParams,
+  GenerationSnapshot,
   ImagePrompt,
   ImagePromptKind,
+  ImageSettings,
 } from "./types";
 
 const IMAGE_FIELDS = `
@@ -28,9 +30,9 @@ const IMAGE_FIELDS = `
 const PROMPT_FIELDS = `
   id
   kind
+  position
   name
   content
-  is_default
   inserted_at
   updated_at
 `;
@@ -78,6 +80,10 @@ function toBoardItem(exercise: RawExercise, images: ExerciseImage[]): ExerciseIm
     image_count: images.length,
     active_count: active.length,
     active_positions: active.map((img) => img.position as number),
+    active_frames: active.map((img) => ({
+      position: img.position as number,
+      image_url: img.image_url,
+    })),
     preview_image: preview,
     status: boardStatus(images),
   };
@@ -150,20 +156,16 @@ export async function getImageExercise(
   if (!exercise) return null;
 
   const images = data.images_exercise_images ?? [];
-  const prompts = await listImagePrompts(token);
-  const system =
-    prompts.find((p) => p.kind === "system" && p.is_default) ??
-    prompts.find((p) => p.kind === "system");
-  const exercisePrompt =
-    prompts.find((p) => p.kind === "exercise" && p.is_default) ??
-    prompts.find((p) => p.kind === "exercise");
+  const [prompts, settings] = await Promise.all([listImagePrompts(token), loadSettings(token)]);
+  const chosen = selectedPrompts(settings, prompts, 0);
 
   return {
     ...toBoardItem(exercise, images),
     images,
     assembled_prompt: assembleImagePrompt({
-      systemContent: system?.content ?? "",
-      exerciseContent: exercisePrompt?.content ?? "",
+      systemContent: chosen.system?.content ?? "",
+      positionContent: chosen.position?.content ?? "",
+      background_color: settings.params.background_color,
       name: exercise.display_name,
       description: englishDescription(exercise.localizations),
       exo_id: exercise.exo_id,
@@ -196,7 +198,7 @@ export async function listImagePrompts(token: string): Promise<ImagePrompt[]> {
   const data = await staffGql<{ images_prompts: ImagePrompt[] }>(
     token,
     `query {
-      images_prompts(order_by: [{ kind: asc }, { name: asc }]) {
+      images_prompts(order_by: [{ kind: asc }, { position: asc_nulls_first }, { name: asc }]) {
         ${PROMPT_FIELDS}
       }
     }`,
@@ -215,9 +217,17 @@ export async function getImagePrompt(token: string, id: string): Promise<ImagePr
 
 export async function createImagePrompt(
   token: string,
-  input: { kind: ImagePromptKind; name: string; content: string; is_default?: boolean },
+  input: {
+    kind: ImagePromptKind;
+    position?: number | null;
+    name: string;
+    content: string;
+  },
 ): Promise<ImagePrompt> {
-  if (input.is_default) await clearDefaultPrompt(token, input.kind);
+  const position = input.kind === "position" ? (input.position ?? null) : null;
+  if (input.kind === "position" && position == null) {
+    throw new Error("position is required for position prompts");
+  }
   const data = await staffGql<{ insert_images_prompts_one: ImagePrompt }>(
     token,
     `mutation($object: images_prompts_insert_input!) {
@@ -226,9 +236,9 @@ export async function createImagePrompt(
     {
       object: {
         kind: input.kind,
+        position,
         name: input.name,
         content: input.content,
-        is_default: Boolean(input.is_default),
       },
     },
   );
@@ -238,11 +248,8 @@ export async function createImagePrompt(
 export async function updateImagePrompt(
   token: string,
   id: string,
-  input: { name?: string; content?: string; is_default?: boolean },
+  input: { name?: string; content?: string },
 ): Promise<ImagePrompt> {
-  const current = await getImagePrompt(token, id);
-  if (!current) throw new Error("Prompt not found");
-  if (input.is_default) await clearDefaultPrompt(token, current.kind);
   const data = await staffGql<{ update_images_prompts_by_pk: ImagePrompt }>(
     token,
     `mutation($id: uuid!, $set: images_prompts_set_input!) {
@@ -253,7 +260,6 @@ export async function updateImagePrompt(
       set: {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.content !== undefined ? { content: input.content } : {}),
-        ...(input.is_default !== undefined ? { is_default: input.is_default } : {}),
         updated_at: new Date().toISOString(),
       },
     },
@@ -265,32 +271,65 @@ export async function deleteImagePrompt(token: string, id: string): Promise<void
   const prompts = await listImagePrompts(token);
   const current = prompts.find((p) => p.id === id);
   if (!current) throw new Error("Prompt not found");
-  const sameKind = prompts.filter((p) => p.kind === current.kind);
+  const sameKind = prompts.filter(
+    (p) => p.kind === current.kind && p.position === current.position,
+  );
   if (sameKind.length <= 1) {
-    throw new Error("Cannot delete the last prompt of this kind");
+    throw new Error("Cannot delete the last prompt of this kind/position");
   }
   await staffGql(
     token,
     `mutation($id: uuid!) { delete_images_prompts_by_pk(id: $id) { id } }`,
     { id },
   );
-  if (current.is_default) {
-    const next = sameKind.find((p) => p.id !== id);
-    if (next) await updateImagePrompt(token, next.id, { is_default: true });
-  }
 }
 
-async function clearDefaultPrompt(token: string, kind: ImagePromptKind): Promise<void> {
-  await staffGql(
+const SETTINGS_FIELDS = `
+  params
+  system_prompt_id
+  start_prompt_id
+  mid_prompt_id
+  end_prompt_id
+  man_reference_file_id
+  woman_reference_file_id
+  updated_at
+  updated_by
+`;
+
+/** Settings row with params merged over defaults, so keys added later always have a value. */
+export async function loadSettings(token: string): Promise<ImageSettings> {
+  const data = await staffGql<{ images_settings_by_pk: ImageSettings | null }>(
     token,
-    `mutation($kind: String!, $updatedAt: timestamptz!) {
-      update_images_prompts(
-        where: { kind: { _eq: $kind }, is_default: { _eq: true } }
-        _set: { is_default: false, updated_at: $updatedAt }
-      ) { affected_rows }
-    }`,
-    { kind, updatedAt: new Date().toISOString() },
+    `query { images_settings_by_pk(id: true) { ${SETTINGS_FIELDS} } }`,
   );
+  const row = data.images_settings_by_pk;
+  if (!row) {
+    throw new Error("Image settings row is missing (run backend migrations 1790000000024/25)");
+  }
+  return { ...row, params: { ...DEFAULT_GENERATION_PARAMS, ...(row.params ?? {}) } };
+}
+
+export async function updateImageSettings(
+  token: string,
+  set: Partial<Omit<ImageSettings, "updated_at" | "updated_by">>,
+): Promise<ImageSettings> {
+  const data = await staffGql<{ update_images_settings_by_pk: ImageSettings | null }>(
+    token,
+    `mutation($set: images_settings_set_input!) {
+      update_images_settings_by_pk(pk_columns: { id: true }, _set: $set) { ${SETTINGS_FIELDS} }
+    }`,
+    {
+      set: {
+        ...set,
+        updated_at: new Date().toISOString(),
+        updated_by: getUserIdFromToken(token),
+      },
+    },
+  );
+  if (!data.update_images_settings_by_pk) {
+    throw new Error("Image settings row is missing (run backend migrations 1790000000024/25)");
+  }
+  return data.update_images_settings_by_pk;
 }
 
 export async function insertExerciseImage(
@@ -301,7 +340,7 @@ export async function insertExerciseImage(
     image_url: string;
     model: string;
     prompt: string;
-    params: GenerationParams;
+    params: GenerationSnapshot;
     usage?: Record<string, unknown> | null;
     created_by?: string | null;
     position?: number | null;
@@ -329,6 +368,24 @@ export async function insertExerciseImage(
     },
   );
   return data.insert_images_exercise_images_one;
+}
+
+export async function getActiveImageAtPosition(
+  token: string,
+  exoId: number,
+  position: number,
+): Promise<ExerciseImage | null> {
+  const data = await staffGql<{ images_exercise_images: ExerciseImage[] }>(
+    token,
+    `query($exoId: Int!, $position: smallint!) {
+      images_exercise_images(
+        where: { exo_id: { _eq: $exoId }, position: { _eq: $position }, active: { _eq: true } }
+        limit: 1
+      ) { ${IMAGE_FIELDS} }
+    }`,
+    { exoId, position },
+  );
+  return data.images_exercise_images?.[0] ?? null;
 }
 
 export async function getExerciseImage(token: string, id: string): Promise<ExerciseImage | null> {
@@ -405,11 +462,14 @@ export async function clearActivePosition(
 }
 
 export async function deleteExerciseImageRow(token: string, id: string): Promise<void> {
-  await staffGql(
+  const data = await staffGql<{ delete_images_exercise_images_by_pk: { id: string } | null }>(
     token,
     `mutation($id: uuid!) { delete_images_exercise_images_by_pk(id: $id) { id } }`,
     { id },
   );
+  if (!data.delete_images_exercise_images_by_pk) {
+    throw new Error("Image was not deleted (only images without a position can be deleted)");
+  }
 }
 
 export function getUserIdFromToken(token: string): string | null {

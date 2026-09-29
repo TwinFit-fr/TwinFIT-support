@@ -5,14 +5,14 @@ import { mutate } from "swr";
 import { Button, Input, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { ExerciseImageCard } from "@/components/images/exercise-image-card";
-import { GenerationPresetPopover } from "@/components/images/generation-preset-popover";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   useGenerationQueue,
-  usePresetState,
+  usePositionSelection,
+  useSubjectChoice,
 } from "@/hooks/use-generation-queue";
-import type { ExerciseImageBoardItem } from "@/lib/images/types";
+import type { ExerciseImageBoardItem, ImageSettings, Subject } from "@/lib/images/types";
 
 type ListResponse = { exercises: ExerciseImageBoardItem[]; count: number };
 
@@ -22,13 +22,15 @@ export function ImageBoard() {
   const { data, isLoading, error } = useStaffSWR<ListResponse>("/api/images/exercises", {
     refreshInterval: 8000,
   });
-  const [preset, setPreset] = usePresetState();
+  const [positions, setPositions] = usePositionSelection();
+  const [subject, setSubject] = useSubjectChoice();
+  const { data: settings } = useStaffSWR<ImageSettings>("/api/images/settings");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [muscle, setMuscle] = useState("all");
   const [equipment, setEquipment] = useState("all");
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const queue = useGenerationQueue(3);
+  const queue = useGenerationQueue();
 
   const exercises = data?.exercises ?? [];
 
@@ -93,23 +95,10 @@ export function ImageBoard() {
     setSelected(new Set(filtered.filter((ex) => ex.status === "empty").map((ex) => ex.exo_id)));
   }
 
-  async function generateOne(exoId: number) {
+  async function generateStep(exoId: number, position: number, stepSubject: Subject) {
     await staffFetch("/api/images/generate", {
       method: "POST",
-      body: JSON.stringify({
-        exoId,
-        mode: "generate",
-        systemPromptId: preset.systemPromptId,
-        exercisePromptId: preset.exercisePromptId,
-        params: {
-          model: preset.model,
-          shape: preset.shape,
-          size: preset.size,
-          background: preset.background,
-          format: preset.format,
-          quality: preset.quality,
-        },
-      }),
+      body: JSON.stringify({ exoId, mode: "generate", position, subject: stepSubject }),
     });
     await mutate("/api/images/exercises");
   }
@@ -120,7 +109,13 @@ export function ImageBoard() {
       .map((ex) => ({ exoId: ex.exo_id, name: ex.display_name }));
     if (!chosen.length) return;
     try {
-      await queue.start(chosen, generateOne);
+      await queue.start({
+        exercises: chosen,
+        positions,
+        subject,
+        maxConcurrency: settings?.params.max_concurrency ?? 3,
+        generateStep,
+      });
       success(`${chosen.length} exercise(s) processed`, "Queue finished");
       await mutate("/api/images/exercises");
     } catch (err) {
@@ -137,7 +132,6 @@ export function ImageBoard() {
             Generate frames, assign positions 0/1/2, and activate for GIF sequences.
           </p>
         </div>
-        <GenerationPresetPopover preset={preset} onChange={setPreset} />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -241,10 +235,16 @@ export function ImageBoard() {
 
       <GenerationQueueBar
         selectedCount={selected.size}
+        positions={positions}
+        onPositionsChange={setPositions}
+        subject={subject}
+        onSubjectChange={setSubject}
         running={queue.running}
         items={queue.items}
-        done={queue.done}
-        total={queue.total}
+        exercisesDone={queue.exercisesDone}
+        imagesDone={queue.imagesDone}
+        imagesTotal={queue.imagesTotal}
+        errors={queue.errors}
         onGenerate={() => void startQueue()}
         onCancel={queue.cancel}
       />

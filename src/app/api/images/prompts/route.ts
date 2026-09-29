@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const prompts = await listImagePrompts(token);
     return NextResponse.json({
       system: prompts.filter((p) => p.kind === "system"),
-      exercise: prompts.filter((p) => p.kind === "exercise"),
+      position: prompts.filter((p) => p.kind === "position"),
       prompts,
     });
   } catch (error) {
@@ -25,10 +25,10 @@ export async function GET(request: Request) {
 }
 
 const createSchema = z.object({
-  kind: z.enum(["system", "exercise"]),
+  kind: z.enum(["system", "position"]),
+  position: z.number().int().min(0).max(2).optional().nullable(),
   name: z.string().min(1),
   content: z.string(),
-  is_default: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {

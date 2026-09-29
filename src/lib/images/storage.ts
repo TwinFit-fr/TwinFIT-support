@@ -1,3 +1,4 @@
+import { HasuraStorageClient } from "@nhost/nhost-js";
 import { resolveSupportHasuraRole } from "@/lib/nhost/jwt";
 import { IMAGES_BUCKET } from "./types";
 
@@ -14,75 +15,26 @@ export function publicFileUrl(fileId: string): string {
   return `${storageBaseUrl()}/files/${fileId}`;
 }
 
-/** Build multipart/form-data manually for Node uploads. */
-function multipartFileBody(
-  bytes: Buffer,
-  name: string,
-  mimeType: string,
-): { body: Buffer; contentType: string } {
-  const boundary = `----TwinFIT${Date.now().toString(16)}`;
-  const head = Buffer.from(
-    `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="file"; filename="${name.replace(/"/g, "")}"\r\n` +
-      `Content-Type: ${mimeType}\r\n\r\n`,
-    "utf8",
-  );
-  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
-  return {
-    body: Buffer.concat([head, bytes, tail]),
-    contentType: `multipart/form-data; boundary=${boundary}`,
-  };
-}
-
 export async function uploadImageFile(input: {
   token: string;
   bytes: Buffer;
   mimeType: string;
   name: string;
-  metadata?: Record<string, string>;
 }): Promise<{ id: string; url: string }> {
-  const role = resolveSupportHasuraRole(input.token);
-  const { body, contentType } = multipartFileBody(
-    input.bytes,
-    input.name,
-    input.mimeType,
-  );
+  // Per-request client: a shared one would leak one user's token into another's request.
+  const storage = new HasuraStorageClient({ url: storageBaseUrl() });
+  storage.setAccessToken(input.token);
 
-  const res = await fetch(`${storageBaseUrl()}/files`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${input.token}`,
-      "x-hasura-role": role,
-      "x-nhost-bucket-id": IMAGES_BUCKET,
-      "x-nhost-file-name": input.name,
-      "Content-Type": contentType,
-    },
-    body,
+  const { fileMetadata, error } = await storage.upload({
+    file: new File([new Uint8Array(input.bytes)], input.name, { type: input.mimeType }),
+    name: input.name,
+    bucketId: IMAGES_BUCKET,
+    headers: { "x-hasura-role": resolveSupportHasuraRole(input.token) },
   });
-
-  const text = await res.text();
-  let parsedBody: unknown = null;
-  try {
-    parsedBody = text ? JSON.parse(text) : null;
-  } catch {
-    parsedBody = { raw: text };
+  if (error) {
+    throw new Error(error.message || `Storage upload failed (${error.status})`);
   }
-  if (!res.ok) {
-    const message =
-      typeof parsedBody === "object" && parsedBody && "error" in parsedBody
-        ? String((parsedBody as { error: unknown }).error)
-        : typeof parsedBody === "object" && parsedBody && "reason" in parsedBody
-          ? String((parsedBody as { reason: unknown }).reason)
-          : `Storage upload failed (${res.status})`;
-    throw new Error(message);
-  }
-
-  const parsed = parsedBody as { id?: string; processedFiles?: { id: string }[] };
-  const fileId = parsed.processedFiles?.[0]?.id ?? parsed.id;
-  if (!fileId) {
-    throw new Error("Storage upload did not return a file id");
-  }
-  return { id: fileId, url: publicFileUrl(fileId) };
+  return { id: fileMetadata.id, url: publicFileUrl(fileMetadata.id) };
 }
 
 export async function downloadImageFile(

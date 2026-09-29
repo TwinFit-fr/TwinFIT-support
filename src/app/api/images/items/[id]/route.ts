@@ -8,6 +8,7 @@ import {
   updateExerciseImage,
 } from "@/lib/images/queries";
 import { deleteImageFile } from "@/lib/images/storage";
+import { isDeletableImage } from "@/lib/images/types";
 
 const patchSchema = z.object({
   position: z.number().int().min(0).nullable().optional(),
@@ -77,6 +78,12 @@ export async function DELETE(
     const current = await getExerciseImage(token, id);
     if (!current) {
       return NextResponse.json({ error: "Image not found" }, { status: 404 });
+    }
+    if (!isDeletableImage(current)) {
+      return NextResponse.json(
+        { error: "Only images without a position can be deleted. Deactivate it first." },
+        { status: 409 },
+      );
     }
 
     await deleteExerciseImageRow(token, id);

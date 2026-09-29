@@ -1,19 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
-import {
-  DEFAULT_GENERATION_PARAMS,
-  GENERATION_PRESETS,
-  listImageModelIds,
-} from "@/lib/images/openai";
+import { capabilitiesFor } from "@/lib/images/capabilities";
+import { listImageModelIds } from "@/lib/images/openai";
 
 export async function GET(request: Request) {
   try {
     requireStaffToken(request);
     const models = await listImageModelIds();
     return NextResponse.json({
-      models: models.map((id) => ({ id, label: id })),
-      presets: GENERATION_PRESETS,
-      defaults: DEFAULT_GENERATION_PARAMS,
+      models: models.map((id) => ({ id, capabilities: capabilitiesFor(id) })),
     });
   } catch (error) {
     if (error instanceof Response) return error;

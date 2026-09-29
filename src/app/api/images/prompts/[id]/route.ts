@@ -31,7 +31,6 @@ export async function GET(
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   content: z.string().optional(),
-  is_default: z.boolean().optional(),
 });
 
 export async function PUT(
