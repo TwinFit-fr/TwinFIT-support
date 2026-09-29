@@ -6,7 +6,6 @@ import { assembleImagePrompt, selectedPrompts } from "@/lib/images/prompt";
 import {
   clearActivePosition,
   getActiveImageAtPosition,
-  getExerciseImage,
   getExerciseSummary,
   getUserIdFromToken,
   insertExerciseImage,
@@ -16,53 +15,25 @@ import {
 import { alignFeetBaseline } from "@/lib/images/align";
 import { REFERENCE_USE_DIRECTIVE, START_GUIDE_DIRECTIVE } from "@/lib/images/reference";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
-import { REFERENCE_KEYS, targetPosition } from "@/lib/images/types";
-import type { Subject } from "@/lib/images/types";
+import { REFERENCE_KEYS } from "@/lib/images/types";
 
 export const maxDuration = 300;
 
-const bodySchema = z
-  .object({
-    exoId: z.number().int().positive(),
-    mode: z.enum(["generate", "refine"]).default("generate"),
-    position: z.number().int().min(0).max(2).optional().nullable(),
-    subject: z.enum(["man", "woman"]).optional().nullable(),
-    sourceImageId: z.string().uuid().optional().nullable(),
-    instruction: z.string().optional().nullable(),
-  })
-  .refine((body) => body.mode !== "generate" || (body.position != null && body.subject != null), {
-    message: "position and subject are required for generate",
-    path: ["position"],
-  })
-  .refine((body) => body.mode !== "refine" || Boolean(body.sourceImageId), {
-    message: "sourceImageId is required for refine",
-    path: ["sourceImageId"],
-  });
+const bodySchema = z.object({
+  exoId: z.number().int().positive(),
+  position: z.number().int().min(0).max(2),
+  subject: z.enum(["man", "woman"]),
+});
 
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
-    const body = bodySchema.parse(await request.json());
+    const { exoId, position, subject } = bodySchema.parse(await request.json());
 
-    const exercise = await getExerciseSummary(token, body.exoId);
+    const exercise = await getExerciseSummary(token, exoId);
     if (!exercise) {
       return NextResponse.json({ error: "Exercise not found" }, { status: 404 });
     }
-
-    const source =
-      body.mode === "refine" && body.sourceImageId
-        ? await getExerciseImage(token, body.sourceImageId)
-        : null;
-    if (body.mode === "refine") {
-      if (!source?.file_id) throw new Error("Source image not found");
-      if (source.exo_id !== exercise.exo_id) {
-        throw new Error("Source image belongs to a different exercise");
-      }
-    }
-    const position = source
-      ? (targetPosition(source) ?? source.position ?? body.position ?? 0)
-      : (body.position as number);
-    const subject: Subject = source?.params?.subject ?? body.subject ?? "man";
 
     const [settings, prompts] = await Promise.all([loadSettings(token), listImagePrompts(token)]);
     const { params } = settings;
@@ -76,9 +47,9 @@ export async function POST(request: Request) {
 
     // Mid/End are edits of the active Start frame (same subject) so camera and scale match it.
     const guide =
-      !source && position !== 0 ? await getActiveImageAtPosition(token, exercise.exo_id, 0) : null;
+      position !== 0 ? await getActiveImageAtPosition(token, exercise.exo_id, 0) : null;
     const usableGuide = guide && (guide.params?.subject ?? subject) === subject ? guide : null;
-    const referenceFileId = source || usableGuide ? null : settings[REFERENCE_KEYS[subject]];
+    const referenceFileId = usableGuide ? null : settings[REFERENCE_KEYS[subject]];
 
     const description =
       exercise.localizations.find((l) => l.locale === "en")?.description ??
@@ -93,7 +64,6 @@ export async function POST(request: Request) {
       id: exercise.id,
       subject,
       background_color: params.background_color,
-      instruction: body.mode === "refine" ? body.instruction : null,
     });
     const directive = usableGuide
       ? START_GUIDE_DIRECTIVE
@@ -102,7 +72,7 @@ export async function POST(request: Request) {
         : null;
     const prompt = directive ? `${basePrompt}\n\n${directive}` : basePrompt;
 
-    const inputFileId = source?.file_id ?? usableGuide?.file_id ?? referenceFileId;
+    const inputFileId = usableGuide?.file_id ?? referenceFileId;
     let result;
     if (inputFileId) {
       const input = await downloadImageFile(token, inputFileId);
@@ -110,7 +80,7 @@ export async function POST(request: Request) {
         prompt,
         params,
         { bytes: input.bytes, mimeType: input.contentType },
-        { useFidelity: !source },
+        { useFidelity: true },
       );
     } else {
       result = await generateImage(prompt, params);
@@ -130,8 +100,6 @@ export async function POST(request: Request) {
       name: `exo_${exercise.exo_id}/${Date.now()}_p${position}.${extension}`,
     });
 
-    // New generations take their position right away; the previous frame there is deactivated.
-    const activate = body.mode === "generate";
     const snapshot = {
       ...params,
       target_position: position,
@@ -152,22 +120,19 @@ export async function POST(request: Request) {
         params: snapshot,
         usage: result.usage,
         created_by: getUserIdFromToken(token),
-        position: activate ? position : null,
-        active: activate,
+        position,
+        active: true,
       });
 
+    // New generations take their position right away; the previous frame there is deactivated.
+    await clearActivePosition(token, exercise.exo_id, position);
     let image;
-    if (activate) {
+    try {
+      image = await insert();
+    } catch (error) {
+      // Another request activated this position meanwhile: displace it and retry once.
+      if (!(error instanceof Error && /uniqueness|unique/i.test(error.message))) throw error;
       await clearActivePosition(token, exercise.exo_id, position);
-      try {
-        image = await insert();
-      } catch (error) {
-        // Another request activated this position meanwhile: displace it and retry once.
-        if (!(error instanceof Error && /uniqueness|unique/i.test(error.message))) throw error;
-        await clearActivePosition(token, exercise.exo_id, position);
-        image = await insert();
-      }
-    } else {
       image = await insert();
     }
 

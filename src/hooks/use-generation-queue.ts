@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FRAME_POSITIONS, SUBJECTS } from "@/lib/images/types";
+import { FRAME_POSITIONS, SPLIT_FAILED, SUBJECTS } from "@/lib/images/types";
 import type { Subject, SubjectChoice } from "@/lib/images/types";
 
 export type StepStatus = "waiting" | "processing" | "done" | "error" | "cancelled";
@@ -23,6 +23,7 @@ export type QueueItem = {
 };
 
 type GenerateStepFn = (exoId: number, position: number, subject: Subject) => Promise<void>;
+type GenerateSequenceFn = (exoId: number, subject: Subject) => Promise<void>;
 
 function resolveSubject(choice: SubjectChoice): Subject {
   return choice === "random" ? SUBJECTS[Math.floor(Math.random() * SUBJECTS.length)] : choice;
@@ -100,8 +101,11 @@ export function useGenerationQueue() {
       subject: SubjectChoice;
       maxConcurrency: number;
       generateStep: GenerateStepFn;
+      /** When set and all 3 positions are requested, one strip call produces them together. */
+      generateSequence?: GenerateSequenceFn;
     }) => {
-      const { exercises, positions, subject, maxConcurrency, generateStep } = options;
+      const { exercises, positions, subject, maxConcurrency, generateStep, generateSequence } =
+        options;
       if (!exercises.length || !positions.length || running) return;
       cancelledRef.current = false;
       const queue: QueueItem[] = exercises.map((exercise, i) => ({
@@ -135,8 +139,38 @@ export function useGenerationQueue() {
         }
       };
 
+      const patchAll = (index: number, step: Partial<QueueStep>) =>
+        queue[index].steps.forEach((_, stepIndex) => patchStep(index, stepIndex, step));
+
+      // Returns false when the strip could not be split, so the caller falls back.
+      const runSequence = async (index: number): Promise<boolean> => {
+        const item = queue[index];
+        await slots.acquire(item.ordinal * 10);
+        try {
+          if (cancelledRef.current) return true;
+          patchAll(index, { status: "processing", startedAt: Date.now() });
+          await generateSequence!(item.exoId, item.subject);
+          patchAll(index, { status: "done" });
+          return true;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed";
+          if (message.startsWith(SPLIT_FAILED)) {
+            patchAll(index, { status: "waiting", startedAt: undefined });
+            return false;
+          }
+          patchAll(index, { status: "error", error: message });
+          return true;
+        } finally {
+          slots.release();
+        }
+      };
+
+      const useSequence =
+        Boolean(generateSequence) && FRAME_POSITIONS.every((f) => positions.includes(f.id));
+
       // Mid/End are generated from the exercise's Start frame, so Start must finish first.
       const runExercise = async (item: QueueItem, index: number) => {
+        if (useSequence && (await runSequence(index))) return;
         const startIndex = item.steps.findIndex((s) => s.position === 0);
         if (startIndex >= 0) await runStep(index, startIndex);
         await Promise.all(

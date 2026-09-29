@@ -48,6 +48,7 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   reference_file_id?: string | null;
   guide_image_id?: string | null;
   feet_shift_px?: number;
+  sequence?: { strip_size: string; cuts: number[] };
   system_prompt_id?: string | null;
   position_prompt_id?: string | null;
 };
@@ -96,7 +97,6 @@ export type ExerciseImageBoardItem = {
 
 export type ExerciseImageDetail = ExerciseImageBoardItem & {
   images: ExerciseImage[];
-  assembled_prompt: string;
   localizations: { locale: string; display_name: string; description: string | null }[];
 };
 
@@ -122,5 +122,8 @@ export function targetPosition(image: Pick<ExerciseImage, "params">): number | n
 export function isDeletableImage(image: Pick<ExerciseImage, "active" | "position">): boolean {
   return !image.active && image.position == null;
 }
+
+/** Error prefix when a 3-pose strip cannot be split; clients fall back to per-position. */
+export const SPLIT_FAILED = "SPLIT_FAILED";
 
 export const IMAGES_BUCKET = "exercise-images";

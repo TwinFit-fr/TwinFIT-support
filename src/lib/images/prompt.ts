@@ -30,24 +30,14 @@ export function fillPromptTemplate(template: string, values: TemplateValues): st
 }
 
 export function assembleImagePrompt(
-  input: TemplateValues & {
-    systemContent: string;
-    positionContent: string;
-    notes?: string | null;
-    instruction?: string | null;
-  },
+  input: TemplateValues & { systemContent: string; positionContent: string },
 ): string {
-  const parts = [
+  return [
     fillPromptTemplate(input.systemContent, input).trim(),
     fillPromptTemplate(input.positionContent, input).trim(),
-  ];
-  if (input.notes?.trim()) {
-    parts.push(`Exercise-specific notes:\n${input.notes.trim()}`);
-  }
-  if (input.instruction?.trim()) {
-    parts.push(`Refine instruction:\n${input.instruction.trim()}`);
-  }
-  return parts.filter(Boolean).join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 type PromptLike = { id: string; kind: string; position: number | null };
@@ -65,4 +55,23 @@ export function selectedPrompts<T extends PromptLike>(
     system: systems.find((p) => p.id === selection?.system_prompt_id) ?? systems[0],
     position: forPosition.find((p) => p.id === positionId) ?? forPosition[0],
   };
+}
+
+const PANEL_NAMES = ["PANEL 1 (left) — start position", "PANEL 2 (center) — mid position", "PANEL 3 (right) — end position"];
+
+/** System prompt + strip layout directive + one block per position prompt. */
+export function assembleSequencePrompt(
+  input: TemplateValues & {
+    systemContent: string;
+    positionContents: [string, string, string];
+    layoutDirective: string;
+  },
+): string {
+  return [
+    fillPromptTemplate(input.systemContent, input).trim(),
+    input.layoutDirective,
+    ...input.positionContents.map(
+      (content, i) => `${PANEL_NAMES[i]}:\n${fillPromptTemplate(content, input).trim()}`,
+    ),
+  ].join("\n\n");
 }

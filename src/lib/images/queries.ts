@@ -1,6 +1,5 @@
 import { staffGql } from "@/lib/staff-gql";
 import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
-import { assembleImagePrompt, selectedPrompts } from "./prompt";
 import type {
   ExerciseImage,
   ExerciseImageBoardItem,
@@ -156,21 +155,9 @@ export async function getImageExercise(
   if (!exercise) return null;
 
   const images = data.images_exercise_images ?? [];
-  const [prompts, settings] = await Promise.all([listImagePrompts(token), loadSettings(token)]);
-  const chosen = selectedPrompts(settings, prompts, 0);
-
   return {
     ...toBoardItem(exercise, images),
     images,
-    assembled_prompt: assembleImagePrompt({
-      systemContent: chosen.system?.content ?? "",
-      positionContent: chosen.position?.content ?? "",
-      background_color: settings.params.background_color,
-      name: exercise.display_name,
-      description: englishDescription(exercise.localizations),
-      exo_id: exercise.exo_id,
-      id: exercise.id,
-    }),
     localizations: exercise.localizations ?? [],
   };
 }

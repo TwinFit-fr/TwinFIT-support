@@ -6,7 +6,30 @@ import { framePositionLabel } from "@/lib/images/types";
 
 // Real movement pauses at the extremes and passes quickly through the middle.
 const HOLD_MS: Record<number, number> = { 0: 600, 1: 300, 2: 600 };
-const FADE_MS = 250;
+
+/** True once every URL is downloaded and decoded, so the first loop never shows a gap. */
+function useFramesDecoded(urls: string[], enabled: boolean): boolean {
+  const key = urls.join("|");
+  const [decodedKey, setDecodedKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!urls.length || !enabled || decodedKey === key) return;
+    let cancelled = false;
+    void Promise.all(
+      urls.map((url) => {
+        const img = new Image();
+        img.src = url;
+        return img.decode().catch(() => undefined);
+      }),
+    ).then(() => {
+      if (!cancelled) setDecodedKey(key);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, enabled]);
+  return decodedKey === key;
+}
 
 function usePlaybackAllowed(ref: React.RefObject<HTMLElement | null>): boolean {
   const [visible, setVisible] = useState(false);
@@ -33,7 +56,7 @@ function usePlaybackAllowed(ref: React.RefObject<HTMLElement | null>): boolean {
   return visible && !reducedMotion;
 }
 
-/** Plays active frames as a 0→1→2→1→0 loop with crossfades; static with fewer than two frames. */
+/** Plays active frames as a 0→1→2→1→0 loop; static with fewer than two frames. */
 export function FramePlayer({
   frames,
   fallbackUrl,
@@ -52,17 +75,22 @@ export function FramePlayer({
   const order = useMemo(() => gifPlaybackOrder(frames.map((f) => f.position)), [frames]);
   const [step, setStep] = useState(0);
   const animated = order.length > 1;
+  const urls = useMemo(
+    () => (animated ? frames.map((f) => imageThumbUrl(f.image_url, width) ?? "") : []),
+    [animated, frames, width],
+  );
+  const decoded = useFramesDecoded(urls, playing);
 
   const currentPosition = order[step % order.length];
 
   useEffect(() => {
-    if (!animated || !playing) return;
+    if (!animated || !playing || !decoded) return;
     const timer = window.setTimeout(
       () => setStep((i) => (i + 1) % order.length),
       HOLD_MS[currentPosition] ?? 450,
     );
     return () => window.clearTimeout(timer);
-  }, [animated, playing, order.length, currentPosition, step]);
+  }, [animated, playing, decoded, order.length, currentPosition, step]);
 
   const staticSrc = animated ? null : imageThumbUrl(frames[0]?.image_url ?? fallbackUrl, width);
 
@@ -74,18 +102,16 @@ export function FramePlayer({
     >
       {animated ? (
         <>
-          {frames.map((frame) => (
+          {frames.map((frame, i) => (
+            // Hard cuts: crossfading transparent frames makes the figure see-through mid-way.
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={frame.position}
-              src={imageThumbUrl(frame.image_url, width) ?? undefined}
+              src={urls[i] || undefined}
               alt=""
               loading="lazy"
               className="absolute inset-0 h-full w-full object-contain"
-              style={{
-                opacity: frame.position === currentPosition ? 1 : 0,
-                transition: `opacity ${FADE_MS}ms ease-in-out`,
-              }}
+              style={{ visibility: frame.position === currentPosition ? "visible" : "hidden" }}
             />
           ))}
           {showLabel && (

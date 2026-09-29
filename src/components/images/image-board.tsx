@@ -12,6 +12,7 @@ import {
   usePositionSelection,
   useSubjectChoice,
 } from "@/hooks/use-generation-queue";
+import { sequenceStripSize } from "@/lib/images/capabilities";
 import type { ExerciseImageBoardItem, ImageSettings, Subject } from "@/lib/images/types";
 
 type ListResponse = { exercises: ExerciseImageBoardItem[]; count: number };
@@ -98,7 +99,15 @@ export function ImageBoard() {
   async function generateStep(exoId: number, position: number, stepSubject: Subject) {
     await staffFetch("/api/images/generate", {
       method: "POST",
-      body: JSON.stringify({ exoId, mode: "generate", position, subject: stepSubject }),
+      body: JSON.stringify({ exoId, position, subject: stepSubject }),
+    });
+    await mutate("/api/images/exercises");
+  }
+
+  async function generateSequence(exoId: number, stepSubject: Subject) {
+    await staffFetch("/api/images/generate-sequence", {
+      method: "POST",
+      body: JSON.stringify({ exoId, subject: stepSubject }),
     });
     await mutate("/api/images/exercises");
   }
@@ -115,6 +124,8 @@ export function ImageBoard() {
         subject,
         maxConcurrency: settings?.params.max_concurrency ?? 3,
         generateStep,
+        generateSequence:
+          settings && sequenceStripSize(settings.params) ? generateSequence : undefined,
       });
       success(`${chosen.length} exercise(s) processed`, "Queue finished");
       await mutate("/api/images/exercises");

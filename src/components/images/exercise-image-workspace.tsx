@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { mutate } from "swr";
 import { Trash2 } from "lucide-react";
-import { Button, Input, Skeleton } from "@/components/ui/primitives";
+import { Button, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
@@ -15,14 +15,21 @@ import {
 } from "@/hooks/use-generation-queue";
 import { GenerationProgress, processingSteps } from "@/components/images/generation-progress";
 import { FramePlayer } from "@/components/images/frame-player";
+import { ImageMetadataPanel } from "@/components/images/image-metadata";
 import { PositionSelector, SubjectSelector } from "@/components/images/position-selector";
-import type { ExerciseImage, ExerciseImageDetail, ImageSettings } from "@/lib/images/types";
+import type {
+  ExerciseImage,
+  ExerciseImageDetail,
+  ImagePrompt,
+  ImageSettings,
+} from "@/lib/images/types";
 import {
   FRAME_POSITIONS,
   framePositionLabel,
   isDeletableImage,
   targetPosition,
 } from "@/lib/images/types";
+import { sequenceStripSize } from "@/lib/images/capabilities";
 import { gifPlaybackOrder, imageDisplayUrl, imageThumbUrl } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +100,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const [positions, setPositions] = usePositionSelection();
   const [subject, setSubject] = useSubjectChoice();
   const { data: settings } = useStaffSWR<ImageSettings>("/api/images/settings");
+  const { data: promptsData } = useStaffSWR<{ prompts: ImagePrompt[] }>("/api/images/prompts");
   const queue = useGenerationQueue();
   const generation = queue.items[0];
   const inFlight = processingSteps(generation);
@@ -101,9 +109,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   }>(`/api/images/exercises/${exoId}`, { refreshInterval: 5000 });
   const exercise = data?.exercise;
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
-  const [showPrompt, setShowPrompt] = useState(false);
 
   useEffect(() => {
     if (!exercise) return;
@@ -143,37 +149,23 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           method: "POST",
           body: JSON.stringify({
             exoId,
-            mode: "generate",
             position,
             subject: stepSubject,
           }),
         });
         await refresh();
       },
+      generateSequence:
+        settings && sequenceStripSize(settings.params)
+          ? async (exoId, stepSubject) => {
+              await staffFetch("/api/images/generate-sequence", {
+                method: "POST",
+                body: JSON.stringify({ exoId, subject: stepSubject }),
+              });
+              await refresh();
+            }
+          : undefined,
     });
-  }
-
-  async function runRefine() {
-    if (!exercise || !selected) return;
-    setBusy(true);
-    try {
-      await staffFetch("/api/images/generate", {
-        method: "POST",
-        body: JSON.stringify({
-          exoId: exercise.exo_id,
-          mode: "refine",
-          sourceImageId: selected.id,
-          instruction,
-        }),
-      });
-      success("Refine finished");
-      setInstruction("");
-      await refresh();
-    } catch (err) {
-      toastError(err instanceof Error ? err.message : "Refine failed");
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function setPosition(imageId: string, position: number | null, active: boolean) {
@@ -247,7 +239,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exercise, selectedId, selected, exoId, instruction, busy]);
+  }, [exercise, selectedId, selected, exoId, busy]);
 
   if (isLoading) {
     return <Skeleton className="h-[70vh] w-full rounded-xl" />;
@@ -417,41 +409,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="space-y-2 rounded-xl border border-zinc-200 bg-white p-4">
-          <div className="text-sm font-medium text-zinc-800">Refine</div>
-          <Input
-            value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
-            placeholder="e.g. Make the elbows more bent"
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={busy || !selected || !instruction.trim()}
-            onClick={() => void runRefine()}
-          >
-            Refine selected
-          </Button>
-        </div>
-        <div className="rounded-xl border border-zinc-200 bg-white p-4">
-          <button
-            type="button"
-            className="text-sm font-medium text-zinc-800"
-            onClick={() => setShowPrompt((v) => !v)}
-          >
-            {showPrompt ? "Hide" : "Show"} assembled prompt
-          </button>
-          {showPrompt && (
-            <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-50 p-3 text-xs text-zinc-700">
-              {selected?.prompt || exercise.assembled_prompt}
-            </pre>
-          )}
-          {exercise.description && (
-            <p className="mt-3 text-sm text-zinc-600">{exercise.description}</p>
-          )}
-        </div>
-      </div>
+      {selected && <ImageMetadataPanel image={selected} prompts={promptsData?.prompts} />}
 
       <p className="text-xs text-zinc-400">
         Shortcuts: R generate selected positions · 0/1/2 set position · X deactivate · Del delete
