@@ -20,7 +20,7 @@ import {
 import { useIsAdmin } from "@/hooks/use-is-staff";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
-export type LookupRow = { code: string; name: string; kind?: string };
+export type LookupRow = { code: string; name: string };
 
 type MuscleGroup = {
   code: string;
@@ -33,8 +33,8 @@ type CatalogExerciseRow = {
   taxonomy_status: string;
   primary_muscle_group?: { code: string };
   movement_type?: { code: string };
-  equipment?: { code: string; kind?: string };
-  support_equipment?: { code: string; kind?: string } | null;
+  equipment?: { code: string };
+  support_equipment?: { code: string } | null;
   position?: { code: string };
   grip?: { code: string };
   variation?: { code: string };
@@ -139,6 +139,7 @@ export function ExerciseComposeForm({
             catalog_muscle_groups: LookupRow[];
             catalog_movement_types: LookupRow[];
             catalog_equipment: LookupRow[];
+            catalog_support_equipment: LookupRow[];
             catalog_muscles: LookupRow[];
             catalog_exercises: CatalogExerciseRow[];
           };
@@ -157,12 +158,11 @@ export function ExerciseComposeForm({
       const exercises = withExercisePaths(libRes.data.catalog_exercises ?? []);
       setAllExercises(exercises);
 
-      const allEquipment = libRes.data.catalog_equipment ?? [];
       setLookups({
         muscle_groups: libRes.data.catalog_muscle_groups ?? [],
         movement_types: libRes.data.catalog_movement_types ?? [],
-        equipment: allEquipment.filter((row) => row.kind !== "SUPPORT"),
-        support_equipment: allEquipment.filter((row) => row.kind === "SUPPORT"),
+        equipment: libRes.data.catalog_equipment ?? [],
+        support_equipment: libRes.data.catalog_support_equipment ?? [],
         positions: taxRes.data.catalog_positions ?? [],
         grips: taxRes.data.catalog_grips ?? [],
         variations: taxRes.data.catalog_variations ?? [],

@@ -8,8 +8,7 @@ import { withExercisePaths, type ExerciseWithPath, type LookupRow } from "@/lib/
 import type { CatalogLocale, LocalizationRow } from "@/lib/catalog/locales";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
-type EquipmentLookupRow = LookupRow & {
-  kind?: string;
+type LocalizedLookupRow = LookupRow & {
   localizations?: LocalizationRow[];
 };
 
@@ -29,9 +28,10 @@ type CatalogExercise = {
 };
 
 type TaxonomyData = {
-  catalog_muscle_groups: EquipmentLookupRow[];
-  catalog_movement_types: EquipmentLookupRow[];
-  catalog_equipment: EquipmentLookupRow[];
+  catalog_muscle_groups: LocalizedLookupRow[];
+  catalog_movement_types: LocalizedLookupRow[];
+  catalog_equipment: LocalizedLookupRow[];
+  catalog_support_equipment: LocalizedLookupRow[];
   catalog_positions: LookupRow[];
   catalog_grips: LookupRow[];
   catalog_variations: LookupRow[];
@@ -92,7 +92,8 @@ export default function CatalogPage() {
     return {
       catalog_muscle_groups: taxonomy.catalog_muscle_groups,
       catalog_movement_types: taxonomy.catalog_movement_types,
-      catalog_equipment: taxonomy.catalog_equipment.filter((row) => row.kind !== "SUPPORT"),
+      catalog_equipment: taxonomy.catalog_equipment,
+      catalog_support_equipment: taxonomy.catalog_support_equipment,
       catalog_positions: taxonomy.catalog_positions,
       catalog_grips: taxonomy.catalog_grips,
       catalog_variations: taxonomy.catalog_variations,

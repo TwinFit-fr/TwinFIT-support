@@ -396,7 +396,7 @@ export function formCreateFingerprint(form: {
     grip_code: normTaxonomy(form.grip_code),
     variation_code: normTaxonomy(form.variation_code),
     load_modality_code: normTaxonomy(form.load_modality_code),
-    target_muscle_code: String(form.target_muscle_code || "").trim().toLowerCase(),
+    target_muscle_code: normTaxonomy(form.target_muscle_code),
     taxonomy_status: form.taxonomy_status || "migrated",
     secondary_muscle_codes: [] as string[],
   });
@@ -439,7 +439,7 @@ export function exerciseFingerprintFromCatalog(ex: {
     grip_code: normTaxonomy(ex.grip?.code),
     variation_code: normTaxonomy(ex.variation?.code),
     load_modality_code: normTaxonomy(ex.load_modality?.code),
-    target_muscle_code: String(ex.target_muscle?.code || "").trim().toLowerCase(),
+    target_muscle_code: normTaxonomy(ex.target_muscle?.code),
     taxonomy_status: ex.taxonomy_status || "migrated",
     secondary_muscle_codes: [] as string[],
   });

@@ -7,15 +7,24 @@ function normalizeTaxonomy(v) {
     .toUpperCase();
 }
 
+/** Muscle codes are SCREAMING_SNAKE (`ANTERIOR_DELTS`). */
 function normalizeMuscleCode(v) {
   return String(v || '')
     .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_|_$/g, '');
 }
 
-async function ensureLookup(table, code, extra = {}) {
+/** Title Case admin/fallback label from a code (`SMITH_MACHINE` → `Smith Machine`). */
+function defaultLookupName(code) {
+  return code
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+async function ensureLookup(table, code, name) {
   const isMuscle = table === 'catalog_muscles';
   const c = isMuscle ? normalizeMuscleCode(code) : normalizeTaxonomy(code);
   if (!c) throw new Error(`Empty code for ${table}`);
@@ -26,10 +35,8 @@ async function ensureLookup(table, code, extra = {}) {
   );
   const hit = existing[qname]?.[0];
   if (hit) return hit;
-  const name = isMuscle
-    ? c.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())
-    : c.replace(/_/g, ' ');
-  const object = { code: c, name, active: true, ...extra };
+  const label = String(name || '').trim() || defaultLookupName(c);
+  const object = { code: c, name: label, active: true };
   const ins = await staffGql(
     `mutation($o: ${table}_insert_input!) {
       insert_${table}_one(object: $o) { id code }
@@ -40,8 +47,8 @@ async function ensureLookup(table, code, extra = {}) {
 }
 
 /**
- * Lookup-only resolve for optional SUPPORT equipment.
- * Empty → null. Missing code → error. Wrong kind left for Postgres trigger.
+ * Lookup-only resolve for optional support equipment (station).
+ * Empty → null. Missing code → error.
  */
 async function resolveSupportEquipmentId(payload) {
   const raw =
@@ -52,11 +59,11 @@ async function resolveSupportEquipmentId(payload) {
   if (!code) return null;
   const data = await staffGql(
     `query($code: String!) {
-      catalog_equipment(where: { code: { _eq: $code } }, limit: 1) { id code kind }
+      catalog_support_equipment(where: { code: { _eq: $code } }, limit: 1) { id code }
     }`,
     { code }
   );
-  const hit = data.catalog_equipment?.[0];
+  const hit = data.catalog_support_equipment?.[0];
   if (!hit) throw new Error(`Unknown support equipment code: ${code}`);
   return hit.id;
 }
@@ -69,7 +76,7 @@ function inferLoadModalityCode(payload) {
   if (/assist/i.test(name)) return 'ASSISTED';
   if (/resist/i.test(name)) return 'RESISTED';
   if (eq === 'BODYWEIGHT') return 'NEUTRAL';
-  if (mt === 'CARDIO' || mg === 'CARDIO' || eq === 'BYCICLE' || eq === 'BICYCLE') {
+  if (mt === 'CARDIO' || mg === 'CARDIO' || eq === 'BICYCLE') {
     return 'NEUTRAL';
   }
   return 'RESISTED';
@@ -410,8 +417,8 @@ async function listXcatLibraryAdmin() {
         primary_muscle_group { code name }
         target_muscle { code name }
         movement_type { code name }
-        equipment { code name kind }
-        support_equipment { code kind }
+        equipment { code name }
+        support_equipment { code name }
         variation { code name }
         position { code name }
         grip { code name }
@@ -437,7 +444,12 @@ async function listXcatLibraryAdmin() {
         id code name
       }
       catalog_equipment(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {
-        id code name kind
+        id code name
+        localizations(order_by: { locale: asc }) { locale display_name }
+      }
+      catalog_support_equipment(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {
+        id code name
+        localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_load_modalities(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {
         id code name
@@ -560,6 +572,7 @@ const LOOKUP_TABLES = new Set([
   'catalog_muscles',
   'catalog_movement_types',
   'catalog_equipment',
+  'catalog_support_equipment',
   'catalog_variations',
   'catalog_positions',
   'catalog_grips',
@@ -572,6 +585,11 @@ const TAXONOMY_LOCALIZATION_TABLES = {
     locTable: 'catalog_equipment_localizations',
     fk: 'equipment_id',
     constraint: 'equipment_localizations_equipment_id_locale_key',
+  },
+  catalog_support_equipment: {
+    locTable: 'catalog_support_equipment_localizations',
+    fk: 'support_equipment_id',
+    constraint: 'support_equipment_localizations_support_equipment_id_locale_key',
   },
   catalog_movement_types: {
     locTable: 'catalog_movement_type_localizations',
@@ -681,18 +699,9 @@ async function upsertTaxonomyLocalizations(table, parentId, labels) {
 async function upsertLookup(payload) {
   const table = String(payload.table || '');
   if (!LOOKUP_TABLES.has(table)) throw new Error('Invalid lookup table');
-  const extra = {};
-  if (table === 'catalog_equipment') {
-    const rawKind = payload.equipment_kind ?? payload.kind ?? 'LOAD';
-    const kind = String(rawKind).trim().toUpperCase();
-    if (kind !== 'LOAD' && kind !== 'SUPPORT') {
-      throw new Error('equipment kind must be LOAD or SUPPORT');
-    }
-    extra.kind = kind;
-  }
-  const row = await ensureLookup(table, payload.code, extra);
+  const row = await ensureLookup(table, payload.code, payload.name);
   if (TAXONOMY_LOCALIZATION_TABLES[table]) {
-    const enName = String(payload.name || payload.code).replace(/_/g, ' ').trim();
+    const enName = String(payload.name || '').trim() || defaultLookupName(row.code);
     await upsertTaxonomyLocalizations(table, row.id, {
       en: enName,
       es: payload.labels?.es || '',
@@ -810,21 +819,8 @@ async function updateLookup(payload) {
   }
   if (payload.active != null) set.active = Boolean(payload.active);
   if (payload.sort_order != null) set.sort_order = Number(payload.sort_order);
-  if (table === 'catalog_equipment') {
-    const rawKind = payload.equipment_kind ?? payload.kind;
-    if (rawKind != null && String(rawKind).trim() !== '' && String(rawKind).trim().toUpperCase() !== 'UPDATE') {
-      const kind = String(rawKind).trim().toUpperCase();
-      if (kind !== 'LOAD' && kind !== 'SUPPORT') {
-        throw new Error('equipment kind must be LOAD or SUPPORT');
-      }
-      set.kind = kind;
-    }
-  }
   if (!Object.keys(set).length && !hasLabels) throw new Error('nothing to update');
-  const returnFields =
-    table === 'catalog_equipment'
-      ? '{ id code name active sort_order kind }'
-      : '{ id code name active sort_order }';
+  const returnFields = '{ id code name active sort_order }';
   let row = null;
   if (Object.keys(set).length) {
     const data = await staffGql(
@@ -882,7 +878,11 @@ async function fetchTaxonomyAdmin() {
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_equipment(order_by: { sort_order: asc, code: asc }) {
-        id code name sort_order active kind
+        id code name sort_order active
+        localizations(order_by: { locale: asc }) { locale display_name }
+      }
+      catalog_support_equipment(order_by: { sort_order: asc, code: asc }) {
+        id code name sort_order active
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_variations(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }

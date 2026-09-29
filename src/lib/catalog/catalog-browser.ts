@@ -11,6 +11,19 @@ import {
 
 export type AxisFilters = Record<string, string>;
 
+/** Support station filter: a filter only, not a path level (exercises without one match NONE). */
+export const SUPPORT_FILTER_KEY = "support";
+export const SUPPORT_FILTER_NONE = "__none__";
+
+function matchesSupportFilter(
+  ex: { support_equipment?: { code: string } | null },
+  selected: string | undefined,
+): boolean {
+  if (!selected) return true;
+  const code = normTaxonomy(ex.support_equipment?.code);
+  return selected === SUPPORT_FILTER_NONE ? !code : code === normTaxonomy(selected);
+}
+
 export function exerciseAxisValue(
   ex: ExerciseWithPath & { support_equipment?: { code: string } | null },
   levelKey: string,
@@ -65,7 +78,7 @@ export function filterExercisesForBrowser(
         return false;
       }
     }
-    return true;
+    return matchesSupportFilter(ex, filters[SUPPORT_FILTER_KEY]);
   });
 }
 
