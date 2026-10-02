@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { mutate } from "swr";
 import { Button, Input } from "@/components/ui/primitives";
@@ -46,15 +46,18 @@ function PromptEditorPanel({
     prompts.find((p) => p.id === inUseId) ??
     prompts[0] ??
     null;
-  const [name, setName] = useState(selected?.name ?? "");
-  const [content, setContent] = useState(selected?.content ?? "");
+  // Edits belong to the prompt they were made on; switching or reloading it shows its text again.
+  const [draft, setDraft] = useState<{
+    prompt: ImagePrompt | null;
+    name: string;
+    content: string;
+  } | null>(null);
+  const editing = draft && draft.prompt === selected ? draft : null;
+  const name = editing?.name ?? selected?.name ?? "";
+  const content = editing?.content ?? selected?.content ?? "";
+  const setName = (next: string) => setDraft({ prompt: selected, name: next, content });
+  const setContent = (next: string) => setDraft({ prompt: selected, name, content: next });
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!selected) return;
-    setName(selected.name);
-    setContent(selected.content);
-  }, [selected]);
 
   async function run(action: () => Promise<void>, message: string) {
     setBusy(true);

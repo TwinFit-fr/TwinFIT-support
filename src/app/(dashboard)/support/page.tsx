@@ -2,60 +2,44 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import {
   Search,
-  User,
   ArrowRight,
-  ShieldCheck,
   Ban,
   MailCheck,
-  Calendar,
 } from "lucide-react";
 import { Badge, Button, Card, Input, Skeleton } from "@/components/ui/primitives";
-import { useStaffFetch } from "@/hooks/use-staff-fetch";
+import { useStaffSWR } from "@/hooks/use-staff-fetch";
 import type { SupportUserLookup } from "@/lib/support/types";
 
 function SupportSearchContent() {
-  const staffFetch = useStaffFetch();
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") ?? "";
 
   const [query, setQuery] = useState(initialQuery);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SupportUserLookup | null>(null);
-
-  const executeSearch = useCallback(
-    async (searchTerm: string) => {
-      const q = searchTerm.trim();
-      if (!q) return;
-      setLoading(true);
-      setError(null);
-      setResult(null);
-      try {
-        const data = (await staffFetch(
-          `/api/support/lookup?q=${encodeURIComponent(q)}`,
-        )) as SupportUserLookup;
-        setResult(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Search failed");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [staffFetch],
+  // A search typed here wins until the ?q= in the URL changes.
+  const [manual, setManual] = useState<{ term: string; urlQuery: string } | null>(null);
+  const term = manual && manual.urlQuery === initialQuery ? manual.term : initialQuery.trim();
+  const {
+    data,
+    error: searchError,
+    isValidating: loading,
+    mutate,
+  } = useStaffSWR<SupportUserLookup>(
+    term ? `/api/support/lookup?q=${encodeURIComponent(term)}` : null,
+    // "Not found" is an answer, not a transient failure; a new term starts from a blank result.
+    { shouldRetryOnError: false, keepPreviousData: false },
   );
-
-  useEffect(() => {
-    if (initialQuery) {
-      void executeSearch(initialQuery);
-    }
-  }, [initialQuery, executeSearch]);
+  const result = data ?? null;
+  const error = searchError ? searchError.message || "Search failed" : null;
 
   function onSearch(event: FormEvent) {
     event.preventDefault();
-    void executeSearch(query);
+    const next = query.trim();
+    if (!next) return;
+    if (next === term) void mutate();
+    else setManual({ term: next, urlQuery: initialQuery });
   }
 
   return (

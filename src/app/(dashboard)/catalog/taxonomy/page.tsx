@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { TaxonomyAnatomyPanel } from "@/components/catalog/taxonomy/taxonomy-anatomy-panel";
 import { TaxonomyLookupTable } from "@/components/catalog/taxonomy/taxonomy-lookup-table";
 import { TaxonomySubnav } from "@/components/catalog/taxonomy/taxonomy-subnav";
 import type { LookupRowFull, TaxonomyData, TaxonomyTabId } from "@/components/catalog/taxonomy/types";
 import { CATALOG_LOCALES, type CatalogLocale } from "@/lib/catalog/locales";
-import { useStaffFetch } from "@/hooks/use-staff-fetch";
+import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 
 const LOOKUP_TABLES: TaxonomyTabId[] = [
   "catalog_movement_types",
@@ -24,26 +24,21 @@ const LOOKUP_TABLES: TaxonomyTabId[] = [
 export default function CatalogTaxonomyPage() {
   const staffFetch = useStaffFetch();
   const [tab, setTab] = useState<TaxonomyTabId>("anatomy");
-  const [data, setData] = useState<TaxonomyData | null>(null);
+  const {
+    data: response,
+    error: loadError,
+    isLoading: loading,
+    mutate,
+  } = useStaffSWR<{ data: TaxonomyData }>("/api/catalog/taxonomy");
+  const data = response?.data ?? null;
   const [message, setMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [locale, setLocale] = useState<CatalogLocale>("en");
+  const shownMessage =
+    message ?? (loadError ? loadError.message || "Failed to load taxonomy" : null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = (await staffFetch("/api/catalog/taxonomy")) as { data: TaxonomyData };
-      setData(res.data);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Failed to load taxonomy");
-    } finally {
-      setLoading(false);
-    }
-  }, [staffFetch]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  async function load() {
+    await mutate();
+  }
 
   async function addEntry(
     table: string,
@@ -188,7 +183,7 @@ export default function CatalogTaxonomyPage() {
       </div>
 
       {loading && <p className="text-sm text-zinc-500">Loading taxonomy…</p>}
-      {message && <p className="text-sm text-zinc-700">{message}</p>}
+      {shownMessage && <p className="text-sm text-zinc-700">{shownMessage}</p>}
 
       {data && tab === "anatomy" && (
         <TaxonomyAnatomyPanel

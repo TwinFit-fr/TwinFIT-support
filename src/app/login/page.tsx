@@ -2,7 +2,7 @@
 
 import { useSignInEmailOTP, useSignInEmailPassword, useSignOut } from "@nhost/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useEffect, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import { mapAuthErrorMessage } from "@/lib/auth-errors";
 import { hasStaffRole } from "@/lib/nhost/jwt";
 import { Button, Input } from "@/components/ui/primitives";
@@ -24,13 +24,9 @@ function LoginForm() {
   const [codeSent, setCodeSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (searchParams.get("error") === "staff_required") {
-      setError("Access restricted to staff accounts.");
-    }
-  }, [searchParams]);
+  const [error, setError] = useState<string | null>(() =>
+    searchParams.get("error") === "staff_required" ? "Access restricted to staff accounts." : null,
+  );
 
   /** Only staff/admin sessions are kept; any other account is signed out right away. */
   async function finishSignIn(result: {

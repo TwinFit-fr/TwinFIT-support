@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { frameHoldMs, gifPlaybackOrder, imageThumbUrl } from "@/lib/images/urls";
 import { framePositionLabel } from "@/lib/images/types";
 
@@ -28,17 +28,21 @@ function useFramesDecoded(urls: string[], enabled: boolean): boolean {
   return decodedKey === key;
 }
 
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+
+function subscribeReducedMotion(onChange: () => void) {
+  const media = window.matchMedia(REDUCED_MOTION);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
 function usePlaybackAllowed(ref: React.RefObject<HTMLElement | null>): boolean {
   const [visible, setVisible] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReducedMotion(media.matches);
-    const onChange = () => setReducedMotion(media.matches);
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
-  }, []);
+  const reducedMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    () => window.matchMedia(REDUCED_MOTION).matches,
+    () => false,
+  );
 
   useEffect(() => {
     const node = ref.current;
@@ -87,7 +91,7 @@ export function FramePlayer({
       frameHoldMs(order, step % order.length),
     );
     return () => window.clearTimeout(timer);
-  }, [animated, playing, decoded, order.length, currentPosition, step]);
+  }, [animated, playing, decoded, order, step]);
 
   const staticSrc = animated ? null : imageThumbUrl(frames[0]?.image_url ?? fallbackUrl, width);
 

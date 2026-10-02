@@ -17,24 +17,17 @@ export function AuthedImage({
   published?: boolean;
 }) {
   const token = useAccessToken();
-  const [src, setSrc] = useState<string | null>(null);
+  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
+  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
+  const publicSrc =
+    published && fileId && subdomain && region
+      ? `https://${subdomain}.storage.${region}.nhost.run/v1/files/${fileId}`
+      : null;
+  // Tagged with its file so a stale blob is never shown for a new fileId.
+  const [blob, setBlob] = useState<{ fileId: string; url: string } | null>(null);
 
   useEffect(() => {
-    if (!fileId) {
-      setSrc(null);
-      return;
-    }
-
-    if (published) {
-      const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-      const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-      if (subdomain && region) {
-        setSrc(`https://${subdomain}.storage.${region}.nhost.run/v1/files/${fileId}`);
-        return;
-      }
-    }
-
-    if (!token) return;
+    if (!fileId || publicSrc || !token) return;
     let objectUrl: string | null = null;
     let cancelled = false;
 
@@ -44,12 +37,12 @@ export function AuthedImage({
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
+        const data = await res.blob();
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setSrc(objectUrl);
+        objectUrl = URL.createObjectURL(data);
+        setBlob({ fileId, url: objectUrl });
       } catch {
-        if (!cancelled) setSrc(null);
+        if (!cancelled) setBlob(null);
       }
     })();
 
@@ -57,7 +50,9 @@ export function AuthedImage({
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [fileId, token, published]);
+  }, [fileId, token, publicSrc]);
+
+  const src = publicSrc ?? (blob && blob.fileId === fileId ? blob.url : null);
 
   if (!src) {
     return <div className={cn("bg-zinc-100", className)} aria-label={alt} />;

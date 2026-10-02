@@ -46,7 +46,7 @@ export function ImageBoard() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const queue = useGenerationQueue();
 
-  const exercises = data?.exercises ?? [];
+  const exercises = useMemo(() => data?.exercises ?? [], [data]);
 
   const muscleOptions = useMemo(() => {
     const map = new Map<string, string>();

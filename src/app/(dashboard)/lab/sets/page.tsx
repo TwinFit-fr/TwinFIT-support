@@ -1,8 +1,8 @@
 "use client";
 
 import { useAccessToken } from "@nhost/react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { FormEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useMemo, useState } from "react";
 import {
   Download,
   Eye,
@@ -16,7 +16,7 @@ import {
 import { LabSetViewerDialog } from "@/components/lab-set-viewer-dialog";
 import { Button, Card, Input, TableSkeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
-import { useStaffFetch } from "@/hooks/use-staff-fetch";
+import { useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   LAB_SETS_PAGE_SIZE,
   type LabSetFilterOptions,
@@ -59,9 +59,7 @@ function filenameFromDisposition(header: string | null, fallback: string): strin
 }
 
 function LabSetsContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const staffFetch = useStaffFetch();
   const accessToken = useAccessToken();
   const toast = useToast();
 
@@ -71,10 +69,6 @@ function LabSetsContent() {
   const urlTo = searchParams.get("to") ?? "";
   const urlPage = Math.max(1, Number(searchParams.get("page") ?? 1));
 
-  const [options, setOptions] = useState<LabSetFilterOptions | null>(null);
-  const [data, setData] = useState<SetsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [viewingRow, setViewingRow] = useState<LabSetRow | null>(null);
 
@@ -89,44 +83,26 @@ function LabSetsContent() {
   const [appliedTo, setAppliedTo] = useState(urlTo);
   const [page, setPage] = useState(urlPage);
 
-  const loadOptions = useCallback(async () => {
-    try {
-      const res = (await staffFetch("/api/lab/sets?options=1")) as {
-        options: LabSetFilterOptions;
-      };
-      setOptions(res.options);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load filters");
-    }
-  }, [staffFetch, toast]);
+  const optionsQuery = useStaffSWR<{ options: LabSetFilterOptions }>("/api/lab/sets?options=1", {
+    // Shown once, like the rest of the page's one-shot loads; no retry loop of toasts.
+    shouldRetryOnError: false,
+    onError: (err) => toast.error(err.message || "Failed to load filters"),
+  });
+  const options = optionsQuery.data?.options ?? null;
 
-  const loadSets = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      params.set("page", String(page));
-      if (appliedUserId) params.set("user_id", appliedUserId);
-      if (appliedExoId) params.set("catalog_exo_id", appliedExoId);
-      if (appliedFrom) params.set("from", appliedFrom);
-      if (appliedTo) params.set("to", appliedTo);
-
-      const res = (await staffFetch(`/api/lab/sets?${params.toString()}`)) as SetsResponse;
-      setData(res);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sets");
-    } finally {
-      setLoading(false);
-    }
-  }, [staffFetch, page, appliedUserId, appliedExoId, appliedFrom, appliedTo]);
-
-  useEffect(() => {
-    void loadOptions();
-  }, [loadOptions]);
-
-  useEffect(() => {
-    void loadSets();
-  }, [loadSets]);
+  const setsKey = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    if (appliedUserId) params.set("user_id", appliedUserId);
+    if (appliedExoId) params.set("catalog_exo_id", appliedExoId);
+    if (appliedFrom) params.set("from", appliedFrom);
+    if (appliedTo) params.set("to", appliedTo);
+    return `/api/lab/sets?${params.toString()}`;
+  }, [page, appliedUserId, appliedExoId, appliedFrom, appliedTo]);
+  const setsQuery = useStaffSWR<SetsResponse>(setsKey);
+  const data = setsQuery.data ?? null;
+  const loading = setsQuery.isValidating;
+  const error = setsQuery.error ? setsQuery.error.message || "Failed to load sets" : null;
 
   function applyFilters(event: FormEvent) {
     event.preventDefault();
@@ -263,7 +239,7 @@ function LabSetsContent() {
           <Button
             type="button"
             variant="secondary"
-            onClick={() => void loadSets()}
+            onClick={() => void setsQuery.mutate()}
             disabled={loading}
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
