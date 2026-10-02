@@ -1,29 +1,13 @@
 import { NextResponse } from "next/server";
-import { callStaffFunction, requireStaffToken } from "@/lib/api-auth";
-import {
-  bindCatalogStaffToken,
-  resolveSupportEquipmentId,
-  setExerciseSupportEquipment,
-  upsertExerciseLocalizations,
-} from "@/lib/catalog";
+import { requireStaffToken } from "@/lib/api-auth";
+import { updateExercise, type ExercisePayload } from "@/lib/catalog";
 
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
-    const body = await request.json();
-    const result = await callStaffFunction(token, "staff-catalog-update", body);
-    if (result.status < 200 || result.status >= 300) {
-      return NextResponse.json(result.body, { status: result.status });
-    }
-
-    bindCatalogStaffToken(token);
-    const supportEquipmentId = await resolveSupportEquipmentId(body);
-    await setExerciseSupportEquipment(body.exo_id, supportEquipmentId);
-    if (body.localizations) {
-      await upsertExerciseLocalizations(body.exo_id, body.localizations);
-    }
-
-    return NextResponse.json(result.body, { status: result.status });
+    const body = (await request.json()) as ExercisePayload;
+    const exercise = await updateExercise(token, body);
+    return NextResponse.json({ ok: true, exercise });
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Update failed";

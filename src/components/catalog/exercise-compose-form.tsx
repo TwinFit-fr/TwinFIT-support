@@ -289,7 +289,7 @@ export function ExerciseComposeForm({
         display_name: form.localizations.en.display_name.trim(),
         description: form.localizations.en.description.trim() || null,
         localizations: form.localizations,
-        secondary_muscle_codes: [],
+        // No secondary_muscle_codes: the form does not edit them, so an update keeps them.
       };
       if (form.load_modality_code) {
         payload.load_modality_code = form.load_modality_code;

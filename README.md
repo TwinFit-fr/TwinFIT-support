@@ -68,7 +68,7 @@ VALUES ('<uuid>', 'staff');
 Browser (Nhost JWT, staff/admin role)
     → Next.js API routes (BFF)
         → Hasura GraphQL (Bearer JWT, staff/admin permissions)
-        → Nhost Functions (verify email, subscription, catalog update with internal admin secret)
+        → Nhost Functions (verify email, subscription, disable account)
 ```
 
 Support write actions call backend Functions:
@@ -76,9 +76,10 @@ Support write actions call backend Functions:
 - `admin-verify-email` (staff or admin)
 - `admin-set-subscription` (staff or admin)
 - `admin-set-user-disabled` (admin only)
-- `staff-catalog-update` (staff or admin; exercise edits that replace child rows)
 
-Catalog logic is ported from [TwinFIT-CatalogWeb](../TwinFIT-CatalogWeb/) (`src/lib/catalog/crud.js`).
+Catalog writes go straight to Hasura with the caller's JWT (`src/lib/catalog/`, on `staffGql` in
+`src/lib/staff-gql.ts`). An exercise update is one GraphQL mutation, so Hasura applies it in a
+single transaction.
 
 ## Security notes
 

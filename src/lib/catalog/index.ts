@@ -1,24 +1,9 @@
-import { bindStaffToken } from "./graphql.cjs";
-
-export function bindCatalogStaffToken(accessToken: string) {
-  bindStaffToken(accessToken);
-}
-
 export {
-  ensureLookup,
-  nextXcatExoId,
-  composeXcatExercise,
-  composeCustomXcatExercise,
-  listAuthUsers,
-  listXcatLibraryAdmin,
-  updateXcatExercise,
-  deactivateXcatExercise,
-  upsertLookup,
-  manageRelation,
-  updateLookup,
-  setExerciseSupportEquipment,
-  upsertExerciseLocalizations,
-  upsertTaxonomyLocalizations,
-  resolveSupportEquipmentId,
-  fetchTaxonomyAdmin,
-} from "./crud.js";
+  composeExercise,
+  deactivateExercise,
+  listLibrary,
+  nextExoId,
+  updateExercise,
+} from "./exercises";
+export { fetchTaxonomy, manageRelation, updateLookup, upsertLookup } from "./lookups";
+export type { ExercisePayload } from "./normalize";
