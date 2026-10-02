@@ -7,6 +7,7 @@ import { invalidSystemPrompt } from "@/lib/images/prompt-checks";
 import {
   clearActivePosition,
   getActiveImageAtPosition,
+  getExerciseImage,
   getExerciseSummary,
   getUserIdFromToken,
   insertExerciseImage,
@@ -21,8 +22,8 @@ import {
   START_GUIDE_DIRECTIVE,
 } from "@/lib/images/reference";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
-import { REFERENCE_KEYS } from "@/lib/images/types";
-import type { Subject } from "@/lib/images/types";
+import { REFERENCE_KEYS, targetPosition } from "@/lib/images/types";
+import type { ExerciseImage, Subject } from "@/lib/images/types";
 
 export const maxDuration = 300;
 
@@ -37,8 +38,8 @@ const bodySchema = z.object({
   /** Use this system prompt instead of the one selected in settings (this run only). */
   systemPromptId: z.string().uuid().optional(),
   positionOverride: promptText.optional(),
-  /** Mid/End: edit the active Start frame (default). False generates from the reference. */
-  useStartContext: z.boolean().default(true),
+  /** Mid/End: the Start to edit (the one this run generated); defaults to the active Start. */
+  guideImageId: z.string().uuid().optional(),
 });
 
 export async function POST(request: Request) {
@@ -68,12 +69,27 @@ export async function POST(request: Request) {
       );
     }
 
-    // Mid/End are edits of the active Start frame so camera, scale and character match it;
+    // Mid/End are always edits of a Start frame so camera, scale and character match it;
     // the subject then follows the Start's so one exercise never mixes man and woman.
-    const usableGuide =
-      position !== 0 && body.useStartContext
-        ? await getActiveImageAtPosition(token, exercise.exo_id, 0)
-        : null;
+    let usableGuide: ExerciseImage | null = null;
+    if (position !== 0) {
+      usableGuide = body.guideImageId
+        ? await getExerciseImage(token, body.guideImageId)
+        : await getActiveImageAtPosition(token, exercise.exo_id, 0);
+      const isStart =
+        usableGuide?.exo_id === exercise.exo_id &&
+        (usableGuide.position === 0 || targetPosition(usableGuide) === 0);
+      if (!isStart) {
+        return NextResponse.json(
+          {
+            error: body.guideImageId
+              ? "Guide image is not a Start frame of this exercise"
+              : "No active Start frame: generate Start first",
+          },
+          { status: 409 },
+        );
+      }
+    }
     const subject: Subject = usableGuide?.params?.subject ?? body.subject;
     const referenceFileId = usableGuide ? null : settings[REFERENCE_KEYS[subject]];
 

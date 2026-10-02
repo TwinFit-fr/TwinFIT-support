@@ -41,7 +41,6 @@ import {
   isDeletableImage,
   targetPosition,
 } from "@/lib/images/types";
-import { sequenceStripSize } from "@/lib/images/capabilities";
 import { gifPlaybackOrder, imageDisplayUrl, imageThumbUrl } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 
@@ -176,13 +175,16 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     return map;
   }, [exercise]);
 
+  // Mid/End are always edits of a Start, so they need one: this run's or the active one.
+  const missingStart = !runPositions.includes(0) && !activeByPosition.has(0);
+
   const refresh = useCallback(async () => {
     await mutate(`/api/images/exercises/${exoId}`);
     await mutate("/api/images/exercises");
   }, [exoId]);
 
   async function runGenerate() {
-    if (!exercise || queue.running) return;
+    if (!exercise || queue.running || missingStart) return;
     const run = overrides;
     await queue.start({
       exercises: [
@@ -195,8 +197,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       positions: runPositions,
       subject,
       maxConcurrency: settings?.params.max_concurrency ?? 3,
-      generateStep: async (exoId, position, stepSubject) => {
-        await staffFetch("/api/images/generate", {
+      generateStep: async (exoId, position, stepSubject, guideImageId) => {
+        const { image } = (await staffFetch("/api/images/generate", {
           method: "POST",
           body: JSON.stringify({
             exoId,
@@ -205,25 +207,12 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             systemOverride: run.system,
             systemPromptId: run.systemPromptId,
             positionOverride: run.positions[position],
-            useStartContext: run.startContext !== false,
+            guideImageId,
           }),
-        });
+        })) as { image: ExerciseImage };
         await refresh();
+        return image.id;
       },
-      generateSequence: async (exoId, stepSubject) => {
-        await staffFetch("/api/images/generate-sequence", {
-          method: "POST",
-          body: JSON.stringify({
-            exoId,
-            subject: stepSubject,
-            systemOverride: run.system,
-            systemPromptId: run.systemPromptId,
-            positionOverrides: FRAME_POSITIONS.map((f) => run.positions[f.id] ?? null),
-          }),
-        });
-        await refresh();
-      },
-      canSequence: (panels) => Boolean(settings && sequenceStripSize(settings.params, panels)),
     });
   }
 
@@ -378,10 +367,13 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             {showOverrides ? "Hide prompts" : "Edit prompts"}
             {editedCount > 0 ? ` (${editedCount} edited)` : ""}
           </Button>
+          {missingStart && (
+            <span className="text-xs text-amber-700">No active Start: generate Start first</span>
+          )}
           <Button
             type="button"
             variant="secondary"
-            disabled={busy || queue.running || runPositions.length === 0}
+            disabled={busy || queue.running || runPositions.length === 0 || missingStart}
             onClick={() => void runGenerate()}
           >
             {queue.running
@@ -399,10 +391,6 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           startThumbUrl={imageThumbUrl(activeByPosition.get(0)?.image_url, 160)}
           systemPrompts={systemPrompts}
           settingsSystemPromptId={settings?.system_prompt_id}
-          usesStrip={
-            runPositions.length === framePositions.length &&
-            Boolean(settings && sequenceStripSize(settings.params, framePositions.length))
-          }
           systemTemplate={templates.system}
           positionTemplates={templates.positions}
           value={overrides}

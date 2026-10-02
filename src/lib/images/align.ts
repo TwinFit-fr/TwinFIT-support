@@ -1,7 +1,7 @@
 import sharp, { type Sharp } from "sharp";
 
 /** Every frame is shifted so the lowest drawn pixel (feet / shadow) sits at this height ratio. */
-export const FEET_BASELINE = 0.95;
+const FEET_BASELINE = 0.95;
 
 const ALPHA_THRESHOLD = 24;
 const COLOR_THRESHOLD = 40;
@@ -10,7 +10,7 @@ const MIN_SHIFT_PX = 2;
 
 export type ImageFormat = "png" | "webp" | "jpeg";
 
-export type Rgba = {
+type Rgba = {
   data: Buffer;
   width: number;
   height: number;
@@ -20,7 +20,7 @@ export type Rgba = {
   isContent: (x: number, y: number) => boolean;
 };
 
-export async function readRgba(input: Buffer): Promise<Rgba> {
+async function readRgba(input: Buffer): Promise<Rgba> {
   const { data, info } = await sharp(input)
     .ensureAlpha()
     .raw()
@@ -39,13 +39,7 @@ export async function readRgba(input: Buffer): Promise<Rgba> {
   return { data, width, height, bg, transparentBg, isContent };
 }
 
-export function backgroundFill(img: Pick<Rgba, "bg" | "transparentBg">) {
-  return img.transparentBg
-    ? { r: 0, g: 0, b: 0, alpha: 0 }
-    : { r: img.bg[0], g: img.bg[1], b: img.bg[2], alpha: 1 };
-}
-
-export function encode(
+function encode(
   pipeline: Sharp,
   format: ImageFormat,
   quality: number,
@@ -73,8 +67,6 @@ export async function alignFeetBaseline(
   input: Buffer,
   format: ImageFormat,
   quality: number,
-  /** Re-encode even when no shift is needed (input is an intermediate format). */
-  alwaysEncode = false,
 ): Promise<AlignResult> {
   const img = await readRgba(input);
   const { data, width, height } = img;
@@ -93,10 +85,7 @@ export async function alignFeetBaseline(
   }
   let shift = bottom < 0 ? 0 : Math.round(height * FEET_BASELINE) - 1 - bottom;
   if (shift < 0) shift = Math.max(shift, -top);
-  if (Math.abs(shift) < MIN_SHIFT_PX) {
-    if (!alwaysEncode) return { bytes: input, shiftPx: 0 };
-    shift = 0;
-  }
+  if (Math.abs(shift) < MIN_SHIFT_PX) return { bytes: input, shiftPx: 0 };
 
   const rowBytes = width * 4;
   const output = Buffer.alloc(data.length);

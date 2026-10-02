@@ -1,17 +1,26 @@
 "use client";
 
-import { resolveSize } from "@/lib/images/capabilities";
+import { capabilitiesFor, resolveSize } from "@/lib/images/capabilities";
 import type { ExerciseImage, GenerationParams, ImagePrompt } from "@/lib/images/types";
 import { framePositionLabel, targetPosition } from "@/lib/images/types";
 
 function generationMethod(image: ExerciseImage): string {
   const p = image.params;
   if (!p) return "—";
+  // Strips are no longer generated; older images keep showing how they were made.
   if (p.sequence)
-    return `3-pose strip ${p.sequence.strip_size} (cuts at ${p.sequence.cuts.join(" / ")})`;
+    return `${p.sequence.cuts.length + 1}-pose strip ${p.sequence.strip_size} (cuts at ${p.sequence.cuts.join(" / ")})`;
   if (p.guide_image_id) return "Edit of the Start frame";
   if (p.reference_file_id) return "From character reference";
   return "Prompt only";
+}
+
+/** input_fidelity is only sent with an input image and on models that accept it. */
+function fidelityLabel(image: ExerciseImage): string {
+  const p = image.params;
+  if (!p || !(p.reference_file_id || p.guide_image_id)) return "—";
+  if (!capabilitiesFor(image.model).inputFidelity) return "Not supported by model";
+  return p.input_fidelity ?? "—";
 }
 
 function usageLabel(usage: ExerciseImage["usage"]): string {
@@ -69,10 +78,7 @@ export function ImageMetadataPanel({
     ],
     ["Quality", p.quality ?? "—"],
     ["Moderation", p.moderation ?? "—"],
-    [
-      "Reference fidelity",
-      p.reference_file_id || p.guide_image_id ? (p.input_fidelity ?? "—") : "—",
-    ],
+    ["Reference fidelity", fidelityLabel(image)],
     [
       "System prompt",
       `${promptName(prompts, p.system_prompt_id)}${p.system_prompt_edited ? " (edited for this run)" : ""}`,

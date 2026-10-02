@@ -39,14 +39,10 @@ export async function listImageModelIds(client?: OpenAI): Promise<string[]> {
   return [...new Set([...discovered, ...KNOWN_IMAGE_MODELS])].sort();
 }
 
-function applyOutputDirective(
-  prompt: string,
-  params: GenerationParams,
-  sizeOverridden: boolean,
-): string {
+function applyOutputDirective(prompt: string, params: GenerationParams): string {
   const shape = SHAPES.find((item) => item.id === params.shape);
   const lines = ["OUTPUT SETTINGS:"];
-  if (!sizeOverridden && shape?.detail && shape.id !== "auto") {
+  if (shape?.detail && shape.id !== "auto") {
     lines.push(`- Aspect ratio: ${shape.detail}.`);
   }
   if (params.quality !== "auto") {
@@ -68,27 +64,15 @@ export type BuiltImageRequest = {
   mimeType: string;
 };
 
-export type RequestOptions = {
-  /** Explicit WIDTHxHEIGHT, e.g. a multi-pose strip; defaults to the size from settings. */
-  size?: string;
-};
-
-export function buildImageRequest(
-  prompt: string,
-  params: GenerationParams,
-  options: RequestOptions = {},
-): BuiltImageRequest {
+export function buildImageRequest(prompt: string, params: GenerationParams): BuiltImageRequest {
   const issues = validateGenerationParams(params);
   if (issues.length) {
     throw new Error(`Invalid generation settings: ${issues.join(" ")}`);
   }
   const request: BuiltImageRequest = {
     model: params.model || DEFAULT_GENERATION_PARAMS.model,
-    prompt:
-      params.background === "auto"
-        ? applyOutputDirective(prompt, params, Boolean(options.size))
-        : prompt.trim(),
-    size: options.size ?? resolveSize(params),
+    prompt: params.background === "auto" ? applyOutputDirective(prompt, params) : prompt.trim(),
+    size: resolveSize(params),
     quality: params.quality,
     output_format: params.format,
     moderation: params.moderation,
@@ -112,10 +96,9 @@ export type GeneratedImageResult = {
 export async function generateImage(
   prompt: string,
   params: GenerationParams,
-  options: RequestOptions = {},
 ): Promise<GeneratedImageResult> {
   const client = createOpenAIClient();
-  const request = buildImageRequest(prompt, params, options);
+  const request = buildImageRequest(prompt, params);
   const response = await client.images.generate({
     model: request.model,
     prompt: request.prompt,
@@ -143,10 +126,10 @@ export async function editImage(
   prompt: string,
   params: GenerationParams,
   inputs: { bytes: Buffer; mimeType: string }[],
-  options: RequestOptions & { useFidelity?: boolean } = {},
+  options: { useFidelity?: boolean } = {},
 ): Promise<GeneratedImageResult> {
   const client = createOpenAIClient();
-  const request = buildImageRequest(prompt, params, options);
+  const request = buildImageRequest(prompt, params);
   const files = inputs.map((input, i) => {
     const extension =
       input.mimeType === "image/jpeg" ? "jpg" : input.mimeType.split("/")[1] || "png";
