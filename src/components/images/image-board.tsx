@@ -8,11 +8,14 @@ import { ExerciseImageCard } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
+  useFrameCountChoice,
   useGenerationQueue,
   usePositionSelection,
   useSubjectChoice,
 } from "@/hooks/use-generation-queue";
+import { runPositionsFor } from "@/components/images/position-selector";
 import { sequenceStripSize } from "@/lib/images/capabilities";
+import { MID_POSITION, framePositionsFor } from "@/lib/images/types";
 import type {
   ExerciseImageBoardItem,
   ImagePrompt,
@@ -30,6 +33,8 @@ export function ImageBoard() {
   });
   const [positions, setPositions] = usePositionSelection();
   const [subject, setSubject] = useSubjectChoice();
+  const [frameCount, setFrameCount] = useFrameCountChoice();
+  const [preparing, setPreparing] = useState(false);
   const { data: settings } = useStaffSWR<ImageSettings>("/api/images/settings");
   const { data: promptsData } = useStaffSWR<{ system: ImagePrompt[] }>("/api/images/prompts");
   // Ephemeral: applies to the next queue runs on this page only.
@@ -85,6 +90,16 @@ export function ImageBoard() {
     return c;
   }, [exercises]);
 
+  // With a batch frame count, positions it lacks (Mid for 2 frames) are not offered.
+  const batchPositions = frameCount === "exercise" ? undefined : framePositionsFor(frameCount === 2);
+  const runPositions = batchPositions ? runPositionsFor(positions, batchPositions) : positions;
+  const selectedExercises = filtered.filter((ex) => selected.has(ex.exo_id));
+  const framePositionsOf = (ex: ExerciseImageBoardItem) => batchPositions ?? ex.frame_positions;
+  const plannedImages = selectedExercises.reduce(
+    (sum, ex) => sum + framePositionsOf(ex).filter((p) => runPositions.includes(p)).length,
+    0,
+  );
+
   function toggle(exoId: number) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -118,26 +133,58 @@ export function ImageBoard() {
     await mutate("/api/images/exercises");
   }
 
-  async function startQueue() {
-    const chosen = filtered
-      .filter((ex) => selected.has(ex.exo_id))
-      .map((ex) => ({
-        exoId: ex.exo_id,
-        name: ex.display_name,
-        framePositions: ex.frame_positions,
-      }));
-    if (!chosen.length) return;
+  /** Saves the batch frame count on the exercises that differ; false if the user backs out. */
+  async function applyFrameCount(exercises: ExerciseImageBoardItem[]): Promise<boolean> {
+    if (frameCount === "exercise") return true;
+    const twoFrames = frameCount === 2;
+    const changing = exercises.filter((ex) => ex.two_frames !== twoFrames);
+    if (!changing.length) return true;
+    const losingMid = changing.filter((ex) => ex.active_positions.includes(MID_POSITION));
+    if (
+      losingMid.length &&
+      !window.confirm(
+        `${losingMid.length} exercise(s) have an active Mid frame. Switching them to 2 frames deactivates it. Continue?`,
+      )
+    ) {
+      return false;
+    }
+    setPreparing(true);
     try {
+      for (let i = 0; i < changing.length; i += 5) {
+        await Promise.all(
+          changing.slice(i, i + 5).map((ex) =>
+            staffFetch(`/api/images/exercises/${ex.exo_id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ two_frames: twoFrames }),
+            }),
+          ),
+        );
+      }
+      return true;
+    } finally {
+      setPreparing(false);
+      await mutate("/api/images/exercises");
+    }
+  }
+
+  async function startQueue() {
+    if (!selectedExercises.length || preparing) return;
+    try {
+      if (!(await applyFrameCount(selectedExercises))) return;
       await queue.start({
-        exercises: chosen,
-        positions,
+        exercises: selectedExercises.map((ex) => ({
+          exoId: ex.exo_id,
+          name: ex.display_name,
+          framePositions: framePositionsOf(ex),
+        })),
+        positions: runPositions,
         subject,
         maxConcurrency: settings?.params.max_concurrency ?? 3,
         generateStep,
         generateSequence,
         canSequence: (panels) => Boolean(settings && sequenceStripSize(settings.params, panels)),
       });
-      success(`${chosen.length} exercise(s) processed`, "Queue finished");
+      success(`${selectedExercises.length} exercise(s) processed`, "Queue finished");
       await mutate("/api/images/exercises");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Failed", "Queue error");
@@ -256,7 +303,11 @@ export function ImageBoard() {
 
       <GenerationQueueBar
         selectedCount={selected.size}
+        plannedImages={plannedImages}
+        frameCount={frameCount}
+        onFrameCountChange={setFrameCount}
         positions={positions}
+        availablePositions={batchPositions}
         onPositionsChange={setPositions}
         subject={subject}
         onSubjectChange={setSubject}
@@ -265,6 +316,7 @@ export function ImageBoard() {
         systemPromptId={systemPromptId}
         onSystemPromptChange={setSystemPromptId}
         running={queue.running}
+        preparing={preparing}
         items={queue.items}
         exercisesDone={queue.exercisesDone}
         imagesDone={queue.imagesDone}
