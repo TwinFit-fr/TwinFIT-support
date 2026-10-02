@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { FRAME_POSITIONS, SPLIT_FAILED, SUBJECTS } from "@/lib/images/types";
+import { FRAME_POSITIONS, SUBJECTS } from "@/lib/images/types";
 import type { FrameCountChoice, Subject, SubjectChoice } from "@/lib/images/types";
 
 export type StepStatus = "waiting" | "processing" | "done" | "error" | "cancelled";
@@ -22,8 +22,16 @@ export type QueueItem = {
   steps: QueueStep[];
 };
 
-type GenerateStepFn = (exoId: number, position: number, subject: Subject) => Promise<void>;
-type GenerateSequenceFn = (exoId: number, subject: Subject) => Promise<void>;
+/**
+ * Generates one frame and resolves with the new image id. Mid/End receive the Start this run
+ * generated as `guideImageId`; without it the server edits the exercise's active Start.
+ */
+type GenerateStepFn = (
+  exoId: number,
+  position: number,
+  subject: Subject,
+  guideImageId?: string,
+) => Promise<string>;
 
 function resolveSubject(choice: SubjectChoice): Subject {
   return choice === "random" ? SUBJECTS[Math.floor(Math.random() * SUBJECTS.length)] : choice;
@@ -62,7 +70,7 @@ function createPrioritySemaphore(limit: number) {
 
 /**
  * Runs exercises × positions with at most `maxConcurrency` requests in flight.
- * Per exercise, Start runs first and Mid/End follow in parallel.
+ * Per exercise, Start runs first and Mid/End follow in parallel as edits of it.
  */
 export function useGenerationQueue() {
   const [items, setItems] = useState<QueueItem[]>([]);
@@ -99,12 +107,8 @@ export function useGenerationQueue() {
       subject: SubjectChoice;
       maxConcurrency: number;
       generateStep: GenerateStepFn;
-      /** One strip call for all of an exercise's positions, when `canSequence(panels)` allows. */
-      generateSequence?: GenerateSequenceFn;
-      canSequence?: (panels: number) => boolean;
     }) => {
-      const { positions, subject, maxConcurrency, generateStep, generateSequence, canSequence } =
-        options;
+      const { positions, subject, maxConcurrency, generateStep } = options;
       if (running) return;
       const exercises = options.exercises
         .map((exercise) => ({
@@ -126,70 +130,54 @@ export function useGenerationQueue() {
       setRunning(true);
 
       const slots = createPrioritySemaphore(maxConcurrency);
-      const runStep = async (index: number, stepIndex: number) => {
+      /** Resolves with the new image id, or null when the frame was not generated. */
+      const runStep = async (
+        index: number,
+        stepIndex: number,
+        guideImageId?: string,
+      ): Promise<string | null> => {
         const item = queue[index];
         const position = item.steps[stepIndex].position;
         // Earlier exercises first, and within one exercise Start before Mid/End.
         await slots.acquire(item.ordinal * 10 + position);
         try {
-          if (cancelledRef.current) return;
+          if (cancelledRef.current) return null;
           patchStep(index, stepIndex, { status: "processing", startedAt: Date.now() });
-          await generateStep(item.exoId, position, item.subject);
+          const imageId = await generateStep(item.exoId, position, item.subject, guideImageId);
           patchStep(index, stepIndex, { status: "done" });
+          return imageId;
         } catch (error) {
           patchStep(index, stepIndex, {
             status: "error",
             error: error instanceof Error ? error.message : "Failed",
           });
+          return null;
         } finally {
           slots.release();
         }
       };
 
-      const patchAll = (index: number, step: Partial<QueueStep>) =>
-        queue[index].steps.forEach((_, stepIndex) => patchStep(index, stepIndex, step));
-
-      // Returns false when the strip could not be split, so the caller falls back.
-      const runSequence = async (index: number): Promise<boolean> => {
-        const item = queue[index];
-        await slots.acquire(item.ordinal * 10);
-        try {
-          if (cancelledRef.current) return true;
-          patchAll(index, { status: "processing", startedAt: Date.now() });
-          await generateSequence!(item.exoId, item.subject);
-          patchAll(index, { status: "done" });
-          return true;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Failed";
-          if (message.startsWith(SPLIT_FAILED)) {
-            patchAll(index, { status: "waiting", startedAt: undefined });
-            return false;
-          }
-          patchAll(index, { status: "error", error: message });
-          return true;
-        } finally {
-          slots.release();
-        }
-      };
-
-      const shouldSequence = (index: number) => {
-        const { framePositions, positions: requested } = exercises[index];
-        return (
-          Boolean(generateSequence) &&
-          framePositions.length > 1 &&
-          requested.length === framePositions.length &&
-          Boolean(canSequence?.(framePositions.length))
-        );
-      };
-
-      // Mid/End are generated from the exercise's Start frame, so Start must finish first.
+      // Mid/End are edits of this run's Start, so Start must finish first; if it fails they are
+      // skipped rather than drawn from an older Start. Without Start in the run, the server
+      // uses the exercise's active Start.
       const runExercise = async (item: QueueItem, index: number) => {
-        if (shouldSequence(index) && (await runSequence(index))) return;
         const startIndex = item.steps.findIndex((s) => s.position === 0);
-        if (startIndex >= 0) await runStep(index, startIndex);
+        let startImageId: string | undefined;
+        if (startIndex >= 0) {
+          const imageId = await runStep(index, startIndex);
+          if (!imageId) {
+            item.steps.forEach((_, stepIndex) => {
+              if (stepIndex !== startIndex && !cancelledRef.current) {
+                patchStep(index, stepIndex, { status: "error", error: "Skipped: Start failed" });
+              }
+            });
+            return;
+          }
+          startImageId = imageId;
+        }
         await Promise.all(
           item.steps.map((_, stepIndex) =>
-            stepIndex === startIndex ? null : runStep(index, stepIndex),
+            stepIndex === startIndex ? null : runStep(index, stepIndex, startImageId),
           ),
         );
       };

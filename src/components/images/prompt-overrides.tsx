@@ -10,8 +10,6 @@ export type PromptOverrides = {
   systemPromptId?: string;
   system?: string;
   positions: Partial<Record<number, string>>;
-  /** False = do not send the active Start frame as context for Mid/End. */
-  startContext?: boolean;
 };
 
 export const NO_OVERRIDES: PromptOverrides = { positions: {} };
@@ -22,6 +20,30 @@ export function countOverrides(overrides: PromptOverrides, positions: number[]):
     (overrides.system != null ? 1 : 0) +
     positions.filter((p) => overrides.positions[p] != null).length
   );
+}
+
+/** Explains which Start frame Mid/End will be drawn from; `blocking` when there is none. */
+function startContextNote(newStart: boolean, hasActiveStart: boolean) {
+  const keeps = "same character, camera and scale; subject follows the Start";
+  if (newStart) {
+    return {
+      title: "Mid/End edit the new Start",
+      detail: `Start is generated first; Mid/End are then drawn by editing it (${keeps}).`,
+      blocking: false,
+    };
+  }
+  if (hasActiveStart) {
+    return {
+      title: "Mid/End edit this Start",
+      detail: `Drawn by editing the active Start (${keeps}). Describe the change in the position prompt, e.g. alternate arms and legs.`,
+      blocking: false,
+    };
+  }
+  return {
+    title: "No active Start frame",
+    detail: "Mid/End are always drawn from the Start. Generate Start first.",
+    blocking: true,
+  };
 }
 
 /** Ephemeral choice of system prompt; empty value = the one selected in settings. */
@@ -137,7 +159,6 @@ export function PromptOverridesPanel({
   onChange,
   disabled,
   startThumbUrl,
-  usesStrip,
   systemPrompts,
   settingsSystemPromptId,
 }: {
@@ -149,12 +170,13 @@ export function PromptOverridesPanel({
   disabled?: boolean;
   /** Thumbnail of the exercise's active Start frame, if any. */
   startThumbUrl: string | null;
-  /** The run draws all positions in one strip, so no frame is sent as context. */
-  usesStrip: boolean;
   systemPrompts: { id: string; name: string }[];
   settingsSystemPromptId: string | null | undefined;
 }) {
-  const showStartContext = positions.some((p) => p !== 0) && !usesStrip;
+  const showStartContext = positions.some((p) => p !== 0);
+  // When the run also draws Start, Mid/End edit that new Start instead of the active one.
+  const newStart = positions.includes(0);
+  const note = startContextNote(newStart, Boolean(startThumbUrl));
   const edits = countOverrides(value, positions);
   return (
     <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4">
@@ -169,7 +191,7 @@ export function PromptOverridesPanel({
         <button
           type="button"
           disabled={disabled || edits === 0}
-          onClick={() => onChange({ positions: {}, startContext: value.startContext })}
+          onClick={() => onChange(NO_OVERRIDES)}
           title="Restores the settings system prompt and all texts"
           className="text-xs text-zinc-500 underline hover:text-zinc-800 disabled:no-underline disabled:opacity-40"
         >
@@ -177,8 +199,13 @@ export function PromptOverridesPanel({
         </button>
       </div>
       {showStartContext && (
-        <div className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-          {startThumbUrl && (
+        <div
+          className={cn(
+            "flex items-start gap-3 rounded-lg border p-3 text-xs",
+            note.blocking ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-zinc-50",
+          )}
+        >
+          {startThumbUrl && !newStart && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={startThumbUrl}
@@ -186,23 +213,10 @@ export function PromptOverridesPanel({
               className="h-16 w-16 shrink-0 rounded border border-zinc-200 bg-white object-contain"
             />
           )}
-          <label className="space-y-0.5 text-xs text-zinc-700">
-            <span className="flex items-center gap-2 font-medium">
-              <input
-                type="checkbox"
-                checked={Boolean(startThumbUrl) && value.startContext !== false}
-                disabled={disabled || !startThumbUrl}
-                onChange={(e) => onChange({ ...value, startContext: e.target.checked })}
-                className="h-4 w-4 rounded border-zinc-300"
-              />
-              Send active Start as context
-            </span>
-            <span className="block text-zinc-500">
-              {startThumbUrl
-                ? "Mid/End are drawn by editing this Start image (same character, camera and scale; subject follows the Start). Describe the change in the position prompt, e.g. alternate arms and legs."
-                : "No active Start frame: Mid/End are generated from the character reference."}
-            </span>
-          </label>
+          <div className="space-y-0.5">
+            <div className="font-medium text-zinc-800">{note.title}</div>
+            <p className="text-zinc-500">{note.detail}</p>
+          </div>
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">

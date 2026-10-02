@@ -94,26 +94,3 @@ export function selectedPrompts<T extends PromptLike>(
     position: forPosition.find((p) => p.id === positionId) ?? forPosition[0],
   };
 }
-
-const POSITION_NAMES = ["start", "mid", "end"];
-
-/** System prompt + strip layout directive + one block per panel (left to right). */
-export function assembleSequencePrompt(
-  input: TemplateValues & {
-    systemContent: string;
-    panels: { position: number; content: string }[];
-    layoutDirective: string;
-  },
-): string {
-  return [
-    fillPromptTemplate(input.systemContent, input).trim(),
-    input.layoutDirective,
-    input.details ?? "",
-    ...input.panels.map(
-      (panel, i) =>
-        `PANEL ${i + 1} — ${POSITION_NAMES[panel.position]} position:\n${fillPromptTemplate(panel.content, input).trim()}`,
-    ),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}

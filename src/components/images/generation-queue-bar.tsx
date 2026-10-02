@@ -14,6 +14,7 @@ import type { FrameCountChoice, SubjectChoice } from "@/lib/images/types";
 export function GenerationQueueBar({
   selectedCount,
   plannedImages,
+  withoutStart,
   frameCount,
   onFrameCountChange,
   positions,
@@ -38,6 +39,8 @@ export function GenerationQueueBar({
   selectedCount: number;
   /** Images the next run will generate for the selection. */
   plannedImages: number;
+  /** Selected exercises left out because the run has no Start and they have no active one. */
+  withoutStart: number;
   frameCount: FrameCountChoice;
   onFrameCountChange: (next: FrameCountChoice) => void;
   positions: number[];
@@ -79,7 +82,15 @@ export function GenerationQueueBar({
               {errors ? <span className="text-red-600"> · {errors} error(s)</span> : null}
             </span>
           ) : (
-            <span>{selectedCount} selected</span>
+            <span>
+              {selectedCount} selected
+              {withoutStart > 0 && (
+                <span className="text-amber-700">
+                  {" "}
+                  · {withoutStart} without Start skipped (generate Start first)
+                </span>
+              )}
+            </span>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

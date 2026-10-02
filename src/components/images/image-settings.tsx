@@ -18,7 +18,6 @@ import {
   capabilitiesFor,
   isShapeSupported,
   resolveSize,
-  sequenceStripSize,
   validateGenerationParams,
 } from "@/lib/images/capabilities";
 import type { GenerationParams, ImagePrompt, ImageSettings, Subject } from "@/lib/images/types";
@@ -435,11 +434,7 @@ export function ImageSettingsPage() {
 
         <Field
           label="Shape"
-          hint={`Output size: ${resolveSize(params)} · "All" ${
-            sequenceStripSize(params)
-              ? `draws the 3 poses in one ${sequenceStripSize(params)} strip (same scale)`
-              : "generates each position separately (needs a custom-size model and square/portrait shape for the 3-pose strip)"
-          }`}
+          hint={`Output size: ${resolveSize(params)}`}
         >
           {SHAPES.map((shape) => {
             const supported = isShapeSupported(params.model, shape.id);

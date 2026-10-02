@@ -14,9 +14,9 @@ import {
   useSubjectChoice,
 } from "@/hooks/use-generation-queue";
 import { runPositionsFor } from "@/components/images/position-selector";
-import { sequenceStripSize } from "@/lib/images/capabilities";
 import { MID_POSITION, framePositionsFor } from "@/lib/images/types";
 import type {
+  ExerciseImage,
   ExerciseImageBoardItem,
   ImagePrompt,
   ImageSettings,
@@ -94,8 +94,13 @@ export function ImageBoard() {
   const batchPositions = frameCount === "exercise" ? undefined : framePositionsFor(frameCount === 2);
   const runPositions = batchPositions ? runPositionsFor(positions, batchPositions) : positions;
   const selectedExercises = filtered.filter((ex) => selected.has(ex.exo_id));
+  // Mid/End are edits of a Start: without Start in the run, exercises need an active one.
+  const runnableExercises = runPositions.includes(0)
+    ? selectedExercises
+    : selectedExercises.filter((ex) => ex.active_positions.includes(0));
+  const withoutStart = selectedExercises.length - runnableExercises.length;
   const framePositionsOf = (ex: ExerciseImageBoardItem) => batchPositions ?? ex.frame_positions;
-  const plannedImages = selectedExercises.reduce(
+  const plannedImages = runnableExercises.reduce(
     (sum, ex) => sum + framePositionsOf(ex).filter((p) => runPositions.includes(p)).length,
     0,
   );
@@ -117,20 +122,18 @@ export function ImageBoard() {
     setSelected(new Set(filtered.filter((ex) => ex.status === "empty").map((ex) => ex.exo_id)));
   }
 
-  async function generateStep(exoId: number, position: number, stepSubject: Subject) {
-    await staffFetch("/api/images/generate", {
+  async function generateStep(
+    exoId: number,
+    position: number,
+    stepSubject: Subject,
+    guideImageId?: string,
+  ): Promise<string> {
+    const { image } = (await staffFetch("/api/images/generate", {
       method: "POST",
-      body: JSON.stringify({ exoId, position, subject: stepSubject, systemPromptId }),
-    });
+      body: JSON.stringify({ exoId, position, subject: stepSubject, systemPromptId, guideImageId }),
+    })) as { image: ExerciseImage };
     await mutate("/api/images/exercises");
-  }
-
-  async function generateSequence(exoId: number, stepSubject: Subject) {
-    await staffFetch("/api/images/generate-sequence", {
-      method: "POST",
-      body: JSON.stringify({ exoId, subject: stepSubject, systemPromptId }),
-    });
-    await mutate("/api/images/exercises");
+    return image.id;
   }
 
   /** Saves the batch frame count on the exercises that differ; false if the user backs out. */
@@ -168,11 +171,11 @@ export function ImageBoard() {
   }
 
   async function startQueue() {
-    if (!selectedExercises.length || preparing) return;
+    if (!runnableExercises.length || preparing) return;
     try {
-      if (!(await applyFrameCount(selectedExercises))) return;
+      if (!(await applyFrameCount(runnableExercises))) return;
       await queue.start({
-        exercises: selectedExercises.map((ex) => ({
+        exercises: runnableExercises.map((ex) => ({
           exoId: ex.exo_id,
           name: ex.display_name,
           framePositions: framePositionsOf(ex),
@@ -181,10 +184,8 @@ export function ImageBoard() {
         subject,
         maxConcurrency: settings?.params.max_concurrency ?? 3,
         generateStep,
-        generateSequence,
-        canSequence: (panels) => Boolean(settings && sequenceStripSize(settings.params, panels)),
       });
-      success(`${selectedExercises.length} exercise(s) processed`, "Queue finished");
+      success(`${runnableExercises.length} exercise(s) processed`, "Queue finished");
       await mutate("/api/images/exercises");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Failed", "Queue error");
@@ -304,6 +305,7 @@ export function ImageBoard() {
       <GenerationQueueBar
         selectedCount={selected.size}
         plannedImages={plannedImages}
+        withoutStart={withoutStart}
         frameCount={frameCount}
         onFrameCountChange={setFrameCount}
         positions={positions}
