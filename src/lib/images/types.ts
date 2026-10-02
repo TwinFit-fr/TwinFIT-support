@@ -21,6 +21,8 @@ export type GenerationParams = {
 export type Subject = "man" | "woman";
 export type SubjectChoice = Subject | "random";
 export const SUBJECTS: readonly Subject[] = ["man", "woman"];
+/** Frames per sequence chosen for a batch; "exercise" keeps each exercise's own setting. */
+export type FrameCountChoice = "exercise" | 2 | 3;
 
 export const POSITION_PROMPT_KEYS = ["start_prompt_id", "mid_prompt_id", "end_prompt_id"] as const;
 export const REFERENCE_KEYS = {

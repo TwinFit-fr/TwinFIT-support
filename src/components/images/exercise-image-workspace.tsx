@@ -23,7 +23,11 @@ import {
   type PromptOverrides,
 } from "@/components/images/prompt-overrides";
 import { selectedPrompts } from "@/lib/images/prompt";
-import { PositionSelector, SubjectSelector } from "@/components/images/position-selector";
+import {
+  PositionSelector,
+  SubjectSelector,
+  runPositionsFor,
+} from "@/components/images/position-selector";
 import type {
   ExerciseImage,
   ExerciseImageDetail,
@@ -148,7 +152,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     [promptsData],
   );
   const framePositions = exercise?.frame_positions ?? FRAME_POSITIONS.map((f) => f.id as number);
-  const runPositions = positions.filter((p) => framePositions.includes(p));
+  const runPositions = runPositionsFor(positions, framePositions);
   const editedCount = countOverrides(overrides, runPositions);
 
   useEffect(() => {
@@ -188,7 +192,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           framePositions: exercise.frame_positions,
         },
       ],
-      positions,
+      positions: runPositions,
       subject,
       maxConcurrency: settings?.params.max_concurrency ?? 3,
       generateStep: async (exoId, position, stepSubject) => {
@@ -357,7 +361,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             Two frames (Start + End)
           </label>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <SubjectSelector value={subject} onChange={setSubject} disabled={queue.running} />
           <PositionSelector
             value={positions}

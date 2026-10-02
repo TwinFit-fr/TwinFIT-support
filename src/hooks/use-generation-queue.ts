@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FRAME_POSITIONS, SPLIT_FAILED, SUBJECTS } from "@/lib/images/types";
-import type { Subject, SubjectChoice } from "@/lib/images/types";
+import type { FrameCountChoice, Subject, SubjectChoice } from "@/lib/images/types";
 
 export type StepStatus = "waiting" | "processing" | "done" | "error" | "cancelled";
 
@@ -261,5 +261,11 @@ export function usePositionSelection() {
 export function useSubjectChoice() {
   return useStoredChoice<SubjectChoice>("twinfit.images.subject", "random", (raw) =>
     raw === "man" || raw === "woman" || raw === "random" ? raw : null,
+  );
+}
+
+export function useFrameCountChoice() {
+  return useStoredChoice<FrameCountChoice>("twinfit.images.frame-count", "exercise", (raw) =>
+    raw === "exercise" || raw === 2 || raw === 3 ? raw : null,
   );
 }

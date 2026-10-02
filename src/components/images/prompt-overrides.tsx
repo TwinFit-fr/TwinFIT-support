@@ -32,6 +32,7 @@ export function SystemPromptSelect({
   onChange,
   disabled,
   className,
+  label,
 }: {
   prompts: { id: string; name: string }[];
   settingsPromptId: string | null | undefined;
@@ -39,27 +40,42 @@ export function SystemPromptSelect({
   onChange: (next: string | undefined) => void;
   disabled?: boolean;
   className?: string;
+  /** Visible label beside the select; without it each option is prefixed "System:". */
+  label?: string;
 }) {
   const settingsName = prompts.find((p) => p.id === settingsPromptId)?.name ?? prompts[0]?.name;
-  return (
+  const prefix = label ? "" : "System: ";
+  const select = (
     <select
-      aria-label="System prompt for this generation"
+      aria-label={label ? undefined : "System prompt for this generation"}
       value={value ?? ""}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value || undefined)}
       className={cn(
-        "rounded-md border bg-white px-2 py-1.5 text-xs",
+        "rounded-md border bg-white px-2 py-1.5 text-xs text-zinc-900 disabled:opacity-50",
         value ? "border-amber-300 bg-amber-50/40" : "border-zinc-300",
         className,
       )}
     >
-      <option value="">System: from settings{settingsName ? ` (${settingsName})` : ""}</option>
+      <option value="">
+        {prefix}From settings{settingsName ? ` (${settingsName})` : ""}
+      </option>
       {prompts.map((p) => (
         <option key={p.id} value={p.id}>
-          System: {p.name}
+          {prefix}
+          {p.name}
         </option>
       ))}
     </select>
+  );
+  if (!label) return select;
+  return (
+    <label className="inline-flex items-center gap-1.5">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+        {label}
+      </span>
+      {select}
+    </label>
   );
 }
 

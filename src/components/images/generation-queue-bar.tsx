@@ -2,14 +2,22 @@
 
 import { Button } from "@/components/ui/primitives";
 import { StepTrail } from "@/components/images/generation-progress";
-import { PositionSelector, SubjectSelector } from "@/components/images/position-selector";
+import {
+  FrameCountSelector,
+  PositionSelector,
+  SubjectSelector,
+} from "@/components/images/position-selector";
 import { SystemPromptSelect } from "@/components/images/prompt-overrides";
 import type { QueueItem } from "@/hooks/use-generation-queue";
-import type { SubjectChoice } from "@/lib/images/types";
+import type { FrameCountChoice, SubjectChoice } from "@/lib/images/types";
 
 export function GenerationQueueBar({
   selectedCount,
+  plannedImages,
+  frameCount,
+  onFrameCountChange,
   positions,
+  availablePositions,
   onPositionsChange,
   subject,
   onSubjectChange,
@@ -18,6 +26,7 @@ export function GenerationQueueBar({
   systemPromptId,
   onSystemPromptChange,
   running,
+  preparing,
   items,
   exercisesDone,
   imagesDone,
@@ -27,7 +36,12 @@ export function GenerationQueueBar({
   onCancel,
 }: {
   selectedCount: number;
+  /** Images the next run will generate for the selection. */
+  plannedImages: number;
+  frameCount: FrameCountChoice;
+  onFrameCountChange: (next: FrameCountChoice) => void;
   positions: number[];
+  availablePositions?: number[];
   onPositionsChange: (next: number[]) => void;
   subject: SubjectChoice;
   onSubjectChange: (next: SubjectChoice) => void;
@@ -36,6 +50,8 @@ export function GenerationQueueBar({
   systemPromptId: string | undefined;
   onSystemPromptChange: (next: string | undefined) => void;
   running: boolean;
+  /** Saving the batch frame count before the queue starts. */
+  preparing: boolean;
   items: QueueItem[];
   exercisesDone: number;
   imagesDone: number;
@@ -46,6 +62,7 @@ export function GenerationQueueBar({
 }) {
   if (selectedCount === 0 && !running && items.length === 0) return null;
 
+  const locked = running || preparing;
   const total = items.length;
   const visible = items.filter(
     (i) => i.status === "processing" || i.steps.some((s) => s.status === "error"),
@@ -65,23 +82,38 @@ export function GenerationQueueBar({
             <span>{selectedCount} selected</span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <SystemPromptSelect
+            label="Prompt"
             prompts={systemPrompts}
             settingsPromptId={settingsSystemPromptId}
             value={systemPromptId}
             onChange={onSystemPromptChange}
-            disabled={running}
+            disabled={locked}
           />
-          <SubjectSelector value={subject} onChange={onSubjectChange} disabled={running} />
-          <PositionSelector value={positions} onChange={onPositionsChange} disabled={running} />
+          <SubjectSelector value={subject} onChange={onSubjectChange} disabled={locked} />
+          <FrameCountSelector value={frameCount} onChange={onFrameCountChange} disabled={locked} />
+          <PositionSelector
+            value={positions}
+            available={availablePositions}
+            onChange={onPositionsChange}
+            disabled={locked}
+          />
           {running ? (
             <Button type="button" variant="secondary" onClick={onCancel}>
               Cancel queue
             </Button>
           ) : (
-            <Button type="button" onClick={onGenerate} disabled={selectedCount === 0}>
-              Generate {selectedCount > 0 ? `${selectedCount} × ${positions.length}` : ""}
+            <Button
+              type="button"
+              onClick={onGenerate}
+              disabled={preparing || selectedCount === 0 || plannedImages === 0}
+            >
+              {preparing
+                ? "Saving frames…"
+                : plannedImages > 0
+                  ? `Generate ${plannedImages} image${plannedImages === 1 ? "" : "s"}`
+                  : "Generate"}
             </Button>
           )}
         </div>
