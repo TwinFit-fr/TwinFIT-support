@@ -13,9 +13,9 @@ import {
   Home,
   ArrowRight,
   X,
-  Image,
+  Image as ImageIcon,
 } from "lucide-react";
-import { useStaffFetch } from "@/hooks/use-staff-fetch";
+import { useStaffSWR } from "@/hooks/use-staff-fetch";
 
 type CommandItem = {
   id: string;
@@ -34,10 +34,7 @@ export function CommandMenu({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const staffFetch = useStaffFetch();
   const [query, setQuery] = useState("");
-  const [searchingUser, setSearchingUser] = useState(false);
-  const [userResult, setUserResult] = useState<{ id: string; email: string } | null>(null);
 
   // Global Cmd+K / Ctrl+K listener
   useEffect(() => {
@@ -56,33 +53,21 @@ export function CommandMenu({
   }, [open, onOpenChange]);
 
   // Debounced lookup if query looks like email/handle
+  const trimmedQuery = query.trim();
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed || (!trimmed.includes("@") && trimmed.length < 3)) {
-      setUserResult(null);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setSearchingUser(true);
-      try {
-        const res = (await staffFetch(
-          `/api/support/lookup?q=${encodeURIComponent(trimmed)}`,
-        )) as { user?: { id: string; email: string } };
-        if (res?.user) {
-          setUserResult(res.user);
-        } else {
-          setUserResult(null);
-        }
-      } catch {
-        setUserResult(null);
-      } finally {
-        setSearchingUser(false);
-      }
-    }, 300);
-
+    const timer = setTimeout(() => setDebouncedQuery(trimmedQuery), 300);
     return () => clearTimeout(timer);
-  }, [query, staffFetch]);
+  }, [trimmedQuery]);
+  const looksLikeUser =
+    Boolean(trimmedQuery) && (trimmedQuery.includes("@") || trimmedQuery.length >= 3);
+  const lookupTerm = looksLikeUser && debouncedQuery === trimmedQuery ? trimmedQuery : null;
+  const { data: lookup, isValidating } = useStaffSWR<{ user?: { id: string; email: string } }>(
+    lookupTerm ? `/api/support/lookup?q=${encodeURIComponent(lookupTerm)}` : null,
+    { shouldRetryOnError: false, keepPreviousData: false },
+  );
+  const userResult = lookupTerm ? (lookup?.user ?? null) : null;
+  const searchingUser = Boolean(lookupTerm) && isValidating;
 
   const defaultItems: CommandItem[] = useMemo(
     () => [
@@ -131,7 +116,7 @@ export function CommandMenu({
         title: "Catalog Images",
         subtitle: "Generate frames and assign GIF positions",
         category: "Navigation",
-        icon: <Image className="h-4 w-4 text-zinc-500" />,
+        icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
         perform: () => router.push("/images"),
       },
       {
@@ -139,7 +124,7 @@ export function CommandMenu({
         title: "Image Prompts",
         subtitle: "Edit system and per-position prompt templates",
         category: "Navigation",
-        icon: <Image className="h-4 w-4 text-zinc-500" />,
+        icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
         perform: () => router.push("/images/prompts"),
       },
       {
@@ -147,7 +132,7 @@ export function CommandMenu({
         title: "Image Settings",
         subtitle: "Model, size, background and format for generation",
         category: "Navigation",
-        icon: <Image className="h-4 w-4 text-zinc-500" />,
+        icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
         perform: () => router.push("/images/settings"),
       },
       {

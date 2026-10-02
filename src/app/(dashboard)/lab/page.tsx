@@ -6,12 +6,11 @@ import {
   ArrowUp,
   ArrowDown,
   Search,
-  Users,
   FlaskConical,
   Activity,
   Layers,
 } from "lucide-react";
-import { Badge, Button, Card, Input, TableSkeleton, StatCardSkeleton } from "@/components/ui/primitives";
+import { Badge, Card, Input, TableSkeleton, StatCardSkeleton } from "@/components/ui/primitives";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
 import { labExerciseLabel, type LabGlobalStatRow, type LabUserStatRow } from "@/lib/lab/queries";
 

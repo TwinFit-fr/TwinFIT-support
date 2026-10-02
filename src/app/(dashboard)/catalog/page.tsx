@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ExerciseBrowser } from "@/components/catalog/exercise-browser";
 import { ExerciseComposeDialog } from "@/components/catalog/exercise-compose-dialog";
 import { Button, Card, Input } from "@/components/ui/primitives";
 import { withExercisePaths, type ExerciseWithPath, type LookupRow } from "@/lib/catalog/exercise-path";
 import type { CatalogLocale, LocalizationRow } from "@/lib/catalog/locales";
-import { useStaffFetch } from "@/hooks/use-staff-fetch";
+import { useStaffSWR } from "@/hooks/use-staff-fetch";
 
 type LocalizedLookupRow = LookupRow & {
   localizations?: LocalizationRow[];
@@ -46,46 +46,34 @@ type ComposeDialogState = {
 };
 
 export default function CatalogPage() {
-  const staffFetch = useStaffFetch();
-  const [exercises, setExercises] = useState<
-    Array<
-      ExerciseWithPath & {
-        support_equipment?: { code: string } | null;
-        localizations?: LocalizationRow[];
-      }
-    >
-  >([]);
-  const [taxonomy, setTaxonomy] = useState<TaxonomyData | null>(null);
+  const library = useStaffSWR<{ data: { catalog_exercises: CatalogExercise[] } }>(
+    "/api/catalog/library",
+  );
+  const taxonomyQuery = useStaffSWR<{ data: TaxonomyData }>("/api/catalog/taxonomy");
   const [filter, setFilter] = useState("");
   const [locale, setLocale] = useState<CatalogLocale>("en");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [composeDialog, setComposeDialog] = useState<ComposeDialogState>({ open: false });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [libRes, taxRes] = await Promise.all([
-        staffFetch("/api/catalog/library") as Promise<{
-          data: { catalog_exercises: CatalogExercise[] };
-        }>,
-        staffFetch("/api/catalog/taxonomy") as Promise<{ data: TaxonomyData }>,
-      ]);
-      const raw = libRes.data.catalog_exercises ?? [];
-      setExercises(withExercisePaths(raw));
-      setTaxonomy(taxRes.data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load catalog");
-    } finally {
-      setLoading(false);
-    }
-  }, [staffFetch]);
+  const exercises = useMemo(
+    () =>
+      withExercisePaths(library.data?.data.catalog_exercises ?? []) as Array<
+        ExerciseWithPath & {
+          support_equipment?: { code: string } | null;
+          localizations?: LocalizationRow[];
+        }
+      >,
+    [library.data],
+  );
+  const taxonomy = taxonomyQuery.data?.data ?? null;
+  const loading = library.isLoading || taxonomyQuery.isLoading;
+  const loadError = library.error ?? taxonomyQuery.error;
+  const error = loadError ? loadError.message || "Failed to load catalog" : null;
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  function reload() {
+    void library.mutate();
+    void taxonomyQuery.mutate();
+  }
 
   const lookupMap = useMemo(() => {
     if (!taxonomy) return {} as Record<string, LookupRow[]>;
@@ -173,7 +161,7 @@ export default function CatalogPage() {
         onClose={() => setComposeDialog({ open: false })}
         onSaved={(msg) => {
           setStatus(msg);
-          void load();
+          reload();
         }}
       />
     </div>

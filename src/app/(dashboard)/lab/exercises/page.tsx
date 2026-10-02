@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { PlusCircle, Search, Filter, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { PlusCircle, Search, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { Badge, Button, Card, TableSkeleton } from "@/components/ui/primitives";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
-import { useStaffFetch } from "@/hooks/use-staff-fetch";
+import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   labExerciseLabel,
   type CatalogCandidate,
@@ -80,38 +80,40 @@ export default function LabExercisesPage() {
   const staffFetch = useStaffFetch();
   const toast = useToast();
 
-  const [exercises, setExercises] = useState<LabExerciseRow[]>([]);
-  const [candidates, setCandidates] = useState<CatalogCandidate[]>([]);
-  const [loading, setLoading] = useState(true);
+  const exercisesQuery = useStaffSWR<{ exercises: LabExerciseRow[] }>("/api/lab/exercises");
+  const candidatesQuery = useStaffSWR<{ candidates: CatalogCandidate[] }>(
+    "/api/lab/exercises?candidates=1",
+  );
   const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedExoId, setSelectedExoId] = useState<string>("");
+  const [selectedExoChoice, setSelectedExoId] = useState<string>("");
   const [nameFilter, setNameFilter] = useState("");
-  const [muscleGroupFilter, setMuscleGroupFilter] = useState("");
-  const [equipmentFilter, setEquipmentFilter] = useState("");
+  const [muscleGroupChoice, setMuscleGroupFilter] = useState("");
+  const [equipmentChoice, setEquipmentFilter] = useState("");
   const [togglePendingRow, setTogglePendingRow] = useState<LabExerciseRow | null>(null);
 
+  const exercises = useMemo(() => exercisesQuery.data?.exercises ?? [], [exercisesQuery.data]);
+  const candidates = useMemo(
+    () => candidatesQuery.data?.candidates ?? [],
+    [candidatesQuery.data],
+  );
+  const loading = exercisesQuery.isValidating || candidatesQuery.isValidating;
+  const loadError = exercisesQuery.error ?? candidatesQuery.error;
+  const error = loadError ? loadError.message || "Failed to load" : null;
+
   async function reload() {
-    setLoading(true);
-    setError(null);
-    try {
-      const [exRes, candRes] = await Promise.all([
-        staffFetch("/api/lab/exercises") as Promise<{ exercises: LabExerciseRow[] }>,
-        staffFetch("/api/lab/exercises?candidates=1") as Promise<{ candidates: CatalogCandidate[] }>,
-      ]);
-      setExercises(exRes.exercises ?? []);
-      setCandidates(candRes.candidates ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load");
-    } finally {
-      setLoading(false);
-    }
+    await Promise.all([exercisesQuery.mutate(), candidatesQuery.mutate()]);
   }
 
-  useEffect(() => {
-    void reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [staffFetch]);
+  // A muscle group / equipment choice that no longer matches any candidate counts as cleared.
+  const filtersMatch =
+    (!muscleGroupChoice && !equipmentChoice) ||
+    filterCandidates(candidates, {
+      nameFilter,
+      muscleGroup: muscleGroupChoice || undefined,
+      equipment: equipmentChoice || undefined,
+    }).length > 0;
+  const muscleGroupFilter = filtersMatch ? muscleGroupChoice : "";
+  const equipmentFilter = filtersMatch ? equipmentChoice : "";
 
   const muscleGroupOptions = useMemo(
     () =>
@@ -145,31 +147,10 @@ export default function LabExercisesPage() {
     [candidates, nameFilter, muscleGroupFilter, equipmentFilter],
   );
 
-  useEffect(() => {
-    if (
-      muscleGroupFilter &&
-      !muscleGroupOptions.some((g) => g.code === muscleGroupFilter)
-    ) {
-      setMuscleGroupFilter("");
-    }
-  }, [muscleGroupFilter, muscleGroupOptions]);
-
-  useEffect(() => {
-    if (equipmentFilter && !equipmentOptions.some((eq) => eq.code === equipmentFilter)) {
-      setEquipmentFilter("");
-    }
-  }, [equipmentFilter, equipmentOptions]);
-
-  useEffect(() => {
-    if (!filteredCandidates.length) {
-      setSelectedExoId("");
-      return;
-    }
-    const stillVisible = filteredCandidates.some((c) => String(c.exo_id) === selectedExoId);
-    if (!stillVisible) {
-      setSelectedExoId(String(filteredCandidates[0].exo_id));
-    }
-  }, [filteredCandidates, selectedExoId]);
+  // Falls back to the first visible candidate when the choice is filtered out.
+  const selectedExoId = filteredCandidates.some((c) => String(c.exo_id) === selectedExoChoice)
+    ? selectedExoChoice
+    : String(filteredCandidates[0]?.exo_id ?? "");
 
   async function linkCatalog() {
     if (!selectedExoId) return;

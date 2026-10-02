@@ -2,24 +2,21 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ArrowLeft,
   User,
-  Shield,
   CreditCard,
   Activity,
   CheckCircle,
   Ban,
-  Clock,
-  Dumbbell,
   RefreshCw,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge, Button, Card, Input, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { useIsAdmin } from "@/hooks/use-is-staff";
-import { useStaffFetch } from "@/hooks/use-staff-fetch";
+import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import type { SupportUserLookup } from "@/lib/support/types";
 
 type PendingAction =
@@ -33,33 +30,28 @@ export default function SupportUserPage() {
   const isAdmin = useIsAdmin();
   const toast = useToast();
 
-  const [data, setData] = useState<SupportUserLookup | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [tier, setTier] = useState("premium");
+  const {
+    data: lookup,
+    error: loadError,
+    isValidating: loading,
+    mutate,
+  } = useStaffSWR<SupportUserLookup>(
+    `/api/support/lookup?q=${encodeURIComponent(params.userId)}`,
+    { shouldRetryOnError: false },
+  );
+  const data = lookup ?? null;
+  const error = loadError ? loadError.message || "Failed to load user" : null;
+  // Null follows the loaded subscription tier until staff picks another one.
+  const [tierChoice, setTier] = useState<string | null>(null);
+  const tier = tierChoice ?? data?.profile?.subscription_tier ?? "free";
   const [expiresAt, setExpiresAt] = useState("");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = (await staffFetch(
-        `/api/support/lookup?q=${encodeURIComponent(params.userId)}`,
-      )) as SupportUserLookup;
-      setData(result);
-      setTier(result.profile?.subscription_tier ?? "free");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load user");
-    } finally {
-      setLoading(false);
-    }
-  }, [staffFetch, params.userId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  async function load() {
+    setTier(null);
+    await mutate();
+  }
 
   async function runAction(body: Record<string, unknown>, successMessage: string) {
     setActionLoading(true);

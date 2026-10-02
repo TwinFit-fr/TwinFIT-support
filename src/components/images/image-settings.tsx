@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { mutate } from "swr";
 import { Button, Input, Skeleton } from "@/components/ui/primitives";
@@ -266,15 +266,13 @@ export function ImageSettingsPage() {
   const { data, isLoading, error } = useStaffSWR<ImageSettings>("/api/images/settings");
   const { data: modelsData } = useStaffSWR<ModelsResponse>("/api/images/models");
   const { data: promptsData } = useStaffSWR<PromptsResponse>("/api/images/prompts");
-  const [draft, setDraft] = useState<Draft | null>(null);
+  // Unsaved edits; until the first edit the form follows the loaded settings, so later
+  // refreshes (e.g. reference changes) never wipe what staff typed.
+  const [edits, setDraft] = useState<Draft | null>(null);
+  const draft = useMemo(() => edits ?? (data ? toDraft(data) : null), [edits, data]);
   const [saving, setSaving] = useState(false);
   const [referenceBusy, setReferenceBusy] = useState<Subject | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
-
-  // Initialise once; later refreshes (e.g. reference changes) must not wipe unsaved edits.
-  useEffect(() => {
-    if (data && !draft) setDraft(toDraft(data));
-  }, [data, draft]);
 
   const models = useMemo(() => {
     const ids = (modelsData?.models ?? []).map((m) => m.id);

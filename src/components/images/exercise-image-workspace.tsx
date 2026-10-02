@@ -126,13 +126,21 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     exercise: ExerciseImageDetail;
   }>(`/api/images/exercises/${exoId}`, { refreshInterval: 5000 });
   const exercise = data?.exercise;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedChoice, setSelectedId] = useState<string | null>(null);
+  // An unknown or deleted choice falls back to the newest image.
+  const selectedId =
+    exercise && !exercise.images.some((img) => img.id === selectedChoice)
+      ? (exercise.images[0]?.id ?? null)
+      : selectedChoice;
   const [busy, setBusy] = useState(false);
   const [showOverrides, setShowOverrides] = useState(false);
-  const [overrides, setOverrides] = useState<PromptOverrides>(NO_OVERRIDES);
-
-  // Per-run edits belong to one exercise; drop them when navigating to another.
-  useEffect(() => setOverrides(NO_OVERRIDES), [exoId]);
+  // Per-run edits belong to one exercise; they reset when navigating to another.
+  const [overridesFor, setOverridesFor] = useState<{ exoId: number; value: PromptOverrides }>({
+    exoId,
+    value: NO_OVERRIDES,
+  });
+  const overrides = overridesFor.exoId === exoId ? overridesFor.value : NO_OVERRIDES;
+  const setOverrides = (value: PromptOverrides) => setOverridesFor({ exoId, value });
 
   const templates = useMemo(() => {
     const prompts = promptsData?.prompts ?? [];
@@ -154,14 +162,6 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const framePositions = exercise?.frame_positions ?? FRAME_POSITIONS.map((f) => f.id as number);
   const runPositions = runPositionsFor(positions, framePositions);
   const editedCount = countOverrides(overrides, runPositions);
-
-  useEffect(() => {
-    if (!exercise) return;
-    setSelectedId((current) => {
-      if (current && exercise.images.some((img) => img.id === current)) return current;
-      return exercise.images[0]?.id ?? null;
-    });
-  }, [exercise]);
 
   const selected: ExerciseImage | null = useMemo(
     () => exercise?.images.find((img) => img.id === selectedId) ?? null,

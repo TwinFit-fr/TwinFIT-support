@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FRAME_POSITIONS, SPLIT_FAILED, SUBJECTS } from "@/lib/images/types";
 import type { FrameCountChoice, Subject, SubjectChoice } from "@/lib/images/types";
 
@@ -172,7 +172,7 @@ export function useGenerationQueue() {
         }
       };
 
-      const useSequence = (index: number) => {
+      const shouldSequence = (index: number) => {
         const { framePositions, positions: requested } = exercises[index];
         return (
           Boolean(generateSequence) &&
@@ -184,7 +184,7 @@ export function useGenerationQueue() {
 
       // Mid/End are generated from the exercise's Start frame, so Start must finish first.
       const runExercise = async (item: QueueItem, index: number) => {
-        if (useSequence(index) && (await runSequence(index))) return;
+        if (shouldSequence(index) && (await runSequence(index))) return;
         const startIndex = item.steps.findIndex((s) => s.position === 0);
         if (startIndex >= 0) await runStep(index, startIndex);
         await Promise.all(
@@ -213,26 +213,62 @@ export function useGenerationQueue() {
   };
 }
 
-/** A UI preference remembered per browser; read after mount so SSR and hydration match. */
+// Same-tab writes notify through `listeners`; other tabs through the "storage" event.
+// `written` keeps this tab's latest values even when localStorage is unavailable.
+const listeners = new Set<() => void>();
+const written = new Map<string, string>();
+
+function subscribeStorage(onChange: () => void) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key) written.delete(event.key);
+    onChange();
+  };
+  listeners.add(onChange);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    listeners.delete(onChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function readStorage(key: string): string | null {
+  if (written.has(key)) return written.get(key)!;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A UI preference remembered per browser. The server snapshot is the fallback, so SSR and
+ * hydration match. `fallback` and `parse` must be stable (module-level) values.
+ */
 function useStoredChoice<T>(key: string, fallback: T, parse: (raw: unknown) => T | null) {
-  const [value, setValue] = useState<T>(fallback);
-  useEffect(() => {
+  const raw = useSyncExternalStore(
+    subscribeStorage,
+    () => readStorage(key),
+    () => null,
+  );
+  const value = useMemo(() => {
+    if (raw == null) return fallback;
     try {
-      const parsed = parse(JSON.parse(localStorage.getItem(key) ?? "null"));
-      if (parsed != null) setValue(parsed);
+      return parse(JSON.parse(raw)) ?? fallback;
     } catch {
-      // Storage unavailable or corrupt: keep the fallback.
+      // Corrupt value: keep the fallback.
+      return fallback;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [raw, fallback, parse]);
   const set = useCallback(
     (next: T) => {
-      setValue(next);
+      const json = JSON.stringify(next);
+      written.set(key, json);
       try {
-        localStorage.setItem(key, JSON.stringify(next));
+        localStorage.setItem(key, json);
       } catch {
-        // Preference only; ignore storage failures.
+        // Preference only; this tab still remembers it through `written`.
       }
+      listeners.forEach((notify) => notify());
     },
     [key],
   );
@@ -241,15 +277,28 @@ function useStoredChoice<T>(key: string, fallback: T, parse: (raw: unknown) => T
 
 const ALL_POSITIONS = FRAME_POSITIONS.map((p) => p.id as number);
 
+function parsePositions(raw: unknown): number[] | null {
+  if (!Array.isArray(raw)) return null;
+  const valid = ALL_POSITIONS.filter((p) => raw.includes(p));
+  return valid.length ? valid : null;
+}
+
+function parseSubject(raw: unknown): SubjectChoice | null {
+  return raw === "man" || raw === "woman" || raw === "random" ? raw : null;
+}
+
+function parseFrameCount(raw: unknown): FrameCountChoice | null {
+  return raw === "exercise" || raw === 2 || raw === 3 ? raw : null;
+}
+
+const DEFAULT_SUBJECT: SubjectChoice = "random";
+const DEFAULT_FRAME_COUNT: FrameCountChoice = "exercise";
+
 export function usePositionSelection() {
-  const [positions, setPositions] = useStoredChoice<number[]>(
+  const [positions, setPositions] = useStoredChoice(
     "twinfit.images.positions",
     ALL_POSITIONS,
-    (raw) => {
-      if (!Array.isArray(raw)) return null;
-      const valid = ALL_POSITIONS.filter((p) => raw.includes(p));
-      return valid.length ? valid : null;
-    },
+    parsePositions,
   );
   const setSorted = useCallback(
     (next: number[]) => setPositions(ALL_POSITIONS.filter((p) => next.includes(p))),
@@ -259,13 +308,9 @@ export function usePositionSelection() {
 }
 
 export function useSubjectChoice() {
-  return useStoredChoice<SubjectChoice>("twinfit.images.subject", "random", (raw) =>
-    raw === "man" || raw === "woman" || raw === "random" ? raw : null,
-  );
+  return useStoredChoice("twinfit.images.subject", DEFAULT_SUBJECT, parseSubject);
 }
 
 export function useFrameCountChoice() {
-  return useStoredChoice<FrameCountChoice>("twinfit.images.frame-count", "exercise", (raw) =>
-    raw === "exercise" || raw === 2 || raw === 3 ? raw : null,
-  );
+  return useStoredChoice("twinfit.images.frame-count", DEFAULT_FRAME_COUNT, parseFrameCount);
 }

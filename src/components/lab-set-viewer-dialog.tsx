@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import {
   CartesianGrid,
   Legend,
@@ -20,7 +21,6 @@ import {
   mergeSeriesBySampleIndex,
   parseSensorPayload,
   type LabSetChartData,
-  type LabSetPayloadSummary,
   type LabSetSlotConfig,
   type SlotChartSeries,
 } from "@/lib/lab/sensor-series";
@@ -300,53 +300,51 @@ function seriesForTab(chartData: LabSetChartData, tab: ChartTab): SlotChartSerie
   }
 }
 
+async function loadSensorPayload(setId: string, accessToken: string) {
+  const res = await fetch(`/api/lab/sets/${setId}/file?inline=1`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Failed to load sensor data (${res.status})`);
+  }
+  const payload = parseSensorPayload((await res.json()) as unknown);
+  return {
+    summary: buildLabSetPayloadSummary(payload),
+    chartData: buildLabSetChartData(payload),
+  };
+}
+
 export function LabSetViewerDialog({
   open,
   setRow,
   accessToken,
   onClose,
 }: LabSetViewerDialogProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [chartData, setChartData] = useState<LabSetChartData | null>(null);
-  const [summary, setSummary] = useState<LabSetPayloadSummary | null>(null);
-  const [chartTab, setChartTab] = useState<ChartTab>("acc");
-
-  const loadPayload = useCallback(async () => {
-    if (!setRow || !accessToken) return;
-    setLoading(true);
-    setError(null);
-    setChartData(null);
-    setSummary(null);
-    try {
-      const res = await fetch(`/api/lab/sets/${setRow.id}/file?inline=1`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `Failed to load sensor data (${res.status})`);
-      }
-      const raw: unknown = await res.json();
-      const payload = parseSensorPayload(raw);
-      setSummary(buildLabSetPayloadSummary(payload));
-      setChartData(buildLabSetChartData(payload));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sensor data");
-    } finally {
-      setLoading(false);
-    }
-  }, [setRow, accessToken]);
-
-  useEffect(() => {
-    if (open && setRow) {
-      setChartTab("acc");
-      void loadPayload();
-    } else {
-      setChartData(null);
-      setSummary(null);
-      setError(null);
-    }
-  }, [open, setRow, loadPayload]);
+  const {
+    data: payload,
+    error: loadError,
+    isLoading: loading,
+  } = useSWR(
+    open && setRow && accessToken ? [setRow.id, accessToken] : null,
+    ([id, token]) => loadSensorPayload(id, token),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const summary = payload?.summary ?? null;
+  const chartData = payload?.chartData ?? null;
+  const error = loadError
+    ? loadError instanceof Error
+      ? loadError.message
+      : "Failed to load sensor data"
+    : null;
+  // Each set opens on the accelerometer tab.
+  const [tabFor, setTabFor] = useState<{ setId: string | null; tab: ChartTab }>({
+    setId: null,
+    tab: "acc",
+  });
+  const setId = setRow?.id ?? null;
+  const chartTab = tabFor.setId === setId ? tabFor.tab : "acc";
+  const setChartTab = (tab: ChartTab) => setTabFor({ setId, tab });
 
   useEffect(() => {
     if (!open) return;
