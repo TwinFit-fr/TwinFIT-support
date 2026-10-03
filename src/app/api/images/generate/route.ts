@@ -9,10 +9,10 @@ import {
   getActiveImageAtPosition,
   getExerciseImage,
   getExerciseSummary,
+  getStyle,
   getUserIdFromToken,
   insertExerciseImage,
   listImagePrompts,
-  loadSettings,
 } from "@/lib/images/queries";
 import { alignFeetBaseline } from "@/lib/images/align";
 import { loadLogoInput } from "@/lib/images/logo";
@@ -20,9 +20,11 @@ import {
   LOGO_DIRECTIVE,
   REFERENCE_USE_DIRECTIVE,
   START_GUIDE_DIRECTIVE,
+  SUPPORT_REFERENCE_DIRECTIVE,
+  frameFileName,
 } from "@/lib/images/reference";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
-import { REFERENCE_KEYS, targetPosition } from "@/lib/images/types";
+import { targetPosition } from "@/lib/images/types";
 import type { ExerciseImage, Subject } from "@/lib/images/types";
 
 export const maxDuration = 300;
@@ -31,14 +33,12 @@ const promptText = z.string().trim().min(1).max(32000);
 
 const bodySchema = z.object({
   exoId: z.number().int().positive(),
+  styleId: z.string().uuid(),
   position: z.number().int().min(0).max(2),
   subject: z.enum(["man", "woman"]),
-  /** One-off prompt texts for this generation only; never persisted as templates. */
   systemOverride: promptText.optional(),
-  /** Use this system prompt instead of the one selected in settings (this run only). */
   systemPromptId: z.string().uuid().optional(),
   positionOverride: promptText.optional(),
-  /** Mid/End: the Start to edit (the one this run generated); defaults to the active Start. */
   guideImageId: z.string().uuid().optional(),
 });
 
@@ -46,19 +46,25 @@ export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
     const body = bodySchema.parse(await request.json());
-    const { exoId, position, systemOverride, positionOverride } = body;
+    const { exoId, styleId, position, systemOverride, positionOverride } = body;
 
-    const exercise = await getExerciseSummary(token, exoId);
+    const [exercise, style] = await Promise.all([
+      getExerciseSummary(token, exoId),
+      getStyle(token, styleId),
+    ]);
     if (!exercise) {
       return NextResponse.json({ error: "Exercise not found" }, { status: 404 });
     }
+    if (!style) {
+      return NextResponse.json({ error: "Style not found" }, { status: 404 });
+    }
 
-    const [settings, prompts] = await Promise.all([loadSettings(token), listImagePrompts(token)]);
-    const { params } = settings;
+    const prompts = await listImagePrompts(token);
+    const { params } = style;
     const unknownSystem = invalidSystemPrompt(prompts, body.systemPromptId);
     if (unknownSystem) return unknownSystem;
     const chosen = selectedPrompts(
-      { ...settings, system_prompt_id: body.systemPromptId ?? settings.system_prompt_id },
+      { ...style, system_prompt_id: body.systemPromptId ?? style.system_prompt_id },
       prompts,
       position,
     );
@@ -69,29 +75,37 @@ export async function POST(request: Request) {
       );
     }
 
-    // Mid/End are always edits of a Start frame so camera, scale and character match it;
-    // the subject then follows the Start's so one exercise never mixes man and woman.
     let usableGuide: ExerciseImage | null = null;
     if (position !== 0) {
       usableGuide = body.guideImageId
         ? await getExerciseImage(token, body.guideImageId)
-        : await getActiveImageAtPosition(token, exercise.exo_id, 0);
+        : await getActiveImageAtPosition(token, styleId, exercise.exo_id, body.subject, 0);
       const isStart =
         usableGuide?.exo_id === exercise.exo_id &&
+        usableGuide.style_id === styleId &&
+        usableGuide.subject === body.subject &&
         (usableGuide.position === 0 || targetPosition(usableGuide) === 0);
       if (!isStart) {
         return NextResponse.json(
           {
             error: body.guideImageId
-              ? "Guide image is not a Start frame of this exercise"
+              ? "Guide image is not a Start frame of this exercise/style/subject"
               : "No active Start frame: generate Start first",
           },
           { status: 409 },
         );
       }
     }
-    const subject: Subject = usableGuide?.params?.subject ?? body.subject;
-    const referenceFileId = usableGuide ? null : settings[REFERENCE_KEYS[subject]];
+
+    const subject: Subject = usableGuide?.subject ?? body.subject;
+    const characterFileId = usableGuide
+      ? null
+      : (style.characters.find((c) => c.subject === subject)?.file_id ?? null);
+    const supportId = exercise.support_equipment?.id ?? null;
+    const supportFileId =
+      !usableGuide && supportId
+        ? (style.supports.find((s) => s.support_equipment_id === supportId)?.file_id ?? null)
+        : null;
 
     const description =
       exercise.localizations.find((l) => l.locale === "en")?.description ??
@@ -108,22 +122,36 @@ export async function POST(request: Request) {
       background_color: params.background_color,
       details: exerciseDetails(exercise),
     });
-    const logo = params.logo_in_exercises ? await loadLogoInput(token, settings) : null;
+    const logo = style.logo_in_exercises ? await loadLogoInput(token, style) : null;
     const directives = [
-      usableGuide ? START_GUIDE_DIRECTIVE : referenceFileId ? REFERENCE_USE_DIRECTIVE : null,
+      usableGuide
+        ? START_GUIDE_DIRECTIVE
+        : characterFileId
+          ? REFERENCE_USE_DIRECTIVE
+          : null,
+      supportFileId ? SUPPORT_REFERENCE_DIRECTIVE : null,
       logo ? LOGO_DIRECTIVE : null,
     ].filter(Boolean);
     const prompt = [basePrompt, ...directives].join("\n\n");
 
-    const inputFileId = usableGuide?.file_id ?? referenceFileId;
     const inputs = [];
-    if (inputFileId) {
-      const input = await downloadImageFile(token, inputFileId);
+    const primaryFileId = usableGuide?.file_id ?? characterFileId;
+    if (primaryFileId) {
+      const input = await downloadImageFile(token, primaryFileId);
       inputs.push({ bytes: input.bytes, mimeType: input.contentType });
     }
+    if (supportFileId) {
+      try {
+        const support = await downloadImageFile(token, supportFileId);
+        inputs.push({ bytes: support.bytes, mimeType: support.contentType });
+      } catch {
+        /* missing support ref must not block generation */
+      }
+    }
     if (logo) inputs.push(logo);
+
     const result = inputs.length
-      ? await editImage(prompt, params, inputs, { useFidelity: Boolean(inputFileId) })
+      ? await editImage(prompt, params, inputs, { useFidelity: Boolean(primaryFileId) })
       : await generateImage(prompt, params);
 
     const aligned = await alignFeetBaseline(
@@ -137,14 +165,14 @@ export async function POST(request: Request) {
       token,
       bytes: aligned.bytes,
       mimeType: result.mimeType,
-      name: `exo_${exercise.exo_id}/${Date.now()}_p${position}.${extension}`,
+      name: frameFileName(style.code, exercise.exo_id, subject, position, extension),
     });
 
     const snapshot = {
       ...params,
       target_position: position,
-      subject,
-      reference_file_id: referenceFileId,
+      reference_file_id: characterFileId,
+      support_reference_file_id: supportFileId,
       guide_image_id: usableGuide?.id ?? null,
       logo_sent: Boolean(logo),
       feet_shift_px: aligned.shiftPx,
@@ -155,7 +183,9 @@ export async function POST(request: Request) {
     };
     const insert = () =>
       insertExerciseImage(token, {
+        style_id: styleId,
         exo_id: exercise.exo_id,
+        subject,
         file_id: uploaded.id,
         image_url: uploaded.url,
         model: params.model,
@@ -167,15 +197,13 @@ export async function POST(request: Request) {
         active: true,
       });
 
-    // New generations take their position right away; the previous frame there is deactivated.
-    await clearActivePosition(token, exercise.exo_id, position);
+    await clearActivePosition(token, styleId, exercise.exo_id, subject, position);
     let image;
     try {
       image = await insert();
     } catch (error) {
-      // Another request activated this position meanwhile: displace it and retry once.
       if (!(error instanceof Error && /uniqueness|unique/i.test(error.message))) throw error;
-      await clearActivePosition(token, exercise.exo_id, position);
+      await clearActivePosition(token, styleId, exercise.exo_id, subject, position);
       image = await insert();
     }
 

@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       system: prompts.filter((p) => p.kind === "system"),
       position: prompts.filter((p) => p.kind === "position"),
+      support: prompts.filter((p) => p.kind === "support"),
       prompts,
     });
   } catch (error) {
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
 }
 
 const createSchema = z.object({
-  kind: z.enum(["system", "position"]),
+  kind: z.enum(["system", "position", "support"]),
   position: z.number().int().min(0).max(2).optional().nullable(),
   name: z.string().min(1),
   content: z.string(),

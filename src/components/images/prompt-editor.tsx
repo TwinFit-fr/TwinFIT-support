@@ -7,13 +7,14 @@ import { Button, Input } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { PROMPT_PLACEHOLDERS, assembleImagePrompt, selectedPrompts } from "@/lib/images/prompt";
-import type { ImagePrompt, ImageSettings, Subject } from "@/lib/images/types";
+import type { ImagePrompt, ImageSettings, ImageStyle, Subject } from "@/lib/images/types";
 import { FRAME_POSITIONS, SUBJECTS } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 
 type PromptsResponse = {
   system: ImagePrompt[];
   position: ImagePrompt[];
+  support: ImagePrompt[];
 };
 
 type ListResponse = {
@@ -33,7 +34,7 @@ function PromptEditorPanel({
   inUseId,
 }: {
   title: string;
-  kind: "system" | "position";
+  kind: "system" | "position" | "support";
   position?: number | null;
   prompts: ImagePrompt[];
   inUseId: string | null | undefined;
@@ -100,7 +101,7 @@ function PromptEditorPanel({
     void run(async () => {
       await staffFetch(`/api/images/prompts/${selected.id}`, { method: "DELETE" });
       setSelectedId("");
-      await mutate("/api/images/settings");
+      await mutate("/api/images/styles");
     }, "Prompt deleted");
   }
 
@@ -150,14 +151,25 @@ function PromptEditorPanel({
 export function ImagePromptsPage() {
   const { data } = useStaffSWR<PromptsResponse>("/api/images/prompts");
   const { data: settings } = useStaffSWR<ImageSettings>("/api/images/settings");
-  const { data: exercisesData } = useStaffSWR<ListResponse>("/api/images/exercises");
-  const sample = exercisesData?.exercises?.[0];
+  const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const [previewPosition, setPreviewPosition] = useState(0);
   const [previewSubject, setPreviewSubject] = useState<Subject>("man");
 
+  const defaultStyle = useMemo(() => {
+    const styles = stylesData?.styles ?? [];
+    return (
+      styles.find((s) => s.id === settings?.default_style_id) ?? styles[0] ?? null
+    );
+  }, [stylesData, settings?.default_style_id]);
+
+  const { data: exercisesData } = useStaffSWR<ListResponse>(
+    defaultStyle ? `/api/images/exercises?style=${defaultStyle.id}` : null,
+  );
+  const sample = exercisesData?.exercises?.[0];
+
   const preview = useMemo(() => {
     const chosen = selectedPrompts(
-      settings,
+      defaultStyle,
       data ? [...data.system, ...data.position] : [],
       previewPosition,
     );
@@ -169,10 +181,10 @@ export function ImagePromptsPage() {
       description: sample.description ?? "",
       exo_id: sample.exo_id,
       subject: previewSubject,
-      background_color: settings?.params.background_color,
+      background_color: defaultStyle?.params.background_color,
       details: sample.prompt_details,
     });
-  }, [data, settings, sample, previewPosition, previewSubject]);
+  }, [data, defaultStyle, sample, previewPosition, previewSubject]);
 
   const pill = (active: boolean) =>
     cn(
@@ -196,7 +208,7 @@ export function ImagePromptsPage() {
         title="System prompt (style)"
         kind="system"
         prompts={data?.system ?? []}
-        inUseId={settings?.system_prompt_id}
+        inUseId={defaultStyle?.system_prompt_id}
       />
       <div className="grid gap-4 lg:grid-cols-3">
         {FRAME_POSITIONS.map((frame, i) => (
@@ -207,17 +219,27 @@ export function ImagePromptsPage() {
             position={frame.id}
             prompts={(data?.position ?? []).filter((p) => p.position === frame.id)}
             inUseId={
-              settings
-                ? [settings.start_prompt_id, settings.mid_prompt_id, settings.end_prompt_id][i]
+              defaultStyle
+                ? [defaultStyle.start_prompt_id, defaultStyle.mid_prompt_id, defaultStyle.end_prompt_id][
+                    i
+                  ]
                 : null
             }
           />
         ))}
       </div>
+      <PromptEditorPanel
+        title="Support prompt"
+        kind="support"
+        prompts={data?.support ?? []}
+        inUseId={defaultStyle?.support_prompt_id}
+      />
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-zinc-900">
-            Live preview (prompts in use){sample ? ` · ${sample.display_name}` : ""}
+            Live preview (default style prompts)
+            {sample ? ` · ${sample.display_name}` : ""}
+            {defaultStyle ? ` · ${defaultStyle.code}` : ""}
           </h2>
           <div className="flex flex-wrap gap-1.5">
             {SUBJECTS.map((s) => (

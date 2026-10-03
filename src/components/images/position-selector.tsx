@@ -1,8 +1,8 @@
 "use client";
 
 import { SUBJECT_OPTIONS } from "@/lib/images/capabilities";
-import { FRAME_POSITIONS, framePositionLabel } from "@/lib/images/types";
-import type { FrameCountChoice, SubjectChoice } from "@/lib/images/types";
+import { FRAME_POSITIONS, SUBJECTS, framePositionLabel } from "@/lib/images/types";
+import type { FrameCountChoice, ImageStyle, Subject } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 
 /** A native select with a visible label, so each generation option reads on its own. */
@@ -97,27 +97,79 @@ export function PositionSelector({
   );
 }
 
+const SUBJECT_PRESETS: { id: string; label: string; subjects: Subject[] }[] = [
+  { id: "both", label: "Both", subjects: [...SUBJECTS] },
+  ...SUBJECT_OPTIONS.map((option) => ({
+    id: option.id,
+    label: option.label,
+    subjects: [option.id as Subject],
+  })),
+];
+
+function subjectsKey(subjects: Subject[]): string {
+  const sorted = SUBJECTS.filter((s) => subjects.includes(s));
+  if (sorted.length === SUBJECTS.length) return "both";
+  return sorted[0] ?? "both";
+}
+
+/** Subjects to generate for; Both / Man / Woman (no random). */
 export function SubjectSelector({
   value,
   onChange,
   disabled,
 }: {
-  value: SubjectChoice;
-  onChange: (next: SubjectChoice) => void;
+  value: Subject[];
+  onChange: (next: Subject[]) => void;
   disabled?: boolean;
 }) {
   return (
     <SelectField
-      label="Subject"
-      value={value}
+      label="Subjects"
+      value={subjectsKey(value)}
       disabled={disabled}
-      onChange={(next) => onChange(next as SubjectChoice)}
+      onChange={(next) => {
+        const preset = SUBJECT_PRESETS.find((p) => p.id === next);
+        if (preset) onChange(preset.subjects);
+      }}
     >
-      {SUBJECT_OPTIONS.map((option) => (
+      {SUBJECT_PRESETS.map((option) => (
         <option key={option.id} value={option.id}>
           {option.label}
         </option>
       ))}
+    </SelectField>
+  );
+}
+
+export function StyleSelector({
+  styles,
+  value,
+  onChange,
+  disabled,
+}: {
+  styles: ImageStyle[];
+  value: string | null;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <SelectField
+      label="Style"
+      value={value ?? ""}
+      disabled={disabled || styles.length === 0}
+      onChange={onChange}
+      className="min-w-[10rem]"
+    >
+      {styles.length === 0 ? (
+        <option value="">Loading styles…</option>
+      ) : (
+        styles.map((style) => (
+          <option key={style.id} value={style.id}>
+            {style.name}
+            {!style.published ? " (draft)" : ""}
+          </option>
+        ))
+      )}
     </SelectField>
   );
 }
