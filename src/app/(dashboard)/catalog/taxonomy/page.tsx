@@ -149,6 +149,30 @@ export default function CatalogTaxonomyPage() {
     }
   }
 
+  async function saveGroupMovementLabels(
+    muscleGroupCode: string,
+    movementCode: string,
+    labels: Record<CatalogLocale, string>,
+  ) {
+    setMessage(null);
+    try {
+      await staffFetch("/api/catalog/taxonomy", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "group_movement_labels",
+          muscle_group_code: muscleGroupCode,
+          movement_type_code: movementCode,
+          labels,
+        }),
+      });
+      setMessage("Saved");
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed");
+      throw err;
+    }
+  }
+
   const lookupRows: LookupRowFull[] =
     data && LOOKUP_TABLES.includes(tab)
       ? (data[tab as keyof TaxonomyData] as LookupRowFull[])
@@ -195,6 +219,7 @@ export default function CatalogTaxonomyPage() {
             addEntry("catalog_muscle_groups", code, "")
           }
           onApplyRelations={applyRelations}
+          onSaveGroupMovementLabels={saveGroupMovementLabels}
           onAddPoolEntry={async (kind, code) => {
             const table =
               kind === "muscle" ? "catalog_muscles" : "catalog_movement_types";
