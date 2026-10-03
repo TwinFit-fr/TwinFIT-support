@@ -2,7 +2,7 @@
 
 import { capabilitiesFor, resolveSize } from "@/lib/images/capabilities";
 import type { ExerciseImage, GenerationParams, ImagePrompt } from "@/lib/images/types";
-import { framePositionLabel, targetPosition } from "@/lib/images/types";
+import { framePositionLabel } from "@/lib/images/types";
 
 function generationMethod(image: ExerciseImage): string {
   const p = image.params;
@@ -60,16 +60,8 @@ export function ImageMetadataPanel({
   prompts: ImagePrompt[] | undefined;
 }) {
   const p = image.params ?? {};
-  const target = targetPosition(image);
   const hasOutputParams = Boolean(p.model && p.shape && p.size);
   const rows: [string, string][] = [
-    [
-      "Position",
-      image.active
-        ? `${image.position} · ${framePositionLabel(image.position)} (active)`
-        : `Inactive${target != null ? ` · generated for ${framePositionLabel(target)}` : ""}`,
-    ],
-    ["Subject", image.subject || p.subject || "—"],
     ["Method", generationMethod(image)],
     ["Model", image.model || "—"],
     [
@@ -86,44 +78,33 @@ export function ImageMetadataPanel({
     ],
     ["Quality", p.quality ?? "—"],
     ["Moderation", p.moderation ?? "—"],
-    ["Reference fidelity", fidelityLabel(image)],
+    ["Fidelity", fidelityLabel(image)],
     [
       "System prompt",
-      `${promptSlotLabel(prompts, p.system_prompt_id)}${p.system_prompt_edited ? " (edited for this run)" : ""}`,
+      `${promptSlotLabel(prompts, p.system_prompt_id)}${p.system_prompt_edited ? " · edited" : ""}`,
     ],
     [
       "Position prompt",
-      `${promptSlotLabel(prompts, p.position_prompt_id)}${p.position_prompt_edited ? " (edited for this run)" : ""}`,
+      `${promptSlotLabel(prompts, p.position_prompt_id)}${p.position_prompt_edited ? " · edited" : ""}`,
     ],
-    ["Logo sent", p.logo_sent == null ? "—" : p.logo_sent ? "yes" : "no"],
+    ["Logo", p.logo_sent == null ? "—" : p.logo_sent ? "Yes" : "No"],
     ["Feet shift", p.feet_shift_px != null ? `${p.feet_shift_px}px` : "—"],
     ["Tokens", usageLabel(image.usage)],
     ["Created", new Date(image.created_at).toLocaleString()],
   ];
 
   return (
-    <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-medium text-zinc-800">Image metadata</div>
-        <a
-          href={image.image_url}
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs text-zinc-500 underline hover:text-zinc-800"
-        >
-          Open original
-        </a>
-      </div>
-      <dl className="grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex justify-between gap-3 border-b border-zinc-100 pb-1">
-            <dt className="text-zinc-500">{label}</dt>
-            <dd className="min-w-0 truncate text-right text-zinc-800" title={value}>
+    <dl className="space-y-1 border-t border-zinc-100 pt-3 text-[11px]">
+      {rows
+        .filter(([, value]) => value !== "—")
+        .map(([label, value]) => (
+          <div key={label} className="flex justify-between gap-3">
+            <dt className="shrink-0 text-zinc-400">{label}</dt>
+            <dd className="min-w-0 truncate text-right text-zinc-700" title={value}>
               {value}
             </dd>
           </div>
         ))}
-      </dl>
-    </div>
+    </dl>
   );
 }
