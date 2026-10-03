@@ -297,7 +297,10 @@ export type UpdateLookupPayload = {
   labels?: Partial<Record<CatalogLocale, unknown>>;
   active?: unknown;
   sort_order?: unknown;
+  description?: unknown;
 };
+
+const DESCRIBED_LOOKUP_TABLES = new Set(["catalog_grips", "catalog_support_equipment"]);
 
 export async function updateLookup(token: string, payload: UpdateLookupPayload) {
   const table = assertLookupTable(payload.table);
@@ -309,9 +312,15 @@ export async function updateLookup(token: string, payload: UpdateLookupPayload) 
   if (labels) set.name = String(labels.en || payload.name || "").trim();
   if (payload.active != null) set.active = Boolean(payload.active);
   if (payload.sort_order != null) set.sort_order = Number(payload.sort_order);
+  if (DESCRIBED_LOOKUP_TABLES.has(table) && payload.description !== undefined) {
+    const text = String(payload.description ?? "").trim();
+    set.description = text || null;
+  }
   if (!Object.keys(set).length && !labels) throw new Error("nothing to update");
 
-  const fields = "{ id code name active sort_order }";
+  const fields = DESCRIBED_LOOKUP_TABLES.has(table)
+    ? "{ id code name description active sort_order }"
+    : "{ id code name active sort_order }";
   const data = Object.keys(set).length
     ? await staffGql<Record<string, unknown>>(
         token,
@@ -465,12 +474,12 @@ export function fetchTaxonomy(token: string) {
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_support_equipment(order_by: { sort_order: asc, code: asc }) {
-        id code name sort_order active
+        id code name description sort_order active
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_variations(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
       catalog_positions(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
-      catalog_grips(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
+      catalog_grips(order_by: { sort_order: asc, code: asc }) { id code name description sort_order active }
       catalog_load_modalities(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
       catalog_logging_modes(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
     }`,

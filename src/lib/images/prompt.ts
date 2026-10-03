@@ -12,7 +12,11 @@ type TemplateValues = {
   details?: string;
 };
 
-type TaxonomyValue = { code?: string | null; name?: string | null } | null | undefined;
+type TaxonomyValue = {
+  code?: string | null;
+  name?: string | null;
+  description?: string | null;
+} | null | undefined;
 
 export type ExerciseTaxonomy = {
   position?: TaxonomyValue;
@@ -25,7 +29,9 @@ export type ExerciseTaxonomy = {
 function taxonomyLabel(value: TaxonomyValue): string | null {
   const name = value?.name?.trim();
   if (!name || name.toLowerCase() === "none" || value?.code?.toUpperCase() === "NONE") return null;
-  return name.toLowerCase();
+  const description = value?.description?.trim();
+  const base = name.toLowerCase();
+  return description ? `${base} — ${description}` : base;
 }
 
 /** Catalog fields that change the drawing, skipping empty or "none" values. */
@@ -53,9 +59,14 @@ export const PROMPT_PLACEHOLDERS = [
   "{exo_id}",
   "{subject}",
   "{background_color}",
+  "{support}",
+  "{support_description}",
 ] as const;
 
-export function fillPromptTemplate(template: string, values: TemplateValues): string {
+export function fillPromptTemplate(
+  template: string,
+  values: TemplateValues & { support?: string; support_description?: string },
+): string {
   return template
     .replaceAll("{name}", values.name)
     .replaceAll("{technical_description}", values.description)
@@ -63,7 +74,9 @@ export function fillPromptTemplate(template: string, values: TemplateValues): st
     .replaceAll("{exo_id}", String(values.exo_id))
     .replaceAll("{id}", values.id ?? String(values.exo_id))
     .replaceAll("{subject}", values.subject ?? "person")
-    .replaceAll("{background_color}", values.background_color ?? "");
+    .replaceAll("{background_color}", values.background_color ?? "")
+    .replaceAll("{support}", values.support ?? "")
+    .replaceAll("{support_description}", values.support_description ?? "");
 }
 
 export function assembleImagePrompt(

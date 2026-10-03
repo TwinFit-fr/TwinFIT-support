@@ -45,14 +45,18 @@ const EXERCISE_FIELDS = `
   active
   primary_muscle_group { id name }
   equipment { id code name }
-  support_equipment { code name }
+  support_equipment { id code name description }
   position { code name }
-  grip { code name }
+  grip { code name description }
   variation { code name }
   localizations { locale display_name description }
 `;
 
-type TaxonomyRef = { code: string | null; name: string } | null;
+type TaxonomyRef = {
+  code: string | null;
+  name: string;
+  description?: string | null;
+} | null;
 
 type RawExercise = ExerciseTaxonomy & {
   id: string;
@@ -61,7 +65,7 @@ type RawExercise = ExerciseTaxonomy & {
   active: boolean;
   primary_muscle_group: { id: string; name: string } | null;
   equipment: ({ id: string } & NonNullable<TaxonomyRef>) | null;
-  support_equipment: TaxonomyRef;
+  support_equipment: ({ id: string } & NonNullable<TaxonomyRef>) | null;
   position: TaxonomyRef;
   grip: TaxonomyRef;
   variation: TaxonomyRef;
