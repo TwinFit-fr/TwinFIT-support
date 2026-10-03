@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { mutate } from "swr";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { Button, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
@@ -13,6 +13,7 @@ import {
   usePositionSelection,
   useSubjectChoice,
 } from "@/hooks/use-generation-queue";
+import { ExerciseComposeDialog } from "@/components/catalog/exercise-compose-dialog";
 import { GenerationProgress, processingSteps } from "@/components/images/generation-progress";
 import { FramePlayer } from "@/components/images/frame-player";
 import { ImageMetadataPanel } from "@/components/images/image-metadata";
@@ -132,6 +133,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       ? (exercise.images[0]?.id ?? null)
       : selectedChoice;
   const [busy, setBusy] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [showOverrides, setShowOverrides] = useState(false);
   // Per-run edits belong to one exercise; they reset when navigating to another.
   const [overridesFor, setOverridesFor] = useState<{ exoId: number; value: PromptOverrides }>({
@@ -273,6 +275,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   }
 
   useEffect(() => {
+    if (editOpen) return;
     function onKey(event: KeyboardEvent) {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
         return;
@@ -311,7 +314,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exercise, selectedId, selected, exoId, busy]);
+  }, [exercise, selectedId, selected, exoId, busy, editOpen]);
 
   if (isLoading) {
     return <Skeleton className="h-[70vh] w-full rounded-xl" />;
@@ -334,7 +337,18 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             </Link>{" "}
             / #{exercise.exo_id}
           </div>
-          <h1 className="text-xl font-semibold text-zinc-900">{exercise.display_name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold text-zinc-900">{exercise.display_name}</h1>
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              className="rounded-md p-1 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800"
+              aria-label="Edit exercise"
+              title="Edit exercise"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          </div>
           <p className="text-sm text-zinc-500">
             {exercise.primary_muscle_group?.name ?? "—"} · {exercise.equipment?.name ?? "—"} ·{" "}
             {exercise.active_count}/{framePositions.length} active frames
@@ -528,6 +542,16 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         Shortcuts: R generate selected positions · 0/1/2 set position · X deactivate · Del delete
         (images without position) · ←/→ images · [/] prev/next · Esc back
       </p>
+
+      <ExerciseComposeDialog
+        open={editOpen}
+        editExoId={exoId}
+        onClose={() => setEditOpen(false)}
+        onSaved={(msg) => {
+          success(msg);
+          void refresh();
+        }}
+      />
     </div>
   );
 }
