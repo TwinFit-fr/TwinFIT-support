@@ -10,6 +10,8 @@ function generationMethod(image: ExerciseImage): string {
   // Strips are no longer generated; older images keep showing how they were made.
   if (p.sequence)
     return `${p.sequence.cuts.length + 1}-pose strip ${p.sequence.strip_size} (cuts at ${p.sequence.cuts.join(" / ")})`;
+  if (p.frame_align) return "Frame alignment";
+  if (p.manual_overlay) return "Manual overlay";
   if (p.guide_image_id) return "Edit of the Start frame";
   if (p.reference_file_id) return "From character reference";
   return "Prompt only";

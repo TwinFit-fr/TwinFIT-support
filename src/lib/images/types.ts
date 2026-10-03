@@ -76,6 +76,14 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   position_prompt_id?: string | null;
   system_prompt_edited?: boolean;
   position_prompt_edited?: boolean;
+  /** Legacy: baked two-image composite (replaced by frame_align). */
+  manual_overlay?: boolean;
+  /** Active frame was geometrically nudged to align the GIF. */
+  frame_align?: boolean;
+  align_source_image_id?: string | null;
+  align_dx?: number;
+  align_dy?: number;
+  align_scale?: number;
   /** Legacy rows may still carry subject in params until backfilled. */
   subject?: Subject;
 };
