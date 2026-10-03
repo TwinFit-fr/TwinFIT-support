@@ -9,10 +9,11 @@ import {
   type CatalogLocale,
 } from "@/lib/catalog/locales";
 import type { LookupRowFull, TaxonomyTabId } from "./types";
-import { LOCALIZED_TAXONOMY_TABLES, TAXONOMY_TABS } from "./types";
+import { DESCRIBED_TAXONOMY_TABLES, LOCALIZED_TAXONOMY_TABLES, TAXONOMY_TABS } from "./types";
 
 type DraftFields = {
   name: string;
+  description: string;
   sort_order: number;
   active: boolean;
   labels: Record<CatalogLocale, string>;
@@ -32,6 +33,7 @@ type TaxonomyLookupTableProps = {
       name: string;
       sort_order: number;
       active: boolean;
+      description?: string | null;
       labels?: Record<CatalogLocale, string>;
     },
   ) => Promise<void>;
@@ -39,7 +41,9 @@ type TaxonomyLookupTableProps = {
 
 const TABLE_HINTS: Partial<Record<TaxonomyTabId, string>> = {
   catalog_equipment: "load implement (NONE = bodyweight)",
-  catalog_support_equipment: "station / auxiliary (not the load)",
+  catalog_support_equipment:
+    "station / auxiliary (not the load); optional description feeds image-generation prompts",
+  catalog_grips: "optional description feeds image-generation prompts",
 };
 
 function labelsFromRow(row: LookupRowFull): Record<CatalogLocale, string> {
@@ -61,6 +65,7 @@ export function TaxonomyLookupTable({
   onSave,
 }: TaxonomyLookupTableProps) {
   const isLocalized = LOCALIZED_TAXONOMY_TABLES.has(table);
+  const hasDescription = DESCRIBED_TAXONOMY_TABLES.has(table);
   const [filter, setFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newCode, setNewCode] = useState("");
@@ -76,6 +81,7 @@ export function TaxonomyLookupTable({
         if (!q) return true;
         if (r.code.toLowerCase().includes(q)) return true;
         if ((r.name || "").toLowerCase().includes(q)) return true;
+        if ((r.description || "").toLowerCase().includes(q)) return true;
         return (r.localizations ?? []).some((loc) =>
           (loc.display_name || "").toLowerCase().includes(q),
         );
@@ -88,6 +94,7 @@ export function TaxonomyLookupTable({
     return (
       drafts[row.id] ?? {
         name: labels.en,
+        description: row.description ?? "",
         sort_order: Number(row.sort_order) || 0,
         active: row.active !== false,
         labels,
@@ -122,6 +129,7 @@ export function TaxonomyLookupTable({
             {filtered.length} / {rows.length} items
             {TABLE_HINTS[table] && ` · ${TABLE_HINTS[table]}`}
             {isLocalized && " · edit EN / ES / FR labels"}
+            {hasDescription && " · description is internal (image prompts)"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -202,6 +210,7 @@ export function TaxonomyLookupTable({
               ) : (
                 <th className="px-3 py-2">Name</th>
               )}
+              {hasDescription && <th className="px-3 py-2">Description</th>}
               <th className="px-3 py-2">Sort</th>
               <th className="px-3 py-2">Active</th>
               <th className="px-3 py-2" />
@@ -215,10 +224,10 @@ export function TaxonomyLookupTable({
                   key={row.id}
                   className={`border-b border-zinc-100 ${row.active === false ? "text-zinc-400" : ""}`}
                 >
-                  <td className="px-3 py-2 font-mono">{row.code}</td>
+                  <td className="px-3 py-2 font-mono align-top">{row.code}</td>
                   {isLocalized ? (
                     CATALOG_LOCALES.map((loc) => (
-                      <td key={loc} className="px-3 py-2">
+                      <td key={loc} className="px-3 py-2 align-top">
                         <Input
                           value={draft.labels[loc]}
                           placeholder={resolveLocalizedName(row, loc)}
@@ -227,14 +236,24 @@ export function TaxonomyLookupTable({
                       </td>
                     ))
                   ) : (
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 align-top">
                       <Input
                         value={draft.name}
                         onChange={(e) => setDraft(row.id, { name: e.target.value })}
                       />
                     </td>
                   )}
-                  <td className="px-3 py-2">
+                  {hasDescription && (
+                    <td className="px-3 py-2 align-top">
+                      <textarea
+                        className="min-h-[4.5rem] w-72 rounded-md border border-zinc-300 px-2 py-1 text-sm"
+                        value={draft.description}
+                        placeholder="Optional — how this looks for image prompts"
+                        onChange={(e) => setDraft(row.id, { description: e.target.value })}
+                      />
+                    </td>
+                  )}
+                  <td className="px-3 py-2 align-top">
                     <input
                       type="number"
                       className="w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm"
@@ -244,7 +263,7 @@ export function TaxonomyLookupTable({
                       }
                     />
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 align-top">
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
@@ -254,7 +273,7 @@ export function TaxonomyLookupTable({
                       <span>{draft.active ? "On" : "Off"}</span>
                     </label>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 align-top">
                     <Button
                       type="button"
                       variant="secondary"
@@ -263,6 +282,7 @@ export function TaxonomyLookupTable({
                           name: draft.labels.en || draft.name,
                           sort_order: draft.sort_order,
                           active: draft.active,
+                          description: hasDescription ? draft.description : undefined,
                           labels: isLocalized ? draft.labels : undefined,
                         })
                       }

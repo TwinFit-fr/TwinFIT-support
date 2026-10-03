@@ -71,6 +71,7 @@ export default function CatalogTaxonomyPage() {
       name: string;
       sort_order: number;
       active: boolean;
+      description?: string | null;
       labels?: Record<CatalogLocale, string>;
     },
   ) {
@@ -85,6 +86,7 @@ export default function CatalogTaxonomyPage() {
           name: fields.name,
           sort_order: fields.sort_order,
           active: fields.active,
+          ...(fields.description !== undefined ? { description: fields.description } : {}),
           ...(fields.labels ? { labels: fields.labels } : {}),
         }),
       });

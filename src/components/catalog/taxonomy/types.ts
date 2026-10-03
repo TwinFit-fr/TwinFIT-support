@@ -35,10 +35,18 @@ export const LOCALIZED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
   "catalog_muscle_groups",
 ]);
 
+/** Tables with an optional staff-only visual description for image prompts. */
+export const DESCRIBED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
+  "catalog_grips",
+  "catalog_support_equipment",
+]);
+
 export type LookupRowFull = {
   id: string;
   code: string;
   name: string;
+  /** Internal visual description (grips / support only); not localized. */
+  description?: string | null;
   sort_order?: number;
   active?: boolean;
   localizations?: LocalizationRow[];
