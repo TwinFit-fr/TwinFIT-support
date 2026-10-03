@@ -31,17 +31,17 @@ export function ExerciseImageCard({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-xl border bg-white shadow-xs transition-colors",
+        "group relative overflow-hidden rounded-lg border bg-white shadow-xs transition-colors",
         selected ? "border-zinc-900 ring-1 ring-zinc-900" : "border-zinc-200 hover:border-zinc-300",
       )}
     >
-      <div className="absolute left-2 top-2 z-10">
+      <div className="absolute left-1 top-1 z-10">
         <input
           type="checkbox"
           checked={selected}
           onChange={onToggle}
           onClick={(e) => e.stopPropagation()}
-          className="h-4 w-4 rounded border-zinc-300"
+          className="h-3.5 w-3.5 rounded border-zinc-300"
           aria-label={`Select ${exercise.display_name}`}
         />
       </div>
@@ -52,37 +52,39 @@ export function ExerciseImageCard({
             return (
               <div
                 key={subject}
-                className="relative aspect-square bg-zinc-100"
+                className="relative aspect-square max-h-[7.5rem] bg-zinc-100"
                 style={{
                   backgroundImage:
                     "linear-gradient(45deg,#e4e4e7 25%,transparent 25%),linear-gradient(-45deg,#e4e4e7 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e4e4e7 75%),linear-gradient(-45deg,transparent 75%,#e4e4e7 75%)",
-                  backgroundSize: "16px 16px",
-                  backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
+                  backgroundSize: "12px 12px",
+                  backgroundPosition: "0 0,0 6px,6px -6px,-6px 0",
                 }}
               >
                 <FramePlayer
                   frames={status?.active_frames ?? []}
                   fallbackUrl={status?.preview_image?.image_url ?? null}
                   alt={`${exercise.display_name} · ${SUBJECT_LABEL[subject]}`}
-                  width={200}
+                  width={120}
+                  showLabel={false}
                 />
-                <span className="absolute bottom-1 left-1 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                <span className="absolute bottom-0.5 left-0.5 rounded bg-black/55 px-1 py-px text-[9px] font-medium text-white">
                   {SUBJECT_LABEL[subject]}
                 </span>
               </div>
             );
           })}
         </div>
-        <div className="space-y-1 p-3">
-          <div className="flex items-start justify-between gap-2">
+        <div className="space-y-0.5 px-2 py-1.5">
+          <div className="flex items-start justify-between gap-1">
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-zinc-900">
+              <div className="truncate text-xs font-semibold text-zinc-900">
                 {exercise.display_name}
               </div>
-              <div className="text-xs text-zinc-500">#{exercise.exo_id}</div>
+              <div className="text-[10px] text-zinc-500">#{exercise.exo_id}</div>
             </div>
             <Badge
               className={cn(
+                "px-1.5 py-0 text-[10px]",
                 exercise.status === "complete" && "bg-emerald-50 text-emerald-700",
                 exercise.status === "partial" && "bg-amber-50 text-amber-700",
                 exercise.status === "inactive_only" && "bg-zinc-100 text-zinc-600",
@@ -91,10 +93,10 @@ export function ExerciseImageCard({
               {statusLabel(exercise.status)}
             </Badge>
           </div>
-          <div className="truncate text-[11px] text-zinc-500">
+          <div className="truncate text-[10px] text-zinc-500">
             {exercise.primary_muscle_group?.name ?? "—"} · {exercise.equipment?.name ?? "—"}
           </div>
-          <div className="truncate text-[11px] text-zinc-500">{activeSummary}</div>
+          <div className="truncate text-[10px] text-zinc-500">{activeSummary}</div>
         </div>
       </Link>
     </div>

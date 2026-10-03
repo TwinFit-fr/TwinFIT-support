@@ -59,6 +59,11 @@ const TAXONOMY_LOCALIZATIONS: Partial<
     fk: "muscle_id",
     constraint: "muscle_localizations_muscle_id_locale_key",
   },
+  catalog_load_modalities: {
+    table: "catalog_load_modality_localizations",
+    fk: "load_modality_id",
+    constraint: "load_modality_localizations_load_modality_id_locale_key",
+  },
 };
 
 /** Finds a lookup row by code, creating it (Title Case name) when it does not exist yet. */
@@ -480,7 +485,10 @@ export function fetchTaxonomy(token: string) {
       catalog_variations(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
       catalog_positions(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
       catalog_grips(order_by: { sort_order: asc, code: asc }) { id code name description sort_order active }
-      catalog_load_modalities(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
+      catalog_load_modalities(order_by: { sort_order: asc, code: asc }) {
+        id code name sort_order active
+        localizations(order_by: { locale: asc }) { locale display_name }
+      }
       catalog_logging_modes(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
     }`,
   );

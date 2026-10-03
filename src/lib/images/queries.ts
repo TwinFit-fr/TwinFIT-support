@@ -1,16 +1,16 @@
 import { staffGql } from "@/lib/staff-gql";
 import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
 import { exerciseDetails, type ExerciseTaxonomy } from "./prompt";
-import { MID_POSITION, SUBJECTS, framePositionsFor } from "./types";
+import { MID_POSITION, SUBJECTS, framePositionsFor, resolveTwoFrames } from "./types";
 import type {
   ExerciseImage,
   ExerciseImageBoardItem,
   ExerciseImageDetail,
   GenerationSnapshot,
   ImagePrompt,
-  ImagePromptKind,
   ImageSettings,
   ImageStyle,
+  StylePrompts,
   Subject,
   SubjectFrameStatus,
 } from "./types";
@@ -35,9 +35,9 @@ const IMAGE_FIELDS = `
 
 const PROMPT_FIELDS = `
   id
+  style_id
   kind
   position
-  name
   content
   inserted_at
   updated_at
@@ -48,12 +48,8 @@ const STYLE_FIELDS = `
   code
   name
   published
+  is_default
   params
-  system_prompt_id
-  start_prompt_id
-  mid_prompt_id
-  end_prompt_id
-  support_prompt_id
   logo_file_id
   logo_in_exercises
   inserted_at
@@ -66,7 +62,6 @@ const STYLE_FIELDS = `
     support_equipment { id code name description active }
   }
 `;
-
 const EXERCISE_FIELDS = `
   id
   exo_id
@@ -223,6 +218,30 @@ export async function getStyleByCode(token: string, code: string): Promise<Image
   return row ? normalizeStyle(row) : null;
 }
 
+async function getDefaultStyle(token: string): Promise<ImageStyle | null> {
+  const data = await staffGql<{ images_styles: ImageStyle[] }>(
+    token,
+    `query {
+      images_styles(where: { is_default: { _eq: true } }, limit: 1) { ${STYLE_FIELDS} }
+    }`,
+  );
+  const row = data.images_styles?.[0];
+  return row ? normalizeStyle(row) : null;
+}
+
+/** Build the five required slots from a style's prompt rows. */
+export function getStylePrompts(prompts: ImagePrompt[]): StylePrompts {
+  const system = prompts.find((p) => p.kind === "system");
+  const start = prompts.find((p) => p.kind === "position" && p.position === 0);
+  const mid = prompts.find((p) => p.kind === "position" && p.position === 1);
+  const end = prompts.find((p) => p.kind === "position" && p.position === 2);
+  const support = prompts.find((p) => p.kind === "support");
+  if (!system || !start || !mid || !end || !support) {
+    throw new Error("Style is missing one or more required prompt slots");
+  }
+  return { system, start, mid, end, support };
+}
+
 export async function createStyle(
   token: string,
   input: {
@@ -239,7 +258,15 @@ export async function createStyle(
   if (input.copyFromStyleId) {
     source = await getStyle(token, input.copyFromStyleId);
     if (!source) throw new Error("Source style not found");
+  } else {
+    source = await getDefaultStyle(token);
   }
+  const sourcePrompts = source ? await listImagePrompts(token, source.id) : [];
+  if (sourcePrompts.length === 0) {
+    throw new Error("No source prompts to clone (need a default style or copyFromStyleId)");
+  }
+  const slots = getStylePrompts(sourcePrompts);
+
   const data = await staffGql<{ insert_images_styles_one: ImageStyle }>(
     token,
     `mutation($object: images_styles_insert_input!) {
@@ -250,19 +277,31 @@ export async function createStyle(
         code,
         name: input.name.trim() || code,
         published: false,
+        is_default: false,
         params: source?.params ?? DEFAULT_GENERATION_PARAMS,
-        system_prompt_id: source?.system_prompt_id ?? null,
-        start_prompt_id: source?.start_prompt_id ?? null,
-        mid_prompt_id: source?.mid_prompt_id ?? null,
-        end_prompt_id: source?.end_prompt_id ?? null,
-        support_prompt_id: source?.support_prompt_id ?? null,
         logo_in_exercises: source?.logo_in_exercises ?? false,
         updated_at: new Date().toISOString(),
         updated_by: getUserIdFromToken(token),
       },
     },
   );
-  return normalizeStyle(data.insert_images_styles_one);
+  const created = normalizeStyle(data.insert_images_styles_one);
+
+  const clones = [slots.system, slots.start, slots.mid, slots.end, slots.support].map((p) => ({
+    style_id: created.id,
+    kind: p.kind,
+    position: p.position,
+    content: p.content,
+  }));
+  await staffGql(
+    token,
+    `mutation($objects: [images_prompts_insert_input!]!) {
+      insert_images_prompts(objects: $objects) { affected_rows }
+    }`,
+    { objects: clones },
+  );
+
+  return created;
 }
 
 export async function updateStyle(
@@ -271,19 +310,39 @@ export async function updateStyle(
   set: Partial<
     Pick<
       ImageStyle,
-      | "name"
-      | "published"
-      | "params"
-      | "system_prompt_id"
-      | "start_prompt_id"
-      | "mid_prompt_id"
-      | "end_prompt_id"
-      | "support_prompt_id"
-      | "logo_file_id"
-      | "logo_in_exercises"
+      "name" | "published" | "is_default" | "params" | "logo_file_id" | "logo_in_exercises"
     >
   >,
 ): Promise<ImageStyle> {
+  const current = await getStyle(token, styleId);
+  if (!current) throw new Error("Style not found");
+
+  if (current.is_default && set.published === false) {
+    throw new Error("Cannot unpublish the default style");
+  }
+  if (current.is_default && set.is_default === false) {
+    throw new Error("Cannot unset default without choosing another default style");
+  }
+  if (set.is_default === true) {
+    set = { ...set, published: true };
+  }
+
+  if (set.is_default === true) {
+    await staffGql(
+      token,
+      `mutation($updatedAt: timestamptz!, $updatedBy: uuid) {
+        update_images_styles(
+          where: { is_default: { _eq: true } }
+          _set: { is_default: false, updated_at: $updatedAt, updated_by: $updatedBy }
+        ) { affected_rows }
+      }`,
+      {
+        updatedAt: new Date().toISOString(),
+        updatedBy: getUserIdFromToken(token),
+      },
+    );
+  }
+
   const data = await staffGql<{ update_images_styles_by_pk: ImageStyle | null }>(
     token,
     `mutation($id: uuid!, $set: images_styles_set_input!) {
@@ -303,8 +362,9 @@ export async function updateStyle(
 }
 
 export async function deleteStyle(token: string, styleId: string): Promise<void> {
-  const settings = await loadSettings(token);
-  if (settings.default_style_id === styleId) {
+  const style = await getStyle(token, styleId);
+  if (!style) throw new Error("Style not found");
+  if (style.is_default) {
     throw new Error("Cannot delete the default style");
   }
   const data = await staffGql<{
@@ -325,7 +385,6 @@ export async function deleteStyle(token: string, styleId: string): Promise<void>
     id: styleId,
   });
 }
-
 export async function listImageExercises(
   token: string,
   styleId: string,
@@ -337,7 +396,7 @@ export async function listImageExercises(
   }>(
     token,
     `query($styleId: uuid!) {
-      images_exercise_options(where: { two_frames: { _eq: true } }) { exo_id two_frames }
+      images_exercise_options { exo_id two_frames }
       catalog_exercises(order_by: [{ exo_id: asc }]) {
         ${EXERCISE_FIELDS}
       }
@@ -358,10 +417,17 @@ export async function listImageExercises(
     byExo.set(img.exo_id, list);
   }
 
-  const twoFrames = new Set((data.images_exercise_options ?? []).map((o) => o.exo_id));
-  return (data.catalog_exercises ?? []).map((ex) =>
-    toBoardItem(ex, byExo.get(ex.exo_id) ?? [], twoFrames.has(ex.exo_id)),
+  const options = new Map(
+    (data.images_exercise_options ?? []).map((o) => [o.exo_id, o.two_frames] as const),
   );
+  return (data.catalog_exercises ?? []).map((ex) => {
+    const images = byExo.get(ex.exo_id) ?? [];
+    return toBoardItem(
+      ex,
+      images,
+      resolveTwoFrames(options.get(ex.exo_id), images.length > 0),
+    );
+  });
 }
 
 export async function getImageExercise(
@@ -395,7 +461,11 @@ export async function getImageExercise(
 
   const images = data.images_exercise_images ?? [];
   return {
-    ...toBoardItem(exercise, images, Boolean(data.images_exercise_options_by_pk?.two_frames)),
+    ...toBoardItem(
+      exercise,
+      images,
+      resolveTwoFrames(data.images_exercise_options_by_pk?.two_frames, images.length > 0),
+    ),
     images,
     localizations: exercise.localizations ?? [],
   };
@@ -417,16 +487,39 @@ export async function getExerciseSummary(
   return data.catalog_exercises?.[0] ?? null;
 }
 
-export async function listImagePrompts(token: string): Promise<ImagePrompt[]> {
+export async function listImagePrompts(
+  token: string,
+  styleId?: string,
+): Promise<ImagePrompt[]> {
+  if (styleId) {
+    const data = await staffGql<{ images_prompts: ImagePrompt[] }>(
+      token,
+      `query($styleId: uuid!) {
+        images_prompts(
+          where: { style_id: { _eq: $styleId } }
+          order_by: [{ kind: asc }, { position: asc_nulls_first }]
+        ) { ${PROMPT_FIELDS} }
+      }`,
+      { styleId },
+    );
+    return data.images_prompts ?? [];
+  }
   const data = await staffGql<{ images_prompts: ImagePrompt[] }>(
     token,
     `query {
-      images_prompts(order_by: [{ kind: asc }, { position: asc_nulls_first }, { name: asc }]) {
+      images_prompts(order_by: [{ kind: asc }, { position: asc_nulls_first }]) {
         ${PROMPT_FIELDS}
       }
     }`,
   );
   return data.images_prompts ?? [];
+}
+
+export async function listImagePromptsForStyle(
+  token: string,
+  styleId: string,
+): Promise<StylePrompts> {
+  return getStylePrompts(await listImagePrompts(token, styleId));
 }
 
 export async function getImagePrompt(token: string, id: string): Promise<ImagePrompt | null> {
@@ -438,40 +531,10 @@ export async function getImagePrompt(token: string, id: string): Promise<ImagePr
   return data.images_prompts_by_pk;
 }
 
-export async function createImagePrompt(
-  token: string,
-  input: {
-    kind: ImagePromptKind;
-    position?: number | null;
-    name: string;
-    content: string;
-  },
-): Promise<ImagePrompt> {
-  const position = input.kind === "position" ? (input.position ?? null) : null;
-  if (input.kind === "position" && position == null) {
-    throw new Error("position is required for position prompts");
-  }
-  const data = await staffGql<{ insert_images_prompts_one: ImagePrompt }>(
-    token,
-    `mutation($object: images_prompts_insert_input!) {
-      insert_images_prompts_one(object: $object) { ${PROMPT_FIELDS} }
-    }`,
-    {
-      object: {
-        kind: input.kind,
-        position,
-        name: input.name,
-        content: input.content,
-      },
-    },
-  );
-  return data.insert_images_prompts_one;
-}
-
 export async function updateImagePrompt(
   token: string,
   id: string,
-  input: { name?: string; content?: string },
+  input: { content?: string },
 ): Promise<ImagePrompt> {
   const data = await staffGql<{ update_images_prompts_by_pk: ImagePrompt }>(
     token,
@@ -481,7 +544,6 @@ export async function updateImagePrompt(
     {
       id,
       set: {
-        ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.content !== undefined ? { content: input.content } : {}),
         updated_at: new Date().toISOString(),
       },
@@ -490,27 +552,11 @@ export async function updateImagePrompt(
   return data.update_images_prompts_by_pk;
 }
 
-export async function deleteImagePrompt(token: string, id: string): Promise<void> {
-  const prompts = await listImagePrompts(token);
-  const current = prompts.find((p) => p.id === id);
-  if (!current) throw new Error("Prompt not found");
-  const sameKind = prompts.filter(
-    (p) => p.kind === current.kind && p.position === current.position,
-  );
-  if (sameKind.length <= 1) {
-    throw new Error("Cannot delete the last prompt of this kind/position");
-  }
-  await staffGql(token, `mutation($id: uuid!) { delete_images_prompts_by_pk(id: $id) { id } }`, {
-    id,
-  });
-}
-
 export async function loadSettings(token: string): Promise<ImageSettings> {
   const data = await staffGql<{ images_settings_by_pk: ImageSettings | null }>(
     token,
     `query {
       images_settings_by_pk(id: true) {
-        default_style_id
         max_concurrency
         updated_at
         updated_by
@@ -526,13 +572,12 @@ export async function loadSettings(token: string): Promise<ImageSettings> {
 
 export async function updateImageSettings(
   token: string,
-  set: Partial<Pick<ImageSettings, "default_style_id" | "max_concurrency">>,
+  set: Partial<Pick<ImageSettings, "max_concurrency">>,
 ): Promise<ImageSettings> {
   const data = await staffGql<{ update_images_settings_by_pk: ImageSettings | null }>(
     token,
     `mutation($set: images_settings_set_input!) {
       update_images_settings_by_pk(pk_columns: { id: true }, _set: $set) {
-        default_style_id
         max_concurrency
         updated_at
         updated_by
@@ -594,13 +639,61 @@ export async function insertExerciseImage(
   return data.insert_images_exercise_images_one;
 }
 
-export async function isTwoFrameExercise(token: string, exoId: number): Promise<boolean> {
-  const data = await staffGql<{ images_exercise_options_by_pk: { two_frames: boolean } | null }>(
+export async function isTwoFrameExercise(
+  token: string,
+  exoId: number,
+  styleId?: string,
+): Promise<boolean> {
+  const data = await staffGql<{
+    images_exercise_options_by_pk: { two_frames: boolean } | null;
+    images_exercise_images_aggregate: { aggregate: { count: number } | null };
+  }>(
     token,
-    `query($exoId: Int!) { images_exercise_options_by_pk(exo_id: $exoId) { two_frames } }`,
-    { exoId },
+    `query($exoId: Int!, $styleWhere: images_exercise_images_bool_exp!) {
+      images_exercise_options_by_pk(exo_id: $exoId) { two_frames }
+      images_exercise_images_aggregate(where: $styleWhere) { aggregate { count } }
+    }`,
+    {
+      exoId,
+      styleWhere: styleId
+        ? { exo_id: { _eq: exoId }, style_id: { _eq: styleId } }
+        : { exo_id: { _eq: exoId } },
+    },
   );
-  return Boolean(data.images_exercise_options_by_pk?.two_frames);
+  return resolveTwoFrames(
+    data.images_exercise_options_by_pk?.two_frames,
+    (data.images_exercise_images_aggregate.aggregate?.count ?? 0) > 0,
+  );
+}
+
+/** Persist two_frames=true for empty exercises so the default sticks after the first image. */
+export async function ensureTwoFramesDefault(
+  token: string,
+  exoId: number,
+  styleId: string,
+): Promise<boolean> {
+  const data = await staffGql<{
+    images_exercise_options_by_pk: { two_frames: boolean } | null;
+    images_exercise_images_aggregate: { aggregate: { count: number } | null };
+  }>(
+    token,
+    `query($exoId: Int!, $styleId: uuid!) {
+      images_exercise_options_by_pk(exo_id: $exoId) { two_frames }
+      images_exercise_images_aggregate(
+        where: { exo_id: { _eq: $exoId }, style_id: { _eq: $styleId } }
+      ) { aggregate { count } }
+    }`,
+    { exoId, styleId },
+  );
+  if (data.images_exercise_options_by_pk != null) {
+    return data.images_exercise_options_by_pk.two_frames;
+  }
+  const hasImages = (data.images_exercise_images_aggregate.aggregate?.count ?? 0) > 0;
+  if (!hasImages) {
+    await setTwoFrames(token, exoId, true);
+    return true;
+  }
+  return false;
 }
 
 /** Enabling two frames also deactivates the Mid frame so the sequence is Start + End. */

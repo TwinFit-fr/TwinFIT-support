@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 export const selectClass =
@@ -71,6 +72,40 @@ export function Section({
         {description && <p className="text-xs text-zinc-500">{description}</p>}
       </div>
       {children}
+    </section>
+  );
+}
+
+/** Section with a clickable header to collapse body (saves vertical space on Styles). */
+export function CollapsibleSection({
+  title,
+  description,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  description?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
+        aria-expanded={open}
+      >
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-900">{title}</h2>
+          {description && <p className="text-xs text-zinc-500">{description}</p>}
+        </div>
+        <span className="mt-0.5 shrink-0 text-xs font-medium text-zinc-500">
+          {open ? "Collapse" : "Expand"}
+        </span>
+      </button>
+      {open && <div className="space-y-4 border-t border-zinc-100 px-4 py-4">{children}</div>}
     </section>
   );
 }

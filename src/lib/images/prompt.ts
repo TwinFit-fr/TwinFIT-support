@@ -1,6 +1,3 @@
-import { POSITION_PROMPT_KEYS } from "./types";
-import type { SettingsSelection } from "./types";
-
 type TemplateValues = {
   name: string;
   description: string;
@@ -91,19 +88,13 @@ export function assembleImagePrompt(
     .join("\n\n");
 }
 
-type PromptLike = { id: string; kind: string; position: number | null };
-
-/** Prompts chosen in settings; falls back to the first of its kind if the selection was deleted. */
-export function selectedPrompts<T extends PromptLike>(
-  selection: SettingsSelection | null | undefined,
+/** Pick system + position prompts from a style's prompt list. */
+export function selectedPrompts<T extends { kind: string; position: number | null }>(
   prompts: T[],
   position: number,
 ): { system: T | undefined; position: T | undefined } {
-  const systems = prompts.filter((p) => p.kind === "system");
-  const forPosition = prompts.filter((p) => p.kind === "position" && p.position === position);
-  const positionId = selection?.[POSITION_PROMPT_KEYS[position]];
   return {
-    system: systems.find((p) => p.id === selection?.system_prompt_id) ?? systems[0],
-    position: forPosition.find((p) => p.id === positionId) ?? forPosition[0],
+    system: prompts.find((p) => p.kind === "system"),
+    position: prompts.find((p) => p.kind === "position" && p.position === position),
   };
 }

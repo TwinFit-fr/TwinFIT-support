@@ -6,6 +6,7 @@ import { assembleImagePrompt, exerciseDetails, selectedPrompts } from "@/lib/ima
 import { invalidSystemPrompt } from "@/lib/images/prompt-checks";
 import {
   clearActivePosition,
+  ensureTwoFramesDefault,
   getActiveImageAtPosition,
   getExerciseImage,
   getExerciseSummary,
@@ -24,7 +25,7 @@ import {
   frameFileName,
 } from "@/lib/images/reference";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
-import { targetPosition } from "@/lib/images/types";
+import { MID_POSITION, targetPosition } from "@/lib/images/types";
 import type { ExerciseImage, Subject } from "@/lib/images/types";
 
 export const maxDuration = 300;
@@ -59,15 +60,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Style not found" }, { status: 404 });
     }
 
-    const prompts = await listImagePrompts(token);
+    const twoFrames = await ensureTwoFramesDefault(token, exoId, styleId);
+    if (twoFrames && position === MID_POSITION) {
+      return NextResponse.json(
+        { error: "This exercise uses two frames (Start + End); Mid cannot be generated" },
+        { status: 409 },
+      );
+    }
+
+    const prompts = await listImagePrompts(token, styleId);
     const { params } = style;
     const unknownSystem = invalidSystemPrompt(prompts, body.systemPromptId);
     if (unknownSystem) return unknownSystem;
-    const chosen = selectedPrompts(
-      { ...style, system_prompt_id: body.systemPromptId ?? style.system_prompt_id },
-      prompts,
-      position,
-    );
+    const chosen = selectedPrompts(prompts, position);
     if (!chosen.system || !chosen.position) {
       return NextResponse.json(
         { error: `Prompt templates missing (system or position ${position})` },

@@ -4,7 +4,7 @@ import { requireStaffToken } from "@/lib/api-auth";
 import { loadLogoInput } from "@/lib/images/logo";
 import { editImage, generateImage } from "@/lib/images/openai";
 import { fillPromptTemplate } from "@/lib/images/prompt";
-import { getStyle, listImagePrompts } from "@/lib/images/queries";
+import { getStyle, listImagePromptsForStyle } from "@/lib/images/queries";
 import {
   LOGO_DIRECTIVE,
   characterFileName,
@@ -60,11 +60,10 @@ export async function POST(request: Request, context: Ctx) {
       }
       mimeType = body.mimeType;
     } else {
-      const prompts = await listImagePrompts(token);
-      const system =
-        prompts.find((p) => p.id === style.system_prompt_id) ??
-        prompts.find((p) => p.kind === "system");
-      if (!system) {
+      let system;
+      try {
+        system = (await listImagePromptsForStyle(token, styleId)).system;
+      } catch {
         return NextResponse.json({ error: "No system prompt available" }, { status: 400 });
       }
       const prompt = [

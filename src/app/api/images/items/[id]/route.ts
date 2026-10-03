@@ -45,7 +45,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (
       nextActive &&
       nextPosition === MID_POSITION &&
-      (await isTwoFrameExercise(token, current.exo_id))
+      (await isTwoFrameExercise(token, current.exo_id, current.style_id))
     ) {
       return NextResponse.json(
         { error: "This exercise uses two frames (Start + End); Mid cannot be active" },

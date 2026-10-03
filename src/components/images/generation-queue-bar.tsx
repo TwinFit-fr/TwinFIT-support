@@ -48,7 +48,7 @@ export function GenerationQueueBar({
   onPositionsChange: (next: number[]) => void;
   subjects: Subject[];
   onSubjectsChange: (next: Subject[]) => void;
-  systemPrompts: { id: string; name: string }[];
+  systemPrompts: { id: string }[];
   settingsSystemPromptId: string | null | undefined;
   systemPromptId: string | undefined;
   onSystemPromptChange: (next: string | undefined) => void;
@@ -94,14 +94,16 @@ export function GenerationQueueBar({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <SystemPromptSelect
-            label="Prompt"
-            prompts={systemPrompts}
-            settingsPromptId={settingsSystemPromptId}
-            value={systemPromptId}
-            onChange={onSystemPromptChange}
-            disabled={locked}
-          />
+          {systemPrompts.length > 1 && (
+            <SystemPromptSelect
+              label="Prompt"
+              prompts={systemPrompts}
+              settingsPromptId={settingsSystemPromptId}
+              value={systemPromptId}
+              onChange={onSystemPromptChange}
+              disabled={locked}
+            />
+          )}
           <SubjectSelector value={subjects} onChange={onSubjectsChange} disabled={locked} />
           <FrameCountSelector value={frameCount} onChange={onFrameCountChange} disabled={locked} />
           <PositionSelector

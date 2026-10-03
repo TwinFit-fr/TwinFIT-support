@@ -20,19 +20,13 @@ export const SUBJECTS: readonly Subject[] = ["man", "woman"];
 /** Frames per sequence chosen for a batch; "exercise" keeps each exercise's own setting. */
 export type FrameCountChoice = "exercise" | 2 | 3;
 
-export const POSITION_PROMPT_KEYS = ["start_prompt_id", "mid_prompt_id", "end_prompt_id"] as const;
-
 export type ImageStyle = {
   id: string;
   code: string;
   name: string;
   published: boolean;
+  is_default: boolean;
   params: GenerationParams;
-  system_prompt_id: string | null;
-  start_prompt_id: string | null;
-  mid_prompt_id: string | null;
-  end_prompt_id: string | null;
-  support_prompt_id: string | null;
   logo_file_id: string | null;
   logo_in_exercises: boolean;
   inserted_at: string;
@@ -54,16 +48,19 @@ export type ImageStyle = {
 
 /** Workspace-level settings (singleton). */
 export type ImageSettings = {
-  default_style_id: string;
   max_concurrency: number;
   updated_at: string;
   updated_by: string | null;
 };
 
-export type SettingsSelection = Pick<
-  ImageStyle,
-  "system_prompt_id" | "start_prompt_id" | "mid_prompt_id" | "end_prompt_id"
->;
+/** The five prompt slots owned by a style. */
+export type StylePrompts = {
+  system: ImagePrompt;
+  start: ImagePrompt;
+  mid: ImagePrompt;
+  end: ImagePrompt;
+  support: ImagePrompt;
+};
 
 /** Snapshot stored on each generated image (subject lives on the row column). */
 export type GenerationSnapshot = Partial<GenerationParams> & {
@@ -85,9 +82,9 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
 
 export type ImagePrompt = {
   id: string;
+  style_id: string;
   kind: ImagePromptKind;
   position: number | null;
-  name: string;
   content: string;
   inserted_at: string;
   updated_at: string;
@@ -164,6 +161,18 @@ export function framePositionsFor(twoFrames: boolean): number[] {
   return FRAME_POSITIONS.map((p) => p.id as number).filter(
     (id) => !twoFrames || id !== MID_POSITION,
   );
+}
+
+/**
+ * Explicit exercise_options.two_frames wins. Otherwise empty exercises default to
+ * two frames (Start+End); exercises that already have images keep three-frame legacy.
+ */
+export function resolveTwoFrames(
+  stored: boolean | null | undefined,
+  hasImages: boolean,
+): boolean {
+  if (stored != null) return stored;
+  return !hasImages;
 }
 
 export function framePositionLabel(position: number | null | undefined): string {

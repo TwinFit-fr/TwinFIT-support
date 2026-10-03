@@ -12,6 +12,7 @@ export function StyleBar({
   busy,
   onSelect,
   onPublishedChange,
+  onDefaultChange,
   onNew,
   onDelete,
 }: {
@@ -22,6 +23,7 @@ export function StyleBar({
   busy: boolean;
   onSelect: (id: string) => void;
   onPublishedChange: (published: boolean) => void;
+  onDefaultChange: (isDefault: boolean) => void;
   onNew: () => void;
   onDelete: () => void;
 }) {
@@ -38,6 +40,7 @@ export function StyleBar({
           {styles.map((style) => (
             <option key={style.id} value={style.id}>
               {style.code} — {style.name}
+              {style.is_default ? " (default)" : ""}
               {style.published ? "" : " (draft)"}
             </option>
           ))}
@@ -47,14 +50,28 @@ export function StyleBar({
         <input
           type="checkbox"
           checked={published}
-          disabled={busy}
+          disabled={busy || isDefault}
+          title={isDefault ? "Default style must stay published" : undefined}
           onChange={(e) => onPublishedChange(e.target.checked)}
           className="h-4 w-4 rounded border-zinc-300"
         />
         Published
       </label>
+      <label className="flex items-center gap-2 pb-1.5 text-xs text-zinc-700">
+        <input
+          type="checkbox"
+          checked={isDefault}
+          disabled={busy || isDefault}
+          title={isDefault ? "Mark another style as default to change this" : undefined}
+          onChange={(e) => {
+            if (e.target.checked) onDefaultChange(true);
+          }}
+          className="h-4 w-4 rounded border-zinc-300"
+        />
+        Default
+      </label>
       <Button type="button" variant="secondary" disabled={busy} onClick={onNew}>
-        New
+        New style
       </Button>
       <Button
         type="button"

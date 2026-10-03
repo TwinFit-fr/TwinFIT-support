@@ -39,9 +39,17 @@ function usageLabel(usage: ExerciseImage["usage"]): string {
     .join(" · ");
 }
 
-function promptName(prompts: ImagePrompt[] | undefined, id: string | null | undefined): string {
+function promptSlotLabel(
+  prompts: ImagePrompt[] | undefined,
+  id: string | null | undefined,
+): string {
   if (!id) return "—";
-  return prompts?.find((p) => p.id === id)?.name ?? "deleted prompt";
+  const prompt = prompts?.find((p) => p.id === id);
+  if (!prompt) return "deleted prompt";
+  if (prompt.kind === "system") return "System";
+  if (prompt.kind === "support") return "Support";
+  if (prompt.kind === "position") return framePositionLabel(prompt.position);
+  return "Prompt";
 }
 
 export function ImageMetadataPanel({
@@ -81,11 +89,11 @@ export function ImageMetadataPanel({
     ["Reference fidelity", fidelityLabel(image)],
     [
       "System prompt",
-      `${promptName(prompts, p.system_prompt_id)}${p.system_prompt_edited ? " (edited for this run)" : ""}`,
+      `${promptSlotLabel(prompts, p.system_prompt_id)}${p.system_prompt_edited ? " (edited for this run)" : ""}`,
     ],
     [
       "Position prompt",
-      `${promptName(prompts, p.position_prompt_id)}${p.position_prompt_edited ? " (edited for this run)" : ""}`,
+      `${promptSlotLabel(prompts, p.position_prompt_id)}${p.position_prompt_edited ? " (edited for this run)" : ""}`,
     ],
     ["Logo sent", p.logo_sent == null ? "—" : p.logo_sent ? "yes" : "no"],
     ["Feet shift", p.feet_shift_px != null ? `${p.feet_shift_px}px` : "—"],

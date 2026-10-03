@@ -105,6 +105,8 @@ export const SUBJECT_OPTIONS = [
   { id: "woman", label: "Woman" },
 ] as const;
 
+/** Fixed board/workspace concurrency (no UI setting). */
+export const DEFAULT_MAX_CONCURRENCY = 3;
 export const MAX_CONCURRENCY_LIMIT = 6;
 
 export const MODERATIONS = [

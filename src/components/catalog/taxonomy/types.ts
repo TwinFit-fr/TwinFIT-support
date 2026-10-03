@@ -2,6 +2,7 @@ import type { LocalizationRow } from "@/lib/catalog/locales";
 
 export type TaxonomyTabId =
   | "anatomy"
+  | "group_movements"
   | "catalog_movement_types"
   | "catalog_equipment"
   | "catalog_support_equipment"
@@ -15,6 +16,7 @@ export type TaxonomyTabId =
 
 export const TAXONOMY_TABS: Array<{ id: TaxonomyTabId; label: string }> = [
   { id: "anatomy", label: "Anatomy" },
+  { id: "group_movements", label: "Group movements" },
   { id: "catalog_movement_types", label: "Movements" },
   { id: "catalog_equipment", label: "Equipment" },
   { id: "catalog_support_equipment", label: "Support" },
@@ -33,6 +35,7 @@ export const LOCALIZED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
   "catalog_movement_types",
   "catalog_muscles",
   "catalog_muscle_groups",
+  "catalog_load_modalities",
 ]);
 
 /** Tables with an optional staff-only visual description for image prompts. */

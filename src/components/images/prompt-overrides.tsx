@@ -56,8 +56,8 @@ export function SystemPromptSelect({
   className,
   label,
 }: {
-  prompts: { id: string; name: string }[];
-  settingsPromptId: string | null | undefined;
+  prompts: { id: string }[];
+  settingsPromptId?: string | null;
   value: string | undefined;
   onChange: (next: string | undefined) => void;
   disabled?: boolean;
@@ -65,7 +65,7 @@ export function SystemPromptSelect({
   /** Visible label beside the select; without it each option is prefixed "System:". */
   label?: string;
 }) {
-  const settingsName = prompts.find((p) => p.id === settingsPromptId)?.name ?? prompts[0]?.name;
+  void settingsPromptId;
   const prefix = label ? "" : "System: ";
   const select = (
     <select
@@ -79,13 +79,10 @@ export function SystemPromptSelect({
         className,
       )}
     >
-      <option value="">
-        {prefix}From settings{settingsName ? ` (${settingsName})` : ""}
-      </option>
+      <option value="">{prefix}Style prompt</option>
       {prompts.map((p) => (
         <option key={p.id} value={p.id}>
-          {prefix}
-          {p.name}
+          {prefix}Style prompt
         </option>
       ))}
     </select>
@@ -170,7 +167,7 @@ export function PromptOverridesPanel({
   disabled?: boolean;
   /** Thumbnail of the exercise's active Start frame, if any. */
   startThumbUrl: string | null;
-  systemPrompts: { id: string; name: string }[];
+  systemPrompts: { id: string }[];
   settingsSystemPromptId: string | null | undefined;
 }) {
   const showStartContext = positions.some((p) => p !== 0);
@@ -219,19 +216,23 @@ export function PromptOverridesPanel({
           </div>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <SystemPromptSelect
-          prompts={systemPrompts}
-          settingsPromptId={settingsSystemPromptId}
-          value={value.systemPromptId}
-          disabled={disabled}
-          // A text edit belongs to the previous prompt, so switching prompts drops it.
-          onChange={(systemPromptId) => onChange({ ...value, systemPromptId, system: undefined })}
-        />
-        {value.systemPromptId && (
-          <span className="text-[11px] text-zinc-500">Only for this generation; settings unchanged.</span>
-        )}
-      </div>
+      {systemPrompts.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <SystemPromptSelect
+            prompts={systemPrompts}
+            settingsPromptId={settingsSystemPromptId}
+            value={value.systemPromptId}
+            disabled={disabled}
+            // A text edit belongs to the previous prompt, so switching prompts drops it.
+            onChange={(systemPromptId) => onChange({ ...value, systemPromptId, system: undefined })}
+          />
+          {value.systemPromptId && (
+            <span className="text-[11px] text-zinc-500">
+              Only for this generation; settings unchanged.
+            </span>
+          )}
+        </div>
+      )}
       <OverrideField
         label="System (style)"
         template={systemTemplate}

@@ -13,7 +13,7 @@ import {
   resolveSize,
 } from "@/lib/images/capabilities";
 import type { GenerationParams } from "@/lib/images/types";
-import { Chip, Field, Section, selectClass } from "./form-ui";
+import { Chip, Field, selectClass } from "./form-ui";
 
 /** Replace values the chosen model cannot use with safe ones. */
 export function coerceToModel(params: GenerationParams): GenerationParams {
@@ -38,7 +38,7 @@ export function ModelSection({
   const setParams = (patch: Partial<GenerationParams>) => onChange({ ...params, ...patch });
 
   return (
-    <Section title="Model & output">
+    <>
       <label className="block max-w-sm text-xs font-medium text-zinc-600">
         Model
         <select
@@ -196,6 +196,6 @@ export function ModelSection({
           </Chip>
         ))}
       </Field>
-    </Section>
+    </>
   );
 }

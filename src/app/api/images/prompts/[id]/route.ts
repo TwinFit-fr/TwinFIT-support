@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
-import {
-  deleteImagePrompt,
-  getImagePrompt,
-  updateImagePrompt,
-} from "@/lib/images/queries";
+import { getImagePrompt, updateImagePrompt } from "@/lib/images/queries";
 
 export async function GET(
   request: Request,
@@ -29,7 +25,6 @@ export async function GET(
 }
 
 const updateSchema = z.object({
-  name: z.string().min(1).optional(),
   content: z.string().optional(),
 });
 
@@ -55,20 +50,9 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  try {
-    const token = requireStaffToken(request);
-    const { id } = await context.params;
-    await deleteImagePrompt(token, id);
-    return NextResponse.json({ status: "deleted", id });
-  } catch (error) {
-    if (error instanceof Response) return error;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to delete prompt" },
-      { status: 400 },
-    );
-  }
+export async function DELETE() {
+  return NextResponse.json(
+    { error: "Prompt rows are owned by styles and cannot be deleted" },
+    { status: 405 },
+  );
 }

@@ -15,12 +15,12 @@ import {
   useStyleChoice,
   useSubjectSelection,
 } from "@/hooks/use-generation-queue";
+import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
 import { MID_POSITION, framePositionsFor } from "@/lib/images/types";
 import type {
   ExerciseImage,
   ExerciseImageBoardItem,
   ImagePrompt,
-  ImageSettings,
   ImageStyle,
   Subject,
 } from "@/lib/images/types";
@@ -36,11 +36,10 @@ function subjectHasStart(exercise: ExerciseImageBoardItem, subject: Subject): bo
 export function ImageBoard() {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
-  const { data: settings } = useStaffSWR<ImageSettings>("/api/images/settings");
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
-  const [styleId, setStyleId] = useStyleChoice(settings?.default_style_id ?? null);
-  const style = styles.find((s) => s.id === styleId) ?? null;
+  const defaultStyleId = styles.find((s) => s.is_default)?.id ?? null;
+  const [styleId, setStyleId] = useStyleChoice(defaultStyleId);
   const listKey = styleId ? `/api/images/exercises?style=${styleId}` : null;
   const { data, isLoading, error } = useStaffSWR<ListResponse>(listKey, {
     refreshInterval: 8000,
@@ -49,7 +48,10 @@ export function ImageBoard() {
   const [subjects, setSubjects] = useSubjectSelection();
   const [frameCount, setFrameCount] = useFrameCountChoice();
   const [preparing, setPreparing] = useState(false);
-  const { data: promptsData } = useStaffSWR<{ system: ImagePrompt[] }>("/api/images/prompts");
+  const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(
+    styleId ? `/api/images/prompts?styleId=${styleId}` : null,
+  );
+  const styleSystemPromptId = promptsData?.system?.id;
   // Ephemeral: applies to the next queue runs on this page only.
   const [systemPromptId, setSystemPromptId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
@@ -207,7 +209,7 @@ export function ImageBoard() {
         })),
         positions: runPositions,
         subjects,
-        maxConcurrency: settings?.max_concurrency ?? 3,
+        maxConcurrency: DEFAULT_MAX_CONCURRENCY,
         generateStep,
       });
       success(`${runnableExercises.length} exercise(s) processed`, "Queue finished");
@@ -313,13 +315,13 @@ export function ImageBoard() {
           Select a style to load the board.
         </div>
       ) : isLoading ? (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} className="aspect-square rounded-xl" />
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
+          {Array.from({ length: 16 }).map((_, i) => (
+            <Skeleton key={i} className="aspect-[2/2.4] rounded-lg" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
           {filtered.map((ex) => (
             <ExerciseImageCard
               key={ex.id}
@@ -348,8 +350,8 @@ export function ImageBoard() {
         onPositionsChange={setPositions}
         subjects={subjects}
         onSubjectsChange={setSubjects}
-        systemPrompts={promptsData?.system ?? []}
-        settingsSystemPromptId={style?.system_prompt_id}
+        systemPrompts={promptsData?.system ? [promptsData.system] : []}
+        settingsSystemPromptId={styleSystemPromptId}
         systemPromptId={systemPromptId}
         onSystemPromptChange={setSystemPromptId}
         running={queue.running}

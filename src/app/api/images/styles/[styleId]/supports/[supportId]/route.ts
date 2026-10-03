@@ -6,7 +6,7 @@ import { fillPromptTemplate } from "@/lib/images/prompt";
 import {
   getStyle,
   listActiveSupportEquipment,
-  listImagePrompts,
+  listImagePromptsForStyle,
 } from "@/lib/images/queries";
 import { supportFileName } from "@/lib/images/reference";
 import { deleteImageFile } from "@/lib/images/storage";
@@ -59,11 +59,10 @@ export async function POST(request: Request, context: Ctx) {
       }
       mimeType = body.mimeType;
     } else {
-      const prompts = await listImagePrompts(token);
-      const template =
-        prompts.find((p) => p.id === style.support_prompt_id) ??
-        prompts.find((p) => p.kind === "support");
-      if (!template) {
+      let template;
+      try {
+        template = (await listImagePromptsForStyle(token, styleId)).support;
+      } catch {
         return NextResponse.json({ error: "No support prompt available" }, { status: 400 });
       }
       const prompt = fillPromptTemplate(template.content, {

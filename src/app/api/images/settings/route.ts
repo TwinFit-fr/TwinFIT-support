@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import { MAX_CONCURRENCY_LIMIT, validateMaxConcurrency } from "@/lib/images/capabilities";
-import { getStyle, loadSettings, updateImageSettings } from "@/lib/images/queries";
+import { loadSettings, updateImageSettings } from "@/lib/images/queries";
 
 export async function GET(request: Request) {
   try {
@@ -18,7 +18,6 @@ export async function GET(request: Request) {
 }
 
 const bodySchema = z.object({
-  default_style_id: z.string().uuid(),
   max_concurrency: z.number().int().min(1).max(MAX_CONCURRENCY_LIMIT),
 });
 
@@ -29,9 +28,6 @@ export async function PUT(request: Request) {
     const concurrencyIssue = validateMaxConcurrency(body.max_concurrency);
     if (concurrencyIssue) {
       return NextResponse.json({ error: concurrencyIssue }, { status: 400 });
-    }
-    if (!(await getStyle(token, body.default_style_id))) {
-      return NextResponse.json({ error: "Default style not found" }, { status: 400 });
     }
     return NextResponse.json(await updateImageSettings(token, body));
   } catch (error) {
