@@ -381,6 +381,64 @@ export async function manageRelation(token: string, payload: RelationPayload) {
   );
 }
 
+export type GroupMovementLabelsPayload = {
+  muscle_group_code?: unknown;
+  movement_type_code?: unknown;
+  labels?: Partial<Record<CatalogLocale, unknown>>;
+};
+
+/**
+ * Custom names for a linked group + movement pair ("Chest Press" instead of "Chest - Press").
+ * Filled locales are upserted and emptied ones deleted, in one mutation; no locale is required.
+ */
+export async function setGroupMovementLabels(token: string, payload: GroupMovementLabelsPayload) {
+  const groupCode = normalizeTaxonomy(payload.muscle_group_code);
+  const movementCode = normalizeTaxonomy(payload.movement_type_code);
+  if (!groupCode || !movementCode) throw new Error("muscle_group_code and movement_type_code required");
+  const found = await staffGql<{
+    catalog_muscle_group_movement_types: { muscle_group_id: string; movement_type_id: string }[];
+  }>(
+    token,
+    `query($g: String!, $m: String!) {
+      catalog_muscle_group_movement_types(
+        where: { muscle_group: { code: { _eq: $g } }, movement_type: { code: { _eq: $m } } }
+        limit: 1
+      ) { muscle_group_id movement_type_id }
+    }`,
+    { g: groupCode, m: movementCode },
+  );
+  const pair = found.catalog_muscle_group_movement_types[0];
+  if (!pair) throw new Error(`${movementCode} is not linked to ${groupCode}; link it first`);
+
+  const labels = payload.labels ?? {};
+  const filled = CATALOG_LOCALES.flatMap((locale) => {
+    const display_name = String(labels[locale] || "").trim();
+    return display_name ? [{ ...pair, locale, display_name }] : [];
+  });
+  const cleared = CATALOG_LOCALES.filter((locale) => !filled.some((row) => row.locale === locale));
+  await staffGql(
+    token,
+    `mutation(
+      $g: uuid!
+      $m: uuid!
+      $objects: [catalog_muscle_group_movement_type_localizations_insert_input!]!
+      $cleared: [String!]!
+    ) {
+      insert_catalog_muscle_group_movement_type_localizations(
+        objects: $objects
+        on_conflict: {
+          constraint: muscle_group_movement_type_localizations_pair_locale_key
+          update_columns: [display_name]
+        }
+      ) { affected_rows }
+      delete_catalog_muscle_group_movement_type_localizations(
+        where: { muscle_group_id: { _eq: $g }, movement_type_id: { _eq: $m }, locale: { _in: $cleared } }
+      ) { affected_rows }
+    }`,
+    { g: pair.muscle_group_id, m: pair.movement_type_id, objects: filled, cleared },
+  );
+}
+
 export function fetchTaxonomy(token: string) {
   return staffGql(
     token,
@@ -389,7 +447,10 @@ export function fetchTaxonomy(token: string) {
         id code name sort_order active
         localizations(order_by: { locale: asc }) { locale display_name }
         group_muscles { role muscle { id code name active localizations(order_by: { locale: asc }) { locale display_name } } }
-        group_movement_types { movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } } }
+        group_movement_types {
+          movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } }
+          localizations(order_by: { locale: asc }) { locale display_name }
+        }
       }
       catalog_muscles(order_by: { code: asc }) {
         id code name sort_order active

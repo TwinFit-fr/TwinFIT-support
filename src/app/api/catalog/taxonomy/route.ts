@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireAdminToken, requireStaffToken } from "@/lib/api-auth";
-import { fetchTaxonomy, manageRelation, updateLookup, upsertLookup } from "@/lib/catalog";
+import {
+  fetchTaxonomy,
+  manageRelation,
+  setGroupMovementLabels,
+  updateLookup,
+  upsertLookup,
+} from "@/lib/catalog";
 
 export async function GET(request: Request) {
   try {
@@ -42,6 +48,10 @@ export async function POST(request: Request) {
         code: body.code,
         role: body.role,
       });
+      return NextResponse.json({ ok: true });
+    }
+    if (kind === "group_movement_labels") {
+      await setGroupMovementLabels(token, body);
       return NextResponse.json({ ok: true });
     }
     if (kind === "update") {

@@ -68,6 +68,8 @@ export type MuscleGroupRow = {
       active?: boolean;
       localizations?: LocalizationRow[];
     };
+    /** Custom name of this group + movement pair ("Chest Press"), per locale. */
+    localizations?: LocalizationRow[];
   }>;
 };
 
