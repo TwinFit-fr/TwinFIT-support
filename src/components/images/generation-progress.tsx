@@ -80,7 +80,8 @@ export function GenerationProgress({
 }: {
   item: QueueItem | undefined;
   running: boolean;
-  onCancel: () => void;
+  /** Omit to hide the cancel control (e.g. when several panels share one queue). */
+  onCancel?: () => void;
 }) {
   const active = processingSteps(item);
   const firstStart = active.reduce<number | undefined>(
@@ -118,7 +119,7 @@ export function GenerationProgress({
             </span>
           )}
         </div>
-        {running && (
+        {running && onCancel && (
           <button
             type="button"
             onClick={onCancel}

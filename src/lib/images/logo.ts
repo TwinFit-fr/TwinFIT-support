@@ -1,14 +1,14 @@
 import { downloadImageFile } from "./storage";
-import type { ImageSettings } from "./types";
+import type { ImageStyle } from "./types";
 
 export type ImageInput = { bytes: Buffer; mimeType: string };
 
-/** The configured brand logo as an edit input, or null if none is set or it cannot be read. */
+/** The style's brand logo as an edit input, or null if none is set or it cannot be read. */
 export async function loadLogoInput(
   token: string,
-  settings: ImageSettings,
+  style: Pick<ImageStyle, "logo_file_id">,
 ): Promise<ImageInput | null> {
-  const fileId = settings.params.logo_file_id;
+  const fileId = style.logo_file_id;
   if (!fileId) return null;
   try {
     const file = await downloadImageFile(token, fileId);

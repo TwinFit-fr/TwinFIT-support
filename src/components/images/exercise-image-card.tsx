@@ -2,10 +2,16 @@
 
 import Link from "next/link";
 import { Badge } from "@/components/ui/primitives";
-import type { ExerciseImageBoardItem } from "@/lib/images/types";
+import type { ExerciseImageBoardItem, Subject } from "@/lib/images/types";
+import { SUBJECTS } from "@/lib/images/types";
 import { FramePlayer } from "@/components/images/frame-player";
 import { statusLabel } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
+
+const SUBJECT_LABEL: Record<Subject, string> = {
+  man: "Man",
+  woman: "Woman",
+};
 
 export function ExerciseImageCard({
   exercise,
@@ -16,6 +22,12 @@ export function ExerciseImageCard({
   selected: boolean;
   onToggle: () => void;
 }) {
+  const framesPerSubject = exercise.frame_positions.length;
+  const activeSummary = SUBJECTS.map((subject) => {
+    const status = exercise.by_subject.find((s) => s.subject === subject);
+    return `${SUBJECT_LABEL[subject]} ${status?.active_count ?? 0}/${framesPerSubject}`;
+  }).join(" · ");
+
   return (
     <div
       className={cn(
@@ -34,21 +46,32 @@ export function ExerciseImageCard({
         />
       </div>
       <Link href={`/images/${exercise.exo_id}`} className="block">
-        <div
-          className="aspect-square bg-zinc-100"
-          style={{
-            backgroundImage:
-              "linear-gradient(45deg,#e4e4e7 25%,transparent 25%),linear-gradient(-45deg,#e4e4e7 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e4e4e7 75%),linear-gradient(-45deg,transparent 75%,#e4e4e7 75%)",
-            backgroundSize: "16px 16px",
-            backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
-          }}
-        >
-          <FramePlayer
-            frames={exercise.active_frames}
-            fallbackUrl={exercise.preview_image?.image_url ?? null}
-            alt={exercise.display_name}
-            width={400}
-          />
+        <div className="grid grid-cols-2 gap-px bg-zinc-200">
+          {SUBJECTS.map((subject) => {
+            const status = exercise.by_subject.find((s) => s.subject === subject);
+            return (
+              <div
+                key={subject}
+                className="relative aspect-square bg-zinc-100"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(45deg,#e4e4e7 25%,transparent 25%),linear-gradient(-45deg,#e4e4e7 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e4e4e7 75%),linear-gradient(-45deg,transparent 75%,#e4e4e7 75%)",
+                  backgroundSize: "16px 16px",
+                  backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
+                }}
+              >
+                <FramePlayer
+                  frames={status?.active_frames ?? []}
+                  fallbackUrl={status?.preview_image?.image_url ?? null}
+                  alt={`${exercise.display_name} · ${SUBJECT_LABEL[subject]}`}
+                  width={200}
+                />
+                <span className="absolute bottom-1 left-1 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                  {SUBJECT_LABEL[subject]}
+                </span>
+              </div>
+            );
+          })}
         </div>
         <div className="space-y-1 p-3">
           <div className="flex items-start justify-between gap-2">
@@ -70,10 +93,8 @@ export function ExerciseImageCard({
           </div>
           <div className="truncate text-[11px] text-zinc-500">
             {exercise.primary_muscle_group?.name ?? "—"} · {exercise.equipment?.name ?? "—"}
-            {exercise.active_count > 0
-              ? ` · ${exercise.active_count}/${exercise.frame_positions.length}`
-              : ""}
           </div>
+          <div className="truncate text-[11px] text-zinc-500">{activeSummary}</div>
         </div>
       </Link>
     </div>

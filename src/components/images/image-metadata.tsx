@@ -61,7 +61,7 @@ export function ImageMetadataPanel({
         ? `${image.position} · ${framePositionLabel(image.position)} (active)`
         : `Inactive${target != null ? ` · generated for ${framePositionLabel(target)}` : ""}`,
     ],
-    ["Subject", p.subject ?? "—"],
+    ["Subject", image.subject || p.subject || "—"],
     ["Method", generationMethod(image)],
     ["Model", image.model || "—"],
     [
