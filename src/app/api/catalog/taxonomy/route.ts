@@ -1,18 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdminToken, requireStaffToken } from "@/lib/api-auth";
-import {
-  bindCatalogStaffToken,
-  fetchTaxonomyAdmin,
-  manageRelation,
-  updateLookup,
-  upsertLookup,
-} from "@/lib/catalog";
+import { fetchTaxonomy, manageRelation, updateLookup, upsertLookup } from "@/lib/catalog";
 
 export async function GET(request: Request) {
   try {
     const token = requireStaffToken(request);
-    bindCatalogStaffToken(token);
-    const data = await fetchTaxonomyAdmin();
+    const data = await fetchTaxonomy(token);
     return NextResponse.json({ ok: true, data });
   } catch (error) {
     if (error instanceof Response) return error;
@@ -29,8 +22,7 @@ export async function POST(request: Request) {
 
     if (kind === "relation" && action === "unlink") {
       const token = requireAdminToken(request);
-      bindCatalogStaffToken(token);
-      await manageRelation({
+      await manageRelation(token, {
         action: body.action,
         kind: body.relationKind ?? body.relation_kind,
         muscle_group_code: body.muscle_group_code,
@@ -41,10 +33,9 @@ export async function POST(request: Request) {
     }
 
     const token = requireStaffToken(request);
-    bindCatalogStaffToken(token);
 
     if (kind === "relation") {
-      await manageRelation({
+      await manageRelation(token, {
         action: body.action,
         kind: body.relationKind ?? body.relation_kind,
         muscle_group_code: body.muscle_group_code,
@@ -54,10 +45,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
     if (kind === "update") {
-      const row = await updateLookup(body);
+      const row = await updateLookup(token, body);
       return NextResponse.json({ ok: true, row });
     }
-    const row = await upsertLookup(body);
+    const row = await upsertLookup(token, body);
     return NextResponse.json({ ok: true, row });
   } catch (error) {
     if (error instanceof Response) return error;

@@ -1,22 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
-import {
-  bindCatalogStaffToken,
-  composeXcatExercise,
-  listXcatLibraryAdmin,
-  nextXcatExoId,
-} from "@/lib/catalog";
+import { composeExercise, listLibrary, nextExoId, type ExercisePayload } from "@/lib/catalog";
 
 export async function GET(request: Request) {
   try {
     const token = requireStaffToken(request);
-    bindCatalogStaffToken(token);
     const { searchParams } = new URL(request.url);
     if (searchParams.get("nextExoId") === "1") {
-      const exo_id = await nextXcatExoId();
+      const exo_id = await nextExoId(token);
       return NextResponse.json({ ok: true, exo_id });
     }
-    const data = await listXcatLibraryAdmin();
+    const data = await listLibrary(token);
     return NextResponse.json({ ok: true, data });
   } catch (error) {
     if (error instanceof Response) return error;
@@ -28,9 +22,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
-    bindCatalogStaffToken(token);
-    const body = await request.json();
-    const exercise = await composeXcatExercise(body);
+    const body = (await request.json()) as ExercisePayload;
+    const exercise = await composeExercise(token, body);
     return NextResponse.json({ ok: true, exercise });
   } catch (error) {
     if (error instanceof Response) return error;
