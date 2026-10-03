@@ -10,6 +10,7 @@ import {
   ExternalLink,
   ImageOff,
   Loader2,
+  Move,
   Pencil,
   SlidersHorizontal,
   Trash2,
@@ -28,6 +29,7 @@ import { useElapsedSeconds } from "@/components/images/generation-progress";
 import { FramePlayer } from "@/components/images/frame-player";
 import { CHECKER_STYLE } from "@/components/images/checker";
 import { ImageMetadataPanel } from "@/components/images/image-metadata";
+import { FrameAlignEditor } from "@/components/images/frame-align-editor";
 import {
   NO_OVERRIDES,
   PromptOverridesPanel,
@@ -172,13 +174,17 @@ function FrameMatrix({
   framePositions,
   selectedId,
   generating,
+  busy,
   onSelect,
+  onAlign,
 }: {
   images: ExerciseImage[];
   framePositions: number[];
   selectedId: string | null;
   generating: Map<string, { startedAt?: number }>;
+  busy: boolean;
   onSelect: (id: string) => void;
+  onAlign: (subject: Subject) => void;
 }) {
   const frames = FRAME_POSITIONS.filter((frame) => framePositions.includes(frame.id));
   const columns = { gridTemplateColumns: `3.5rem repeat(${frames.length + 1}, minmax(0, 1fr))` };
@@ -206,10 +212,14 @@ function FrameMatrix({
               active.set(img.position, img);
             }
           }
-          const loop = frames
+          const activeList = frames
             .map((frame) => active.get(frame.id))
-            .filter((img): img is ExerciseImage => Boolean(img))
-            .map((img) => ({ position: img.position as number, image_url: img.image_url }));
+            .filter((img): img is ExerciseImage => Boolean(img));
+          const loop = activeList.map((img) => ({
+            position: img.position as number,
+            image_url: img.image_url,
+          }));
+          const canAlign = activeList.length >= 2;
 
           return (
             <div key={subject} className="contents">
@@ -242,6 +252,21 @@ function FrameMatrix({
                   alt={`Preview · ${SUBJECT_LABEL[subject]}`}
                   width={400}
                 />
+                <button
+                  type="button"
+                  disabled={busy || !canAlign}
+                  onClick={() => onAlign(subject)}
+                  title={
+                    canAlign
+                      ? "Nudge frames so the person lines up in the GIF"
+                      : "Need at least two active frames"
+                  }
+                  aria-label={`Align ${SUBJECT_LABEL[subject]} frames`}
+                  className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 shadow-xs transition hover:bg-white hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40"
+                >
+                  <Move className="h-3 w-3" />
+                  Align
+                </button>
               </div>
             </div>
           );
@@ -506,6 +531,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       : selectedChoice;
   const [busy, setBusy] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [alignSubject, setAlignSubject] = useState<Subject | null>(null);
   const [showOverrides, setShowOverrides] = useState(false);
   // Per-run edits belong to one exercise; they reset when navigating to another.
   const [overridesFor, setOverridesFor] = useState<{ exoId: number; value: PromptOverrides }>({
@@ -656,8 +682,35 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
+  async function saveAlign(
+    subject: Subject,
+    adjustments: { imageId: string; dx: number; dy: number; scale: number }[],
+  ) {
+    if (!styleId) return;
+    setBusy(true);
+    try {
+      const result = (await staffFetch("/api/images/align", {
+        method: "POST",
+        body: JSON.stringify({ exoId, styleId, subject, adjustments }),
+      })) as { images: ExerciseImage[] };
+      success(
+        result.images.length === 1
+          ? `Aligned ${framePositionLabel(result.images[0].position)}`
+          : `Aligned ${result.images.length} frames`,
+      );
+      setAlignSubject(null);
+      if (result.images[0]) setSelectedId(result.images[0].id);
+      await refresh();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Align failed");
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
-    if (editOpen) return;
+    if (editOpen || alignSubject) return;
     function onKey(event: KeyboardEvent) {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
         return;
@@ -697,7 +750,17 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exercise, selectedId, selected, exoId, busy, editOpen, historyImages, framePositions]);
+  }, [
+    exercise,
+    selectedId,
+    selected,
+    exoId,
+    busy,
+    editOpen,
+    alignSubject,
+    historyImages,
+    framePositions,
+  ]);
 
   const header = (
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -909,7 +972,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             framePositions={framePositions}
             selectedId={selectedId}
             generating={generating}
+            busy={busy}
             onSelect={setSelectedId}
+            onAlign={setAlignSubject}
           />
           <HistoryStrip
             images={historyImages}
@@ -954,6 +1019,23 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           void refresh();
         }}
       />
+
+      {alignSubject && (
+        <FrameAlignEditor
+          open
+          subject={alignSubject}
+          frames={exercise.images.filter(
+            (img) =>
+              img.subject === alignSubject &&
+              img.active &&
+              img.position != null &&
+              framePositions.includes(img.position),
+          )}
+          busy={busy}
+          onClose={() => setAlignSubject(null)}
+          onSave={(adjustments) => saveAlign(alignSubject, adjustments)}
+        />
+      )}
     </div>
   );
 }
