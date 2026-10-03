@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { mutate } from "swr";
-import { Button, Input, Skeleton } from "@/components/ui/primitives";
+import { Search } from "lucide-react";
+import { Input, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
-import { ExerciseImageCard } from "@/components/images/exercise-image-card";
+import { ExerciseImageCard, STATUS_DOT } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
 import { StyleSelector, runPositionsFor } from "@/components/images/position-selector";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
@@ -24,8 +25,58 @@ import type {
   ImageStyle,
   Subject,
 } from "@/lib/images/types";
+import { cn } from "@/lib/utils";
 
 type ListResponse = { exercises: ExerciseImageBoardItem[]; count: number };
+type StatusFilter = "all" | ExerciseImageBoardItem["status"];
+
+const STATUS_FILTERS: [StatusFilter, string][] = [
+  ["all", "All"],
+  ["empty", "Empty"],
+  ["partial", "Partial"],
+  ["complete", "Complete"],
+  ["inactive_only", "Inactive"],
+];
+
+const BOARD_GRID = "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6";
+
+function EmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-12 text-center text-sm text-zinc-500">
+      {children}
+    </div>
+  );
+}
+
+function FilterSelect({
+  value,
+  onChange,
+  allLabel,
+  children: options,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  allLabel: string;
+  children: [string, string][];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(
+        "h-8 rounded-md border bg-white px-2 text-xs text-zinc-900 hover:border-zinc-400 focus:border-zinc-900 focus:outline-none",
+        value === "all" ? "border-zinc-300" : "border-zinc-900",
+      )}
+    >
+      <option value="all">{allLabel}</option>
+      {options.map(([id, name]) => (
+        <option key={id} value={id}>
+          {name}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function subjectHasStart(exercise: ExerciseImageBoardItem, subject: Subject): boolean {
   return (
@@ -55,7 +106,7 @@ export function ImageBoard() {
   // Ephemeral: applies to the next queue runs on this page only.
   const [systemPromptId, setSystemPromptId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
   const [muscle, setMuscle] = useState("all");
   const [equipment, setEquipment] = useState("all");
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -133,10 +184,6 @@ export function ImageBoard() {
 
   function selectFiltered() {
     setSelected(new Set(filtered.map((ex) => ex.exo_id)));
-  }
-
-  function selectEmpty() {
-    setSelected(new Set(filtered.filter((ex) => ex.status === "empty").map((ex) => ex.exo_id)));
   }
 
   async function generateStep(
@@ -219,15 +266,13 @@ export function ImageBoard() {
     }
   }
 
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((ex) => selected.has(ex.exo_id));
+
   return (
     <div className="space-y-4 pb-28">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-zinc-900">Images</h1>
-          <p className="text-sm text-zinc-500">
-            Generate frames, assign positions 0/1/2, and activate for GIF sequences.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Images</h1>
         <StyleSelector
           styles={styles}
           value={styleId}
@@ -236,71 +281,46 @@ export function ImageBoard() {
         />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ["all", `All (${counts.all})`],
-            ["empty", `Empty (${counts.empty})`],
-            ["partial", `Partial (${counts.partial})`],
-            ["complete", `Complete (${counts.complete})`],
-            ["inactive_only", `Inactive only (${counts.inactive_only})`],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setStatus(id)}
-            className={`rounded-full px-3 py-1 text-xs font-medium ${
-              status === id
-                ? "bg-zinc-900 text-white"
-                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid gap-2 md:grid-cols-4">
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or exo id…"
-        />
-        <select
-          className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
-          value={muscle}
-          onChange={(e) => setMuscle(e.target.value)}
-        >
-          <option value="all">All muscle groups</option>
-          {muscleOptions.map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-lg bg-zinc-100 p-0.5" role="tablist">
+          {STATUS_FILTERS.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={status === id}
+              onClick={() => setStatus(id)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
+                status === id
+                  ? "bg-white text-zinc-900 shadow-xs"
+                  : "text-zinc-600 hover:text-zinc-900",
+              )}
+            >
+              {id !== "all" && (
+                <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[id])} />
+              )}
+              {label}
+              <span className="tabular-nums text-zinc-400">{counts[id]}</span>
+            </button>
           ))}
-        </select>
-        <select
-          className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
-          value={equipment}
-          onChange={(e) => setEquipment(e.target.value)}
-        >
-          <option value="all">All equipment</option>
-          {equipmentOptions.map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" onClick={selectFiltered}>
-            Select filtered
-          </Button>
-          <Button type="button" variant="secondary" onClick={selectEmpty}>
-            Empty only
-          </Button>
-          <Button type="button" variant="ghost" onClick={() => setSelected(new Set())}>
-            Clear
-          </Button>
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name or #id"
+              className="h-8 w-56 py-1 pl-8 text-xs"
+            />
+          </div>
+          <FilterSelect value={muscle} onChange={setMuscle} allLabel="All muscles">
+            {muscleOptions}
+          </FilterSelect>
+          <FilterSelect value={equipment} onChange={setEquipment} allLabel="All equipment">
+            {equipmentOptions}
+          </FilterSelect>
         </div>
       </div>
 
@@ -310,37 +330,50 @@ export function ImageBoard() {
         </div>
       )}
 
-      {!styleId ? (
-        <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500">
-          Select a style to load the board.
+      {styleId && !isLoading && (
+        <div className="flex items-center justify-between text-xs text-zinc-500">
+          <span className="tabular-nums">
+            {filtered.length} exercise{filtered.length === 1 ? "" : "s"}
+          </span>
+          {filtered.length > 0 && (
+            <button
+              type="button"
+              onClick={allFilteredSelected ? () => setSelected(new Set()) : selectFiltered}
+              className="font-medium text-zinc-600 hover:text-zinc-900"
+            >
+              {allFilteredSelected ? "Deselect all" : "Select all"}
+            </button>
+          )}
         </div>
+      )}
+
+      {!styleId ? (
+        <EmptyState>Select a style to load the board.</EmptyState>
       ) : isLoading ? (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
-          {Array.from({ length: 16 }).map((_, i) => (
-            <Skeleton key={i} className="aspect-[2/2.4] rounded-lg" />
+        <div className={BOARD_GRID}>
+          {Array.from({ length: 12 }).map((_, i) => (
+            <Skeleton key={i} className="aspect-[2/1.3] rounded-xl" />
           ))}
         </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState>No exercises match these filters.</EmptyState>
       ) : (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
+        <div className={BOARD_GRID}>
           {filtered.map((ex) => (
             <ExerciseImageCard
               key={ex.id}
               exercise={ex}
               selected={selected.has(ex.exo_id)}
+              selecting={selected.size > 0}
               onToggle={() => toggle(ex.exo_id)}
             />
           ))}
         </div>
       )}
 
-      {!isLoading && styleId && filtered.length === 0 && (
-        <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500">
-          No exercises match these filters.
-        </div>
-      )}
-
       <GenerationQueueBar
         selectedCount={selected.size}
+        onClearSelection={() => setSelected(new Set())}
         plannedImages={plannedImages}
         withoutStart={withoutStart}
         frameCount={frameCount}

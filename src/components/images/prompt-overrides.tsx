@@ -24,26 +24,13 @@ export function countOverrides(overrides: PromptOverrides, positions: number[]):
 
 /** Explains which Start frame Mid/End will be drawn from; `blocking` when there is none. */
 function startContextNote(newStart: boolean, hasActiveStart: boolean) {
-  const keeps = "same character, camera and scale; subject follows the Start";
   if (newStart) {
-    return {
-      title: "Mid/End edit the new Start",
-      detail: `Start is generated first; Mid/End are then drawn by editing it (${keeps}).`,
-      blocking: false,
-    };
+    return { title: "Mid/End will edit the new Start", blocking: false };
   }
   if (hasActiveStart) {
-    return {
-      title: "Mid/End edit this Start",
-      detail: `Drawn by editing the active Start (${keeps}). Describe the change in the position prompt, e.g. alternate arms and legs.`,
-      blocking: false,
-    };
+    return { title: "Mid/End edit this Start", blocking: false };
   }
-  return {
-    title: "No active Start frame",
-    detail: "Mid/End are always drawn from the Start. Generate Start first.",
-    blocking: true,
-  };
+  return { title: "No active Start — generate Start first", blocking: true };
 }
 
 /** Ephemeral choice of system prompt; empty value = the one selected in settings. */
@@ -177,19 +164,16 @@ export function PromptOverridesPanel({
   const edits = countOverrides(value, positions);
   return (
     <div className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="text-sm font-medium text-zinc-800">Prompts for this generation</div>
-          <p className="text-xs text-zinc-500">
-            Changes apply only to the next generations on this page and are never saved.
-            Placeholders {PROMPT_PLACEHOLDERS.join(", ")} are filled in when generating.
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium text-zinc-800">
+          Prompts
+          <span className="ml-2 text-xs font-normal text-zinc-400">this run only</span>
         </div>
         <button
           type="button"
           disabled={disabled || edits === 0}
           onClick={() => onChange(NO_OVERRIDES)}
-          title="Restores the settings system prompt and all texts"
+          title="Reset to style defaults"
           className="text-xs text-zinc-500 underline hover:text-zinc-800 disabled:no-underline disabled:opacity-40"
         >
           Reset all
@@ -198,43 +182,33 @@ export function PromptOverridesPanel({
       {showStartContext && (
         <div
           className={cn(
-            "flex items-start gap-3 rounded-lg border p-3 text-xs",
-            note.blocking ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-zinc-50",
+            "flex items-center gap-3 rounded-lg border px-3 py-2 text-xs",
+            note.blocking ? "border-amber-200 bg-amber-50 text-amber-800" : "border-zinc-200 bg-zinc-50 text-zinc-600",
           )}
         >
           {startThumbUrl && !newStart && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={startThumbUrl}
-              alt="Active Start frame"
-              className="h-16 w-16 shrink-0 rounded border border-zinc-200 bg-white object-contain"
+              alt="Active Start"
+              className="h-10 w-10 shrink-0 rounded border border-zinc-200 bg-white object-contain"
             />
           )}
-          <div className="space-y-0.5">
-            <div className="font-medium text-zinc-800">{note.title}</div>
-            <p className="text-zinc-500">{note.detail}</p>
-          </div>
+          <span className="font-medium">{note.title}</span>
         </div>
       )}
       {systemPrompts.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <SystemPromptSelect
-            prompts={systemPrompts}
-            settingsPromptId={settingsSystemPromptId}
-            value={value.systemPromptId}
-            disabled={disabled}
-            // A text edit belongs to the previous prompt, so switching prompts drops it.
-            onChange={(systemPromptId) => onChange({ ...value, systemPromptId, system: undefined })}
-          />
-          {value.systemPromptId && (
-            <span className="text-[11px] text-zinc-500">
-              Only for this generation; settings unchanged.
-            </span>
-          )}
-        </div>
+        <SystemPromptSelect
+          prompts={systemPrompts}
+          settingsPromptId={settingsSystemPromptId}
+          value={value.systemPromptId}
+          disabled={disabled}
+          // A text edit belongs to the previous prompt, so switching prompts drops it.
+          onChange={(systemPromptId) => onChange({ ...value, systemPromptId, system: undefined })}
+        />
       )}
       <OverrideField
-        label="System (style)"
+        label="System"
         template={systemTemplate}
         value={value.system}
         disabled={disabled}
@@ -244,7 +218,7 @@ export function PromptOverridesPanel({
         {positions.map((position) => (
           <OverrideField
             key={position}
-            label={`Position ${position} · ${framePositionLabel(position)}`}
+            label={framePositionLabel(position)}
             template={positionTemplates[position] ?? ""}
             value={value.positions[position]}
             disabled={disabled}
@@ -254,6 +228,9 @@ export function PromptOverridesPanel({
           />
         ))}
       </div>
+      <p className="text-[11px] text-zinc-400">
+        Placeholders: {PROMPT_PLACEHOLDERS.join(", ")}
+      </p>
     </div>
   );
 }

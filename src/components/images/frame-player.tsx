@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { ImageOff } from "lucide-react";
 import { frameHoldMs, gifPlaybackOrder, imageThumbUrl } from "@/lib/images/urls";
 import { framePositionLabel } from "@/lib/images/types";
 
@@ -116,7 +117,7 @@ export function FramePlayer({
             />
           ))}
           {showLabel && (
-            <span className="absolute bottom-1 right-1 rounded bg-black/50 px-1 text-[10px] text-white">
+            <span className="absolute bottom-1.5 right-1.5 rounded bg-black/55 px-1.5 py-px text-[10px] font-medium text-white">
               {framePositionLabel(currentPosition)}
             </span>
           )}
@@ -125,8 +126,8 @@ export function FramePlayer({
         // eslint-disable-next-line @next/next/no-img-element
         <img src={staticSrc} alt={alt} loading="lazy" className="h-full w-full object-contain" />
       ) : (
-        <div className="flex h-full items-center justify-center text-xs text-zinc-400">
-          No image
+        <div className="flex h-full items-center justify-center text-zinc-300" aria-label="No image">
+          <ImageOff className="h-5 w-5" strokeWidth={1.5} />
         </div>
       )}
     </div>
