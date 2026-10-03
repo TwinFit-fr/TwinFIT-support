@@ -128,12 +128,12 @@ export function CommandMenu({
         perform: () => router.push("/images/prompts"),
       },
       {
-        id: "nav-images-settings",
-        title: "Image Settings",
-        subtitle: "Model, size, background and format for generation",
+        id: "nav-images-styles",
+        title: "Image Styles",
+        subtitle: "Model, references and per-style generation params",
         category: "Navigation",
         icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
-        perform: () => router.push("/images/settings"),
+        perform: () => router.push("/images/styles"),
       },
       {
         id: "nav-lab-stats",

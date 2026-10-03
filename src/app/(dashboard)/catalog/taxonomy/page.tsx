@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { TaxonomyAnatomyPanel } from "@/components/catalog/taxonomy/taxonomy-anatomy-panel";
+import { TaxonomyGroupMovementsPanel } from "@/components/catalog/taxonomy/taxonomy-group-movements-panel";
 import { TaxonomyLookupTable } from "@/components/catalog/taxonomy/taxonomy-lookup-table";
 import { TaxonomySubnav } from "@/components/catalog/taxonomy/taxonomy-subnav";
 import type { LookupRowFull, TaxonomyData, TaxonomyTabId } from "@/components/catalog/taxonomy/types";
@@ -185,8 +186,8 @@ export default function CatalogTaxonomyPage() {
       <div>
         <h1 className="text-2xl font-semibold">Taxonomy</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Add entry creates a new lookup code. In Anatomy, select pool items and click Save
-          (or Cancel to clear selection). Use table tabs to edit names and sort order.
+          Anatomy links muscles to groups. Group movements links movement types and edits
+          pair display names. Other tabs edit lookup codes, names and sort order.
         </p>
       </div>
 
@@ -216,17 +217,28 @@ export default function CatalogTaxonomyPage() {
           locale={locale}
           groups={data.catalog_muscle_groups}
           muscles={data.catalog_muscles}
-          movements={data.catalog_movement_types}
-          onAddGroup={(code) =>
-            addEntry("catalog_muscle_groups", code, "")
-          }
+          onAddGroup={(code) => addEntry("catalog_muscle_groups", code, "")}
           onApplyRelations={applyRelations}
-          onSaveGroupMovementLabels={saveGroupMovementLabels}
-          onAddPoolEntry={async (kind, code) => {
-            const table =
-              kind === "muscle" ? "catalog_muscles" : "catalog_movement_types";
-            await addEntry(table, code, "");
+          onAddMuscle={async (code) => {
+            await addEntry("catalog_muscles", code, "");
           }}
+        />
+      )}
+
+      {data && tab === "group_movements" && (
+        <TaxonomyGroupMovementsPanel
+          locale={locale}
+          groups={data.catalog_muscle_groups}
+          movements={data.catalog_movement_types}
+          onLink={async (groupCode, movementCode) => {
+            await postRelation(groupCode, "movement", movementCode, "link");
+            setMessage(`Linked ${groupCode} + ${movementCode}`);
+          }}
+          onUnlink={async (groupCode, movementCode) => {
+            await postRelation(groupCode, "movement", movementCode, "unlink");
+            setMessage(`Unlinked ${groupCode} + ${movementCode}`);
+          }}
+          onSaveLabels={saveGroupMovementLabels}
         />
       )}
 

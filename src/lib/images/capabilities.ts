@@ -101,11 +101,12 @@ export const INPUT_FIDELITIES = [
 ] as const;
 
 export const SUBJECT_OPTIONS = [
-  { id: "random", label: "Random" },
   { id: "man", label: "Man" },
   { id: "woman", label: "Woman" },
 ] as const;
 
+/** Fixed board/workspace concurrency (no UI setting). */
+export const DEFAULT_MAX_CONCURRENCY = 3;
 export const MAX_CONCURRENCY_LIMIT = 6;
 
 export const MODERATIONS = [
@@ -128,8 +129,6 @@ export const DEFAULT_GENERATION_PARAMS: GenerationParams = {
   moderation: "auto",
   background_color: "#F2E4CE",
   input_fidelity: "high",
-  max_concurrency: 3,
-  logo_in_exercises: false,
 };
 
 function roundTo16(value: number): number {
@@ -191,12 +190,12 @@ export function validateGenerationParams(params: GenerationParams): string[] {
   if (!INPUT_FIDELITIES.some((f) => f.id === params.input_fidelity)) {
     issues.push("Reference fidelity must be high or low.");
   }
-  if (
-    !Number.isInteger(params.max_concurrency) ||
-    params.max_concurrency < 1 ||
-    params.max_concurrency > MAX_CONCURRENCY_LIMIT
-  ) {
-    issues.push(`Concurrent requests must be between 1 and ${MAX_CONCURRENCY_LIMIT}.`);
-  }
   return issues;
+}
+
+export function validateMaxConcurrency(value: number): string | null {
+  if (!Number.isInteger(value) || value < 1 || value > MAX_CONCURRENCY_LIMIT) {
+    return `Concurrent requests must be between 1 and ${MAX_CONCURRENCY_LIMIT}.`;
+  }
+  return null;
 }

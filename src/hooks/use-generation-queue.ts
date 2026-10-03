@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FRAME_POSITIONS, SUBJECTS } from "@/lib/images/types";
-import type { FrameCountChoice, Subject, SubjectChoice } from "@/lib/images/types";
+import type { FrameCountChoice, Subject } from "@/lib/images/types";
 
 export type StepStatus = "waiting" | "processing" | "done" | "error" | "cancelled";
 
@@ -32,10 +32,6 @@ type GenerateStepFn = (
   subject: Subject,
   guideImageId?: string,
 ) => Promise<string>;
-
-function resolveSubject(choice: SubjectChoice): Subject {
-  return choice === "random" ? SUBJECTS[Math.floor(Math.random() * SUBJECTS.length)] : choice;
-}
 
 function itemStatus(steps: QueueStep[]): StepStatus {
   if (steps.some((s) => s.status === "processing")) return "processing";
@@ -69,8 +65,8 @@ function createPrioritySemaphore(limit: number) {
 }
 
 /**
- * Runs exercises × positions with at most `maxConcurrency` requests in flight.
- * Per exercise, Start runs first and Mid/End follow in parallel as edits of it.
+ * Runs exercises × subjects × positions with at most `maxConcurrency` requests in flight.
+ * Per (exercise, subject), Start runs first and Mid/End follow in parallel as edits of it.
  */
 export function useGenerationQueue() {
   const [items, setItems] = useState<QueueItem[]>([]);
@@ -101,15 +97,15 @@ export function useGenerationQueue() {
 
   const start = useCallback(
     async (options: {
-      /** `framePositions`: positions the exercise uses ([0,2] for two-frame exercises). */
       exercises: { exoId: number; name: string; framePositions: number[] }[];
       positions: number[];
-      subject: SubjectChoice;
+      subjects: Subject[];
       maxConcurrency: number;
       generateStep: GenerateStepFn;
     }) => {
-      const { positions, subject, maxConcurrency, generateStep } = options;
+      const { positions, subjects, maxConcurrency, generateStep } = options;
       if (running) return;
+      const subjectList = subjects.length ? subjects : [...SUBJECTS];
       const exercises = options.exercises
         .map((exercise) => ({
           ...exercise,
@@ -118,19 +114,26 @@ export function useGenerationQueue() {
         .filter((exercise) => exercise.positions.length > 0);
       if (!exercises.length) return;
       cancelledRef.current = false;
-      const queue: QueueItem[] = exercises.map((exercise, i) => ({
-        exoId: exercise.exoId,
-        name: exercise.name,
-        ordinal: i + 1,
-        subject: resolveSubject(subject),
-        status: "waiting",
-        steps: exercise.positions.map((position) => ({ position, status: "waiting" })),
-      }));
+
+      const queue: QueueItem[] = [];
+      let ordinal = 0;
+      for (const exercise of exercises) {
+        for (const subject of subjectList) {
+          ordinal += 1;
+          queue.push({
+            exoId: exercise.exoId,
+            name: exercise.name,
+            ordinal,
+            subject,
+            status: "waiting",
+            steps: exercise.positions.map((position) => ({ position, status: "waiting" })),
+          });
+        }
+      }
       setItems(queue);
       setRunning(true);
 
       const slots = createPrioritySemaphore(maxConcurrency);
-      /** Resolves with the new image id, or null when the frame was not generated. */
       const runStep = async (
         index: number,
         stepIndex: number,
@@ -138,7 +141,6 @@ export function useGenerationQueue() {
       ): Promise<string | null> => {
         const item = queue[index];
         const position = item.steps[stepIndex].position;
-        // Earlier exercises first, and within one exercise Start before Mid/End.
         await slots.acquire(item.ordinal * 10 + position);
         try {
           if (cancelledRef.current) return null;
@@ -157,10 +159,7 @@ export function useGenerationQueue() {
         }
       };
 
-      // Mid/End are edits of this run's Start, so Start must finish first; if it fails they are
-      // skipped rather than drawn from an older Start. Without Start in the run, the server
-      // uses the exercise's active Start.
-      const runExercise = async (item: QueueItem, index: number) => {
+      const runExerciseSubject = async (item: QueueItem, index: number) => {
         const startIndex = item.steps.findIndex((s) => s.position === 0);
         let startImageId: string | undefined;
         if (startIndex >= 0) {
@@ -182,7 +181,7 @@ export function useGenerationQueue() {
         );
       };
 
-      await Promise.all(queue.map(runExercise));
+      await Promise.all(queue.map(runExerciseSubject));
       setRunning(false);
     },
     [running, patchStep],
@@ -201,8 +200,6 @@ export function useGenerationQueue() {
   };
 }
 
-// Same-tab writes notify through `listeners`; other tabs through the "storage" event.
-// `written` keeps this tab's latest values even when localStorage is unavailable.
 const listeners = new Set<() => void>();
 const written = new Map<string, string>();
 
@@ -228,10 +225,6 @@ function readStorage(key: string): string | null {
   }
 }
 
-/**
- * A UI preference remembered per browser. The server snapshot is the fallback, so SSR and
- * hydration match. `fallback` and `parse` must be stable (module-level) values.
- */
 function useStoredChoice<T>(key: string, fallback: T, parse: (raw: unknown) => T | null) {
   const raw = useSyncExternalStore(
     subscribeStorage,
@@ -243,7 +236,6 @@ function useStoredChoice<T>(key: string, fallback: T, parse: (raw: unknown) => T
     try {
       return parse(JSON.parse(raw)) ?? fallback;
     } catch {
-      // Corrupt value: keep the fallback.
       return fallback;
     }
   }, [raw, fallback, parse]);
@@ -254,7 +246,7 @@ function useStoredChoice<T>(key: string, fallback: T, parse: (raw: unknown) => T
       try {
         localStorage.setItem(key, json);
       } catch {
-        // Preference only; this tab still remembers it through `written`.
+        /* preference only */
       }
       listeners.forEach((notify) => notify());
     },
@@ -264,6 +256,7 @@ function useStoredChoice<T>(key: string, fallback: T, parse: (raw: unknown) => T
 }
 
 const ALL_POSITIONS = FRAME_POSITIONS.map((p) => p.id as number);
+const ALL_SUBJECTS = [...SUBJECTS];
 
 function parsePositions(raw: unknown): number[] | null {
   if (!Array.isArray(raw)) return null;
@@ -271,15 +264,20 @@ function parsePositions(raw: unknown): number[] | null {
   return valid.length ? valid : null;
 }
 
-function parseSubject(raw: unknown): SubjectChoice | null {
-  return raw === "man" || raw === "woman" || raw === "random" ? raw : null;
+function parseSubjects(raw: unknown): Subject[] | null {
+  if (!Array.isArray(raw)) return null;
+  const valid = ALL_SUBJECTS.filter((s) => raw.includes(s));
+  return valid.length ? valid : null;
 }
 
 function parseFrameCount(raw: unknown): FrameCountChoice | null {
   return raw === "exercise" || raw === 2 || raw === 3 ? raw : null;
 }
 
-const DEFAULT_SUBJECT: SubjectChoice = "random";
+function parseStyleId(raw: unknown): string | null {
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
 const DEFAULT_FRAME_COUNT: FrameCountChoice = "exercise";
 
 export function usePositionSelection() {
@@ -295,10 +293,30 @@ export function usePositionSelection() {
   return [positions, setSorted] as const;
 }
 
-export function useSubjectChoice() {
-  return useStoredChoice("twinfit.images.subject", DEFAULT_SUBJECT, parseSubject);
+/** Subjects to generate for; default is both man and woman. */
+export function useSubjectSelection() {
+  const [subjects, setSubjects] = useStoredChoice(
+    "twinfit.images.subjects",
+    ALL_SUBJECTS,
+    parseSubjects,
+  );
+  const setSorted = useCallback(
+    (next: Subject[]) => setSubjects(ALL_SUBJECTS.filter((s) => next.includes(s))),
+    [setSubjects],
+  );
+  return [subjects, setSorted] as const;
 }
 
 export function useFrameCountChoice() {
   return useStoredChoice("twinfit.images.frame-count", DEFAULT_FRAME_COUNT, parseFrameCount);
+}
+
+/** Persisted style id; pass the workspace default as fallback. */
+export function useStyleChoice(fallbackStyleId: string | null) {
+  const [stored, setStored] = useStoredChoice<string | null>(
+    "twinfit.images.styleId",
+    null,
+    parseStyleId,
+  );
+  return [stored ?? fallbackStyleId, setStored] as const;
 }

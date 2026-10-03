@@ -1,5 +1,6 @@
-export type ImagePromptKind = "system" | "position";
+export type ImagePromptKind = "system" | "position" | "support";
 
+/** OpenAI generation params stored on a style (no logo / concurrency). */
 export type GenerationParams = {
   model: string;
   shape: string;
@@ -11,47 +12,61 @@ export type GenerationParams = {
   moderation: string;
   background_color: string;
   input_fidelity: string;
-  max_concurrency: number;
-  /** Also send the brand logo as input image when generating exercise frames. */
-  logo_in_exercises: boolean;
-  /** Brand logo in the exercise-images bucket; managed only by the logo endpoint. */
-  logo_file_id?: string | null;
 };
 
 export type Subject = "man" | "woman";
-export type SubjectChoice = Subject | "random";
 export const SUBJECTS: readonly Subject[] = ["man", "woman"];
+
 /** Frames per sequence chosen for a batch; "exercise" keeps each exercise's own setting. */
 export type FrameCountChoice = "exercise" | 2 | 3;
 
-export const POSITION_PROMPT_KEYS = ["start_prompt_id", "mid_prompt_id", "end_prompt_id"] as const;
-export const REFERENCE_KEYS = {
-  man: "man_reference_file_id",
-  woman: "woman_reference_file_id",
-} as const;
-
-export type ImageSettings = {
+export type ImageStyle = {
+  id: string;
+  code: string;
+  name: string;
+  published: boolean;
+  is_default: boolean;
   params: GenerationParams;
-  system_prompt_id: string | null;
-  start_prompt_id: string | null;
-  mid_prompt_id: string | null;
-  end_prompt_id: string | null;
-  man_reference_file_id: string | null;
-  woman_reference_file_id: string | null;
+  logo_file_id: string | null;
+  logo_in_exercises: boolean;
+  inserted_at: string;
+  updated_at: string;
+  updated_by: string | null;
+  characters: { subject: Subject; file_id: string }[];
+  supports: {
+    support_equipment_id: string;
+    file_id: string;
+    support_equipment: {
+      id: string;
+      code: string;
+      name: string;
+      description: string | null;
+      active: boolean;
+    } | null;
+  }[];
+};
+
+/** Workspace-level settings (singleton). */
+export type ImageSettings = {
+  max_concurrency: number;
   updated_at: string;
   updated_by: string | null;
 };
 
-export type SettingsSelection = Pick<
-  ImageSettings,
-  "system_prompt_id" | "start_prompt_id" | "mid_prompt_id" | "end_prompt_id"
->;
+/** The five prompt slots owned by a style. */
+export type StylePrompts = {
+  system: ImagePrompt;
+  start: ImagePrompt;
+  mid: ImagePrompt;
+  end: ImagePrompt;
+  support: ImagePrompt;
+};
 
-/** Snapshot stored on each generated image. */
+/** Snapshot stored on each generated image (subject lives on the row column). */
 export type GenerationSnapshot = Partial<GenerationParams> & {
   target_position?: number;
-  subject?: Subject;
   reference_file_id?: string | null;
+  support_reference_file_id?: string | null;
   guide_image_id?: string | null;
   logo_sent?: boolean;
   feet_shift_px?: number;
@@ -61,13 +76,15 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   position_prompt_id?: string | null;
   system_prompt_edited?: boolean;
   position_prompt_edited?: boolean;
+  /** Legacy rows may still carry subject in params until backfilled. */
+  subject?: Subject;
 };
 
 export type ImagePrompt = {
   id: string;
+  style_id: string;
   kind: ImagePromptKind;
   position: number | null;
-  name: string;
   content: string;
   inserted_at: string;
   updated_at: string;
@@ -75,7 +92,9 @@ export type ImagePrompt = {
 
 export type ExerciseImage = {
   id: string;
+  style_id: string;
   exo_id: number;
+  subject: Subject;
   file_id: string;
   image_url: string;
   position: number | null;
@@ -87,6 +106,15 @@ export type ExerciseImage = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type SubjectFrameStatus = {
+  subject: Subject;
+  active_count: number;
+  active_positions: number[];
+  active_frames: { position: number; image_url: string }[];
+  preview_image: ExerciseImage | null;
+  status: "complete" | "partial" | "inactive_only" | "empty";
 };
 
 export type ExerciseImageBoardItem = {
@@ -106,8 +134,10 @@ export type ExerciseImageBoardItem = {
   /** Positions this exercise's sequence uses: [0, 2] or [0, 1, 2]. */
   frame_positions: number[];
   preview_image: ExerciseImage | null;
+  by_subject: SubjectFrameStatus[];
   /** EXERCISE DETAILS block appended to generation prompts (may be empty). */
   prompt_details: string;
+  /** Complete only when every selected subject is complete for the style. */
   status: "complete" | "partial" | "inactive_only" | "empty";
 };
 
@@ -131,6 +161,18 @@ export function framePositionsFor(twoFrames: boolean): number[] {
   return FRAME_POSITIONS.map((p) => p.id as number).filter(
     (id) => !twoFrames || id !== MID_POSITION,
   );
+}
+
+/**
+ * Explicit exercise_options.two_frames wins. Otherwise empty exercises default to
+ * two frames (Start+End); exercises that already have images keep three-frame legacy.
+ */
+export function resolveTwoFrames(
+  stored: boolean | null | undefined,
+  hasImages: boolean,
+): boolean {
+  if (stored != null) return stored;
+  return !hasImages;
 }
 
 export function framePositionLabel(position: number | null | undefined): string {

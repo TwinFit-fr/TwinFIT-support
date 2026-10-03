@@ -30,13 +30,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     let nextActive = body.active ?? current.active;
     let nextPosition = body.position !== undefined ? body.position : current.position;
 
-    // Deactivate always clears position.
     if (body.active === false || (nextActive === false && body.position === null)) {
       nextActive = false;
       nextPosition = null;
     }
 
-    // Activate requires a position.
     if (nextActive && nextPosition == null) {
       return NextResponse.json(
         { error: "Active images require a position (0, 1, or 2)" },
@@ -47,7 +45,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (
       nextActive &&
       nextPosition === MID_POSITION &&
-      (await isTwoFrameExercise(token, current.exo_id))
+      (await isTwoFrameExercise(token, current.exo_id, current.style_id))
     ) {
       return NextResponse.json(
         { error: "This exercise uses two frames (Start + End); Mid cannot be active" },
@@ -56,7 +54,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     }
 
     if (nextActive && nextPosition != null) {
-      await clearActivePosition(token, current.exo_id, nextPosition, id);
+      await clearActivePosition(
+        token,
+        current.style_id,
+        current.exo_id,
+        current.subject,
+        nextPosition,
+        id,
+      );
     }
 
     const image = await updateExerciseImage(token, id, {

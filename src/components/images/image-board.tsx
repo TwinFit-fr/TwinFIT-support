@@ -6,37 +6,52 @@ import { Button, Input, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { ExerciseImageCard } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
+import { StyleSelector, runPositionsFor } from "@/components/images/position-selector";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   useFrameCountChoice,
   useGenerationQueue,
   usePositionSelection,
-  useSubjectChoice,
+  useStyleChoice,
+  useSubjectSelection,
 } from "@/hooks/use-generation-queue";
-import { runPositionsFor } from "@/components/images/position-selector";
+import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
 import { MID_POSITION, framePositionsFor } from "@/lib/images/types";
 import type {
   ExerciseImage,
   ExerciseImageBoardItem,
   ImagePrompt,
-  ImageSettings,
+  ImageStyle,
   Subject,
 } from "@/lib/images/types";
 
 type ListResponse = { exercises: ExerciseImageBoardItem[]; count: number };
 
+function subjectHasStart(exercise: ExerciseImageBoardItem, subject: Subject): boolean {
+  return (
+    exercise.by_subject.find((s) => s.subject === subject)?.active_positions.includes(0) ?? false
+  );
+}
+
 export function ImageBoard() {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
-  const { data, isLoading, error } = useStaffSWR<ListResponse>("/api/images/exercises", {
+  const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
+  const styles = stylesData?.styles ?? [];
+  const defaultStyleId = styles.find((s) => s.is_default)?.id ?? null;
+  const [styleId, setStyleId] = useStyleChoice(defaultStyleId);
+  const listKey = styleId ? `/api/images/exercises?style=${styleId}` : null;
+  const { data, isLoading, error } = useStaffSWR<ListResponse>(listKey, {
     refreshInterval: 8000,
   });
   const [positions, setPositions] = usePositionSelection();
-  const [subject, setSubject] = useSubjectChoice();
+  const [subjects, setSubjects] = useSubjectSelection();
   const [frameCount, setFrameCount] = useFrameCountChoice();
   const [preparing, setPreparing] = useState(false);
-  const { data: settings } = useStaffSWR<ImageSettings>("/api/images/settings");
-  const { data: promptsData } = useStaffSWR<{ system: ImagePrompt[] }>("/api/images/prompts");
+  const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(
+    styleId ? `/api/images/prompts?styleId=${styleId}` : null,
+  );
+  const styleSystemPromptId = promptsData?.system?.id;
   // Ephemeral: applies to the next queue runs on this page only.
   const [systemPromptId, setSystemPromptId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
@@ -94,14 +109,16 @@ export function ImageBoard() {
   const batchPositions = frameCount === "exercise" ? undefined : framePositionsFor(frameCount === 2);
   const runPositions = batchPositions ? runPositionsFor(positions, batchPositions) : positions;
   const selectedExercises = filtered.filter((ex) => selected.has(ex.exo_id));
-  // Mid/End are edits of a Start: without Start in the run, exercises need an active one.
+  // Mid/End are edits of a Start: without Start in the run, every selected subject needs one.
   const runnableExercises = runPositions.includes(0)
     ? selectedExercises
-    : selectedExercises.filter((ex) => ex.active_positions.includes(0));
+    : selectedExercises.filter((ex) => subjects.every((s) => subjectHasStart(ex, s)));
   const withoutStart = selectedExercises.length - runnableExercises.length;
   const framePositionsOf = (ex: ExerciseImageBoardItem) => batchPositions ?? ex.frame_positions;
   const plannedImages = runnableExercises.reduce(
-    (sum, ex) => sum + framePositionsOf(ex).filter((p) => runPositions.includes(p)).length,
+    (sum, ex) =>
+      sum +
+      subjects.length * framePositionsOf(ex).filter((p) => runPositions.includes(p)).length,
     0,
   );
 
@@ -128,21 +145,31 @@ export function ImageBoard() {
     stepSubject: Subject,
     guideImageId?: string,
   ): Promise<string> {
+    if (!styleId) throw new Error("Select a style first");
     const { image } = (await staffFetch("/api/images/generate", {
       method: "POST",
-      body: JSON.stringify({ exoId, position, subject: stepSubject, systemPromptId, guideImageId }),
+      body: JSON.stringify({
+        exoId,
+        styleId,
+        position,
+        subject: stepSubject,
+        systemPromptId,
+        guideImageId,
+      }),
     })) as { image: ExerciseImage };
-    await mutate("/api/images/exercises");
+    if (listKey) await mutate(listKey);
     return image.id;
   }
 
   /** Saves the batch frame count on the exercises that differ; false if the user backs out. */
   async function applyFrameCount(exercises: ExerciseImageBoardItem[]): Promise<boolean> {
-    if (frameCount === "exercise") return true;
+    if (frameCount === "exercise" || !styleId) return true;
     const twoFrames = frameCount === 2;
     const changing = exercises.filter((ex) => ex.two_frames !== twoFrames);
     if (!changing.length) return true;
-    const losingMid = changing.filter((ex) => ex.active_positions.includes(MID_POSITION));
+    const losingMid = changing.filter((ex) =>
+      ex.by_subject.some((s) => s.active_positions.includes(MID_POSITION)),
+    );
     if (
       losingMid.length &&
       !window.confirm(
@@ -156,7 +183,7 @@ export function ImageBoard() {
       for (let i = 0; i < changing.length; i += 5) {
         await Promise.all(
           changing.slice(i, i + 5).map((ex) =>
-            staffFetch(`/api/images/exercises/${ex.exo_id}`, {
+            staffFetch(`/api/images/exercises/${ex.exo_id}?style=${styleId}`, {
               method: "PATCH",
               body: JSON.stringify({ two_frames: twoFrames }),
             }),
@@ -166,12 +193,12 @@ export function ImageBoard() {
       return true;
     } finally {
       setPreparing(false);
-      await mutate("/api/images/exercises");
+      if (listKey) await mutate(listKey);
     }
   }
 
   async function startQueue() {
-    if (!runnableExercises.length || preparing) return;
+    if (!runnableExercises.length || preparing || !styleId) return;
     try {
       if (!(await applyFrameCount(runnableExercises))) return;
       await queue.start({
@@ -181,12 +208,12 @@ export function ImageBoard() {
           framePositions: framePositionsOf(ex),
         })),
         positions: runPositions,
-        subject,
-        maxConcurrency: settings?.params.max_concurrency ?? 3,
+        subjects,
+        maxConcurrency: DEFAULT_MAX_CONCURRENCY,
         generateStep,
       });
       success(`${runnableExercises.length} exercise(s) processed`, "Queue finished");
-      await mutate("/api/images/exercises");
+      if (listKey) await mutate(listKey);
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Failed", "Queue error");
     }
@@ -201,6 +228,12 @@ export function ImageBoard() {
             Generate frames, assign positions 0/1/2, and activate for GIF sequences.
           </p>
         </div>
+        <StyleSelector
+          styles={styles}
+          value={styleId}
+          onChange={setStyleId}
+          disabled={queue.running || preparing}
+        />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -277,14 +310,18 @@ export function ImageBoard() {
         </div>
       )}
 
-      {isLoading ? (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} className="aspect-square rounded-xl" />
+      {!styleId ? (
+        <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500">
+          Select a style to load the board.
+        </div>
+      ) : isLoading ? (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
+          {Array.from({ length: 16 }).map((_, i) => (
+            <Skeleton key={i} className="aspect-[2/2.4] rounded-lg" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
           {filtered.map((ex) => (
             <ExerciseImageCard
               key={ex.id}
@@ -296,7 +333,7 @@ export function ImageBoard() {
         </div>
       )}
 
-      {!isLoading && filtered.length === 0 && (
+      {!isLoading && styleId && filtered.length === 0 && (
         <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500">
           No exercises match these filters.
         </div>
@@ -311,10 +348,10 @@ export function ImageBoard() {
         positions={positions}
         availablePositions={batchPositions}
         onPositionsChange={setPositions}
-        subject={subject}
-        onSubjectChange={setSubject}
-        systemPrompts={promptsData?.system ?? []}
-        settingsSystemPromptId={settings?.system_prompt_id}
+        subjects={subjects}
+        onSubjectsChange={setSubjects}
+        systemPrompts={promptsData?.system ? [promptsData.system] : []}
+        settingsSystemPromptId={styleSystemPromptId}
         systemPromptId={systemPromptId}
         onSystemPromptChange={setSystemPromptId}
         running={queue.running}

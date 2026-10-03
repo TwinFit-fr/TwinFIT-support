@@ -11,7 +11,8 @@ import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   useGenerationQueue,
   usePositionSelection,
-  useSubjectChoice,
+  useStyleChoice,
+  useSubjectSelection,
 } from "@/hooks/use-generation-queue";
 import { ExerciseComposeDialog } from "@/components/catalog/exercise-compose-dialog";
 import { GenerationProgress, processingSteps } from "@/components/images/generation-progress";
@@ -24,8 +25,10 @@ import {
   type PromptOverrides,
 } from "@/components/images/prompt-overrides";
 import { selectedPrompts } from "@/lib/images/prompt";
+import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
 import {
   PositionSelector,
+  StyleSelector,
   SubjectSelector,
   runPositionsFor,
 } from "@/components/images/position-selector";
@@ -33,36 +36,43 @@ import type {
   ExerciseImage,
   ExerciseImageDetail,
   ImagePrompt,
-  ImageSettings,
+  ImageStyle,
+  Subject,
 } from "@/lib/images/types";
 import {
   FRAME_POSITIONS,
   MID_POSITION,
+  SUBJECTS,
   framePositionLabel,
   isDeletableImage,
   targetPosition,
 } from "@/lib/images/types";
-import { gifPlaybackOrder, imageDisplayUrl, imageThumbUrl } from "@/lib/images/urls";
+import { gifPlaybackOrder, imageThumbUrl } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
+
+const SUBJECT_LABEL: Record<Subject, string> = {
+  man: "Man",
+  woman: "Woman",
+};
 
 function CheckerFrame({ src, alt, label }: { src: string | null; alt: string; label: string }) {
   return (
-    <div className="space-y-2">
-      <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</div>
+    <div className="min-w-0 space-y-1">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">{label}</div>
       <div
-        className="flex aspect-square items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100"
+        className="flex aspect-square max-h-[18vh] w-full items-center justify-center overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100"
         style={{
           backgroundImage:
             "linear-gradient(45deg,#e4e4e7 25%,transparent 25%),linear-gradient(-45deg,#e4e4e7 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e4e4e7 75%),linear-gradient(-45deg,transparent 75%,#e4e4e7 75%)",
-          backgroundSize: "18px 18px",
-          backgroundPosition: "0 0,0 9px,9px -9px,-9px 0",
+          backgroundSize: "12px 12px",
+          backgroundPosition: "0 0,0 6px,6px -6px,-6px 0",
         }}
       >
         {src ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={src} alt={alt} className="max-h-full max-w-full object-contain" />
         ) : (
-          <span className="text-sm text-zinc-400">Empty</span>
+          <span className="text-xs text-zinc-400">Empty</span>
         )}
       </div>
     </div>
@@ -78,9 +88,11 @@ function imageLabel(img: ExerciseImage): string {
 function SequencePreview({
   images,
   framePositions,
+  label,
 }: {
   images: ExerciseImage[];
   framePositions: number[];
+  label: string;
 }) {
   const frames = images
     .filter((img) => img.active && img.position != null && framePositions.includes(img.position))
@@ -89,23 +101,63 @@ function SequencePreview({
   const order = gifPlaybackOrder(frames.map((f) => f.position));
 
   return (
-    <div className="space-y-2 rounded-xl border border-zinc-200 bg-white p-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-medium text-zinc-800">GIF preview (0→1→2→1→0)</div>
-        <div className="text-xs text-zinc-500">
-          {frames.length}/{framePositions.length} active · loop {order.join("→") || "—"}
+    <div className="space-y-1.5 rounded-lg border border-zinc-200 bg-white p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-medium text-zinc-800">{label}</div>
+        <div className="text-[10px] text-zinc-500">
+          {frames.length}/{framePositions.length} · {order.join("→") || "—"}
         </div>
       </div>
       <div
-        className="aspect-square overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100"
+        className="mx-auto aspect-square max-h-[22vh] w-full max-w-[11rem] overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100"
         style={{
           backgroundImage:
             "linear-gradient(45deg,#e4e4e7 25%,transparent 25%),linear-gradient(-45deg,#e4e4e7 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e4e4e7 75%),linear-gradient(-45deg,transparent 75%,#e4e4e7 75%)",
-          backgroundSize: "18px 18px",
-          backgroundPosition: "0 0,0 9px,9px -9px,-9px 0",
+          backgroundSize: "12px 12px",
+          backgroundPosition: "0 0,0 6px,6px -6px,-6px 0",
         }}
       >
-        <FramePlayer frames={frames} fallbackUrl={null} alt="Sequence preview" width={800} />
+        <FramePlayer frames={frames} fallbackUrl={null} alt={label} width={220} />
+      </div>
+    </div>
+  );
+}
+
+function SubjectLane({
+  subject,
+  images,
+  framePositions,
+}: {
+  subject: Subject;
+  images: ExerciseImage[];
+  framePositions: number[];
+}) {
+  const subjectImages = images.filter((img) => img.subject === subject);
+  const activeByPosition = new Map<number, ExerciseImage>();
+  for (const img of subjectImages) {
+    if (img.active && img.position != null) activeByPosition.set(img.position, img);
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-2.5">
+      <div className="text-xs font-semibold text-zinc-900">{SUBJECT_LABEL[subject]}</div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+        {FRAME_POSITIONS.filter((frame) => framePositions.includes(frame.id)).map((frame) => {
+          const img = activeByPosition.get(frame.id) ?? null;
+          return (
+            <CheckerFrame
+              key={frame.id}
+              src={imageThumbUrl(img?.image_url, 200)}
+              alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
+              label={`${frame.id} · ${frame.label}`}
+            />
+          );
+        })}
+        <SequencePreview
+          images={subjectImages}
+          framePositions={framePositions}
+          label={`Preview · ${SUBJECT_LABEL[subject]}`}
+        />
       </div>
     </div>
   );
@@ -116,17 +168,26 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
   const [positions, setPositions] = usePositionSelection();
-  const [subject, setSubject] = useSubjectChoice();
-  const { data: settings } = useStaffSWR<ImageSettings>("/api/images/settings");
-  const { data: promptsData } = useStaffSWR<{ prompts: ImagePrompt[] }>("/api/images/prompts");
+  const [subjects, setSubjects] = useSubjectSelection();
+  const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
+  const styles = stylesData?.styles ?? [];
+  const defaultStyleId = styles.find((s) => s.is_default)?.id ?? null;
+  const [styleId, setStyleId] = useStyleChoice(defaultStyleId);
+  const detailKey = styleId ? `/api/images/exercises/${exoId}?style=${styleId}` : null;
+  const listKey = styleId ? `/api/images/exercises?style=${styleId}` : null;
+  const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(
+    styleId ? `/api/images/prompts?styleId=${styleId}` : null,
+  );
   const queue = useGenerationQueue();
-  const generation = queue.items[0];
-  const inFlight = processingSteps(generation);
+  const inFlight = queue.items.flatMap((item) =>
+    processingSteps(item).map((step) => ({ step, subject: item.subject })),
+  );
   const { data, isLoading, error } = useStaffSWR<{
     exercise: ExerciseImageDetail;
-  }>(`/api/images/exercises/${exoId}`, { refreshInterval: 5000 });
+  }>(detailKey, { refreshInterval: 5000 });
   const exercise = data?.exercise;
   const [selectedChoice, setSelectedId] = useState<string | null>(null);
+  const [historySubject, setHistorySubject] = useState<"all" | Subject>("all");
   // An unknown or deleted choice falls back to the newest image.
   const selectedId =
     exercise && !exercise.images.some((img) => img.id === selectedChoice)
@@ -145,7 +206,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
 
   const templates = useMemo(() => {
     const prompts = promptsData?.prompts ?? [];
-    const byPosition = FRAME_POSITIONS.map((f) => selectedPrompts(settings, prompts, f.id));
+    const byPosition = FRAME_POSITIONS.map((f) => selectedPrompts(prompts, f.id));
     return {
       system:
         prompts.find((p) => p.id === overrides.systemPromptId && p.kind === "system")?.content ??
@@ -155,11 +216,12 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         byPosition.map((chosen, i) => [FRAME_POSITIONS[i].id, chosen.position?.content ?? ""]),
       ) as Record<number, string>,
     };
-  }, [promptsData, settings, overrides.systemPromptId]);
+  }, [promptsData, overrides.systemPromptId]);
   const systemPrompts = useMemo(
-    () => (promptsData?.prompts ?? []).filter((p) => p.kind === "system"),
+    () => (promptsData?.system ? [promptsData.system] : []),
     [promptsData],
   );
+  const styleSystemPromptId = promptsData?.system?.id;
   const framePositions = exercise?.frame_positions ?? FRAME_POSITIONS.map((f) => f.id as number);
   const runPositions = runPositionsFor(positions, framePositions);
   const editedCount = countOverrides(overrides, runPositions);
@@ -169,24 +231,29 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     [exercise, selectedId],
   );
 
-  const activeByPosition = useMemo(() => {
-    const map = new Map<number, ExerciseImage>();
-    for (const img of exercise?.images ?? []) {
-      if (img.active && img.position != null) map.set(img.position, img);
-    }
-    return map;
-  }, [exercise]);
+  const historyImages = useMemo(() => {
+    const images = exercise?.images ?? [];
+    if (historySubject === "all") return images;
+    return images.filter((img) => img.subject === historySubject);
+  }, [exercise, historySubject]);
 
-  // Mid/End are always edits of a Start, so they need one: this run's or the active one.
-  const missingStart = !runPositions.includes(0) && !activeByPosition.has(0);
+  // Mid/End need a Start per selected subject: this run's or that subject's active one.
+  const missingStartSubjects = useMemo(() => {
+    if (runPositions.includes(0) || !exercise) return [];
+    return subjects.filter((subject) => {
+      const status = exercise.by_subject.find((s) => s.subject === subject);
+      return !status?.active_positions.includes(0);
+    });
+  }, [exercise, runPositions, subjects]);
+  const missingStart = missingStartSubjects.length > 0;
 
   const refresh = useCallback(async () => {
-    await mutate(`/api/images/exercises/${exoId}`);
-    await mutate("/api/images/exercises");
-  }, [exoId]);
+    if (detailKey) await mutate(detailKey);
+    if (listKey) await mutate(listKey);
+  }, [detailKey, listKey]);
 
   async function runGenerate() {
-    if (!exercise || queue.running || missingStart) return;
+    if (!exercise || !styleId || queue.running || missingStart) return;
     const run = overrides;
     await queue.start({
       exercises: [
@@ -197,13 +264,14 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         },
       ],
       positions: runPositions,
-      subject,
-      maxConcurrency: settings?.params.max_concurrency ?? 3,
-      generateStep: async (exoId, position, stepSubject, guideImageId) => {
+      subjects,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      generateStep: async (stepExoId, position, stepSubject, guideImageId) => {
         const { image } = (await staffFetch("/api/images/generate", {
           method: "POST",
           body: JSON.stringify({
-            exoId,
+            exoId: stepExoId,
+            styleId,
             position,
             subject: stepSubject,
             systemOverride: run.system,
@@ -219,17 +287,20 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   }
 
   async function toggleTwoFrames(next: boolean) {
-    if (!exercise) return;
+    if (!exercise || !styleId) return;
+    const hasActiveMid = exercise.by_subject.some((s) =>
+      s.active_positions.includes(MID_POSITION),
+    );
     if (
       next &&
-      activeByPosition.has(MID_POSITION) &&
-      !window.confirm("Use only Start and End? The active Mid frame will be deactivated.")
+      hasActiveMid &&
+      !window.confirm("Use only Start and End? Active Mid frames will be deactivated.")
     ) {
       return;
     }
     setBusy(true);
     try {
-      await staffFetch(`/api/images/exercises/${exercise.exo_id}`, {
+      await staffFetch(`/api/images/exercises/${exercise.exo_id}?style=${styleId}`, {
         method: "PATCH",
         body: JSON.stringify({ two_frames: next }),
       });
@@ -288,6 +359,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         event.preventDefault();
         void removeImage(selected);
       } else if (event.key === "0" || event.key === "1" || event.key === "2") {
+        // Activates the position on the selected image (its subject lane).
         if (!selected || !framePositions.includes(Number(event.key))) return;
         event.preventDefault();
         void setPosition(selected.id, Number(event.key), true);
@@ -296,13 +368,13 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         event.preventDefault();
         void setPosition(selected.id, null, false);
       } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        if (!exercise?.images.length) return;
-        const index = exercise.images.findIndex((img) => img.id === selectedId);
+        if (!historyImages.length) return;
+        const index = historyImages.findIndex((img) => img.id === selectedId);
         const next =
           event.key === "ArrowLeft"
             ? Math.max(0, index - 1)
-            : Math.min(exercise.images.length - 1, index + 1);
-        setSelectedId(exercise.images[next]?.id ?? null);
+            : Math.min(historyImages.length - 1, index + 1);
+        setSelectedId(historyImages[next]?.id ?? null);
       } else if (event.key === "[") {
         router.push(`/images/${Math.max(1, exoId - 1)}`);
       } else if (event.key === "]") {
@@ -314,18 +386,46 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exercise, selectedId, selected, exoId, busy, editOpen]);
+  }, [exercise, selectedId, selected, exoId, busy, editOpen, historyImages, framePositions]);
+
+  if (!styleId) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold text-zinc-900">Exercise images</h1>
+          <StyleSelector styles={styles} value={styleId} onChange={setStyleId} />
+        </div>
+        <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500">
+          Select a style to load this exercise.
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return <Skeleton className="h-[70vh] w-full rounded-xl" />;
   }
   if (error || !exercise) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-        {error?.message ?? "Exercise not found"}
+      <div className="space-y-4">
+        <div className="flex justify-end">
+          <StyleSelector styles={styles} value={styleId} onChange={setStyleId} />
+        </div>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error?.message ?? "Exercise not found"}
+        </div>
       </div>
     );
   }
+
+  const plannedCount = subjects.length * runPositions.length;
+  const startThumb =
+    exercise.by_subject.find((s) => s.subject === subjects[0])?.active_frames.find(
+      (f) => f.position === 0,
+    )?.image_url ??
+    exercise.by_subject.find((s) => s.active_positions.includes(0))?.active_frames.find(
+      (f) => f.position === 0,
+    )?.image_url;
 
   return (
     <div className="space-y-4">
@@ -351,7 +451,10 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           </div>
           <p className="text-sm text-zinc-500">
             {exercise.primary_muscle_group?.name ?? "—"} · {exercise.equipment?.name ?? "—"} ·{" "}
-            {exercise.active_count}/{framePositions.length} active frames
+            {SUBJECTS.map((subject) => {
+              const status = exercise.by_subject.find((s) => s.subject === subject);
+              return `${SUBJECT_LABEL[subject]} ${status?.active_count ?? 0}/${framePositions.length}`;
+            }).join(" · ")}
           </p>
           <label className="mt-1 inline-flex items-center gap-2 text-xs text-zinc-700">
             <input
@@ -365,7 +468,13 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <SubjectSelector value={subject} onChange={setSubject} disabled={queue.running} />
+          <StyleSelector
+            styles={styles}
+            value={styleId}
+            onChange={setStyleId}
+            disabled={queue.running}
+          />
+          <SubjectSelector value={subjects} onChange={setSubjects} disabled={queue.running} />
           <PositionSelector
             value={positions}
             onChange={setPositions}
@@ -382,7 +491,10 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             {editedCount > 0 ? ` (${editedCount} edited)` : ""}
           </Button>
           {missingStart && (
-            <span className="text-xs text-amber-700">No active Start: generate Start first</span>
+            <span className="text-xs text-amber-700">
+              No active Start for {missingStartSubjects.map((s) => SUBJECT_LABEL[s]).join(", ")}:
+              generate Start first
+            </span>
           )}
           <Button
             type="button"
@@ -392,8 +504,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           >
             {queue.running
               ? "Generating…"
-              : runPositions.length > 1
-                ? `Generate (${runPositions.length})`
+              : plannedCount > 1
+                ? `Generate (${plannedCount})`
                 : "Generate"}
           </Button>
         </div>
@@ -402,9 +514,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       {showOverrides && (
         <PromptOverridesPanel
           positions={runPositions}
-          startThumbUrl={imageThumbUrl(activeByPosition.get(0)?.image_url, 160)}
+          startThumbUrl={imageThumbUrl(startThumb, 160)}
           systemPrompts={systemPrompts}
-          settingsSystemPromptId={settings?.system_prompt_id}
+          settingsSystemPromptId={styleSystemPromptId}
           systemTemplate={templates.system}
           positionTemplates={templates.positions}
           value={overrides}
@@ -413,75 +525,102 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         />
       )}
 
-      <GenerationProgress item={generation} running={queue.running} onCancel={queue.cancel} />
+      {queue.items.map((item, index) => (
+        <GenerationProgress
+          key={`${item.exoId}-${item.subject}`}
+          item={item}
+          running={queue.running}
+          onCancel={index === 0 ? queue.cancel : undefined}
+        />
+      ))}
 
-      <div className="grid gap-4 lg:grid-cols-4">
-        {FRAME_POSITIONS.filter((frame) => framePositions.includes(frame.id)).map((frame) => {
-          const img = activeByPosition.get(frame.id) ?? null;
-          return (
-            <CheckerFrame
-              key={frame.id}
-              src={imageDisplayUrl(img?.image_url)}
-              alt={`${frame.label} frame`}
-              label={`${frame.id} · ${frame.label}`}
-            />
-          );
-        })}
-        <SequencePreview images={exercise.images} framePositions={framePositions} />
+      <div className="grid gap-2 lg:grid-cols-2">
+        {SUBJECTS.map((subject) => (
+          <SubjectLane
+            key={subject}
+            subject={subject}
+            images={exercise.images}
+            framePositions={framePositions}
+          />
+        ))}
       </div>
 
       <div className="space-y-2">
-        <div className="text-sm font-medium text-zinc-800">All images</div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {inFlight.map((step) => (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm font-medium text-zinc-800">All images</div>
+          <div className="flex flex-wrap gap-1">
+            {(
+              [
+                ["all", "All"],
+                ["man", "Man"],
+                ["woman", "Woman"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setHistorySubject(id)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-[11px] font-medium",
+                  historySubject === id
+                    ? "bg-zinc-900 text-white"
+                    : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {inFlight.map(({ step, subject }) => (
             <div
-              key={step.position}
-              className="min-w-[120px] rounded-lg border border-dashed border-zinc-300 p-2"
-              aria-label={`Generating ${framePositionLabel(step.position)}`}
+              key={`${subject}-${step.position}`}
+              className="w-[4.5rem] shrink-0 rounded-md border border-dashed border-zinc-300 p-1"
+              aria-label={`Generating ${SUBJECT_LABEL[subject]} ${framePositionLabel(step.position)}`}
             >
-              <Skeleton className="mb-2 aspect-square w-full rounded-md" />
-              <div className="truncate text-[11px] font-medium text-zinc-800">
-                {framePositionLabel(step.position)} · generating…
+              <Skeleton className="mb-1 aspect-square w-full rounded" />
+              <div className="truncate text-[9px] font-medium text-zinc-800">
+                {framePositionLabel(step.position)}
               </div>
-              <div className="truncate text-[10px] text-zinc-500">{generation?.subject}</div>
+              <div className="truncate text-[9px] text-zinc-500">{SUBJECT_LABEL[subject]}</div>
             </div>
           ))}
-          {exercise.images.map((img) => (
-            <div key={img.id} className="relative min-w-[120px]">
+          {historyImages.map((img) => (
+            <div key={img.id} className="relative w-[4.5rem] shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedId(img.id)}
                 className={cn(
-                  "w-full rounded-lg border p-2 text-left",
+                  "w-full rounded-md border p-1 text-left",
                   selectedId === img.id
                     ? "border-zinc-900 ring-1 ring-zinc-900"
                     : "border-zinc-200 hover:border-zinc-300",
                 )}
               >
                 <div
-                  className="mb-2 aspect-square overflow-hidden rounded-md bg-zinc-100"
+                  className="mb-1 aspect-square overflow-hidden rounded bg-zinc-100"
                   style={{
                     backgroundImage:
                       "linear-gradient(45deg,#e4e4e7 25%,transparent 25%),linear-gradient(-45deg,#e4e4e7 25%,transparent 25%)",
-                    backgroundSize: "12px 12px",
+                    backgroundSize: "10px 10px",
                   }}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={imageThumbUrl(img.image_url, 240) ?? undefined}
+                    src={imageThumbUrl(img.image_url, 120) ?? undefined}
                     alt={imageLabel(img)}
                     loading="lazy"
-                    width={120}
-                    height={120}
+                    width={72}
+                    height={72}
                     className="h-full w-full object-contain"
                   />
                 </div>
-                <div className="truncate text-[11px] font-medium text-zinc-800">
+                <div className="truncate text-[9px] font-medium text-zinc-800">
                   {imageLabel(img)}
                 </div>
-                <div className="truncate text-[10px] text-zinc-500">
-                  {img.model}
-                  {img.params?.subject ? ` · ${img.params.subject}` : ""}
+                <div className="truncate text-[9px] text-zinc-500">
+                  {SUBJECT_LABEL[img.subject]}
                 </div>
               </button>
               {isDeletableImage(img) && (
@@ -491,14 +630,14 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
                   onClick={() => void removeImage(img)}
                   aria-label={`Delete ${imageLabel(img)} image`}
                   title="Delete image"
-                  className="absolute right-3 top-3 rounded-md bg-white/90 p-1 text-red-600 shadow-sm hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
+                  className="absolute right-1 top-1 rounded bg-white/90 p-0.5 text-red-600 shadow-sm hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-3 w-3" />
                 </button>
               )}
             </div>
           ))}
-          {exercise.images.length === 0 && inFlight.length === 0 && (
+          {historyImages.length === 0 && inFlight.length === 0 && (
             <div className="text-sm text-zinc-500">No images yet. Generate one.</div>
           )}
         </div>
@@ -506,7 +645,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
 
       {selected && (
         <div className="rounded-xl border border-zinc-200 bg-white p-4 space-y-3">
-          <div className="text-sm font-medium text-zinc-800">Selected image</div>
+          <div className="text-sm font-medium text-zinc-800">
+            Selected image · {SUBJECT_LABEL[selected.subject]}
+          </div>
           <div className="flex flex-wrap gap-2">
             {FRAME_POSITIONS.filter((frame) => framePositions.includes(frame.id)).map((frame) => (
               <Button
@@ -531,7 +672,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             </Button>
           </div>
           <p className="text-xs text-zinc-500">
-            Activating a position replaces any other active image already at that slot.
+            Activating a position replaces any other active image for this subject already at that
+            slot.
           </p>
         </div>
       )}
@@ -539,8 +681,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       {selected && <ImageMetadataPanel image={selected} prompts={promptsData?.prompts} />}
 
       <p className="text-xs text-zinc-400">
-        Shortcuts: R generate selected positions · 0/1/2 set position · X deactivate · Del delete
-        (images without position) · ←/→ images · [/] prev/next · Esc back
+        Shortcuts: R generate selected positions · 0/1/2 set position on selected image&apos;s
+        subject · X deactivate · Del delete (images without position) · ←/→ images · [/] prev/next
+        · Esc back
       </p>
 
       <ExerciseComposeDialog

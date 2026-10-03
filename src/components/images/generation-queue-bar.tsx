@@ -9,7 +9,7 @@ import {
 } from "@/components/images/position-selector";
 import { SystemPromptSelect } from "@/components/images/prompt-overrides";
 import type { QueueItem } from "@/hooks/use-generation-queue";
-import type { FrameCountChoice, SubjectChoice } from "@/lib/images/types";
+import type { FrameCountChoice, Subject } from "@/lib/images/types";
 
 export function GenerationQueueBar({
   selectedCount,
@@ -20,8 +20,8 @@ export function GenerationQueueBar({
   positions,
   availablePositions,
   onPositionsChange,
-  subject,
-  onSubjectChange,
+  subjects,
+  onSubjectsChange,
   systemPrompts,
   settingsSystemPromptId,
   systemPromptId,
@@ -46,9 +46,9 @@ export function GenerationQueueBar({
   positions: number[];
   availablePositions?: number[];
   onPositionsChange: (next: number[]) => void;
-  subject: SubjectChoice;
-  onSubjectChange: (next: SubjectChoice) => void;
-  systemPrompts: { id: string; name: string }[];
+  subjects: Subject[];
+  onSubjectsChange: (next: Subject[]) => void;
+  systemPrompts: { id: string }[];
   settingsSystemPromptId: string | null | undefined;
   systemPromptId: string | undefined;
   onSystemPromptChange: (next: string | undefined) => void;
@@ -94,15 +94,17 @@ export function GenerationQueueBar({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <SystemPromptSelect
-            label="Prompt"
-            prompts={systemPrompts}
-            settingsPromptId={settingsSystemPromptId}
-            value={systemPromptId}
-            onChange={onSystemPromptChange}
-            disabled={locked}
-          />
-          <SubjectSelector value={subject} onChange={onSubjectChange} disabled={locked} />
+          {systemPrompts.length > 1 && (
+            <SystemPromptSelect
+              label="Prompt"
+              prompts={systemPrompts}
+              settingsPromptId={settingsSystemPromptId}
+              value={systemPromptId}
+              onChange={onSystemPromptChange}
+              disabled={locked}
+            />
+          )}
+          <SubjectSelector value={subjects} onChange={onSubjectsChange} disabled={locked} />
           <FrameCountSelector value={frameCount} onChange={onFrameCountChange} disabled={locked} />
           <PositionSelector
             value={positions}
@@ -133,7 +135,7 @@ export function GenerationQueueBar({
         <div className="mx-auto max-w-7xl px-4 pb-3">
           <div className="max-h-32 space-y-1 overflow-auto rounded-lg border border-zinc-100 bg-zinc-50 p-2 text-xs text-zinc-600">
             {visible.map((item) => (
-              <div key={item.exoId} className="flex justify-between gap-2">
+              <div key={`${item.exoId}-${item.subject}`} className="flex justify-between gap-2">
                 <span className="truncate">
                   {item.status === "processing" ? "Generating exercise" : "Exercise"}{" "}
                   {item.ordinal}/{total} · #{item.exoId} {item.name} ({item.subject})

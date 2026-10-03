@@ -42,7 +42,25 @@ Support does **not** use `HASURA_GRAPHQL_ADMIN_SECRET`. All GraphQL reads and ca
 
 ## Provision staff and admin users
 
-From **TwinFIT-backend** (requires `POSTGRES_URL` in `.secrets.remote`):
+### Local (automatic)
+
+`bash scripts/nhost/up-local.sh` in **TwinFIT-backend** ensures `auth.roles` (`staff` / `admin`) and seeds:
+
+| Email | Password | Role |
+|-------|----------|------|
+| `admin@local.test` | `AdminLocal123!` | `admin` |
+| `staff@local.test` | `StaffLocal123!` | `staff` |
+
+Re-seed without restarting the stack:
+
+```bash
+cd ../TwinFIT-backend
+bash scripts/nhost/seed-local-support-users.sh
+```
+
+### Cloud / custom emails
+
+From **TwinFIT-backend** (requires `POSTGRES_URL` in `.secrets.remote`). Scripts ensure `auth.roles` first:
 
 ```bash
 cd ../TwinFIT-backend
@@ -54,13 +72,6 @@ bash scripts/nhost/provision-admin.sh admin@yourcompany.com 'StrongPassword123!'
 ```
 
 Both scripts set `default_role = user` so mobile app sessions stay scoped to the user's own data.
-
-Manual alternative:
-
-```sql
-INSERT INTO auth.user_roles (user_id, role)
-VALUES ('<uuid>', 'staff');
-```
 
 ## Architecture
 

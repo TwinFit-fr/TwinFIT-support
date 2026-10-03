@@ -32,7 +32,7 @@ const catalogSubNav: NavItem[] = [
 const imagesSubNav: NavItem[] = [
   { href: "/images", label: "Board", match: "exact" },
   { href: "/images/prompts", label: "Prompts" },
-  { href: "/images/settings", label: "Settings" },
+  { href: "/images/styles", label: "Styles" },
 ];
 
 const labSubNav: NavItem[] = [

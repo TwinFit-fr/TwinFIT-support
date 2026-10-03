@@ -1,5 +1,5 @@
-import { ImageSettingsPage } from "@/components/images/image-settings";
+import { redirect } from "next/navigation";
 
 export default function ImagesSettingsRoute() {
-  return <ImageSettingsPage />;
+  redirect("/images/styles");
 }
