@@ -148,6 +148,33 @@ export function muscleMapTargetKey(ref: MuscleMapTargetRef): string {
   return `${ref.kind}:${ref.id}`;
 }
 
+/** What a library reference is used for: one exercise, muscle or muscle group. */
+export type ReferenceTarget =
+  | { kind: "exercise"; id: number }
+  | { kind: "muscle"; id: string }
+  | { kind: "muscle_group"; id: string };
+
+export type ReferenceLink = ReferenceTarget & { name: string };
+
+/** A free reference image of a style, sent when generating its linked targets. */
+export type StyleReference = {
+  id: string;
+  style_id: string;
+  name: string;
+  /** Appended to the prompt when the image is sent: how the model should use it. */
+  instruction: string;
+  /** Text used by Generate; null when the image is only uploaded. */
+  prompt: string | null;
+  file_id: string | null;
+  inserted_at: string;
+  updated_at: string;
+  links: ReferenceLink[];
+};
+
+export function referenceTargetKey(target: ReferenceTarget): string {
+  return `${target.kind}:${target.id}`;
+}
+
 export type ImagePrompt = {
   id: string;
   style_id: string;

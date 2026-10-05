@@ -12,6 +12,7 @@ import { CharactersSection } from "./characters-section";
 import { CollapsibleSection, Section, readAsBase64, selectClass } from "./form-ui";
 import { ModelSection } from "./model-section";
 import { MuscleBasesSection } from "./muscle-bases-section";
+import { ReferencesLibrary } from "./references-library";
 import { StyleBar } from "./style-bar";
 import { SupportsSection } from "./supports-section";
 
@@ -554,6 +555,14 @@ export function ImageStylesPage() {
           busyView={muscleBaseBusy}
           onAction={(view, action) => void muscleBaseAction(view, action)}
         />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Reference library"
+        description="Your own images (a bar, a machine, a detail), sent only when generating the exercises, muscles or groups they are linked to."
+        defaultOpen={false}
+      >
+        <ReferencesLibrary style={style} />
       </CollapsibleSection>
     </div>
   );

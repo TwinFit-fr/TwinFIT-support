@@ -24,7 +24,7 @@ export function muscleBaseDirective(view: MuscleMapView): string {
 
 export function styleAssetPath(
   styleCode: string,
-  kind: "characters" | "supports" | "brand" | "frames" | "muscles",
+  kind: "characters" | "supports" | "brand" | "frames" | "muscles" | "library",
   name: string,
 ): string {
   return `styles/${styleCode.toLowerCase()}/${kind}/${name}`;
@@ -62,6 +62,14 @@ export function muscleMapFileName(
     "muscles",
     `${prefix}_${target.code.toLowerCase()}_${view}_${Date.now()}.${extension}`,
   );
+}
+
+export function libraryReferenceFileName(
+  styleCode: string,
+  referenceId: string,
+  extension: string,
+): string {
+  return styleAssetPath(styleCode, "library", `${referenceId}_${Date.now()}.${extension}`);
 }
 
 export function logoFileName(styleCode: string, extension: string): string {

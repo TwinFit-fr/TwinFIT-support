@@ -40,3 +40,22 @@ export function assetErrorResponse(error: unknown, fallback: string, status = 50
     { status },
   );
 }
+
+const referenceTarget = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("exercise"), id: z.number().int().positive() }),
+  z.object({ kind: z.literal("muscle"), id: z.string().uuid() }),
+  z.object({ kind: z.literal("muscle_group"), id: z.string().uuid() }),
+]);
+
+/** Fields of a library reference as the Styles page sends them. */
+export const referenceSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  instruction: z.string().trim().max(4000),
+  prompt: z
+    .string()
+    .trim()
+    .max(32000)
+    .nullable()
+    .transform((v) => v || null),
+  links: z.array(referenceTarget).max(500),
+});
