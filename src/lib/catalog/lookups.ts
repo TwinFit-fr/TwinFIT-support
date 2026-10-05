@@ -465,7 +465,7 @@ export function fetchTaxonomy(token: string) {
       catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {
         id code name description sort_order active
         localizations(order_by: { locale: asc }) { locale display_name }
-        group_muscles { role muscle { id code name active localizations(order_by: { locale: asc }) { locale display_name } } }
+        group_muscles { role muscle { id code name description active localizations(order_by: { locale: asc }) { locale display_name } } }
         group_movement_types {
           movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } }
           localizations(order_by: { locale: asc }) { locale display_name }

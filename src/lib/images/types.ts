@@ -1,4 +1,4 @@
-export type ImagePromptKind = "system" | "position" | "support";
+export type ImagePromptKind = "system" | "position" | "support" | "muscle_base" | "muscle_map";
 
 /** OpenAI generation params stored on a style (no logo / concurrency). */
 export type GenerationParams = {
@@ -16,6 +16,12 @@ export type GenerationParams = {
 
 export type Subject = "man" | "woman";
 export const SUBJECTS: readonly Subject[] = ["man", "woman"];
+
+/** Muscle maps are drawn on a front and a back body, each its own image. */
+export type MuscleMapView = "front" | "back";
+export const MUSCLE_MAP_VIEWS: readonly MuscleMapView[] = ["front", "back"];
+
+export type MuscleMapTargetKind = "muscle" | "muscle_group";
 
 /** Frames per sequence chosen for a batch; "exercise" keeps each exercise's own setting. */
 export type FrameCountChoice = "exercise" | 2 | 3;
@@ -53,13 +59,15 @@ export type ImageSettings = {
   updated_by: string | null;
 };
 
-/** The five prompt slots owned by a style. */
+/** The prompt slots owned by a style. */
 export type StylePrompts = {
   system: ImagePrompt;
   start: ImagePrompt;
   mid: ImagePrompt;
   end: ImagePrompt;
   support: ImagePrompt;
+  muscleBase: ImagePrompt;
+  muscleMap: ImagePrompt;
 };
 
 /** Snapshot stored on each generated image (subject lives on the row column). */

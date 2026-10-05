@@ -229,17 +229,19 @@ async function getDefaultStyle(token: string): Promise<ImageStyle | null> {
   return row ? normalizeStyle(row) : null;
 }
 
-/** Build the five required slots from a style's prompt rows. */
+/** Build the required slots from a style's prompt rows. */
 export function getStylePrompts(prompts: ImagePrompt[]): StylePrompts {
   const system = prompts.find((p) => p.kind === "system");
   const start = prompts.find((p) => p.kind === "position" && p.position === 0);
   const mid = prompts.find((p) => p.kind === "position" && p.position === 1);
   const end = prompts.find((p) => p.kind === "position" && p.position === 2);
   const support = prompts.find((p) => p.kind === "support");
-  if (!system || !start || !mid || !end || !support) {
+  const muscleBase = prompts.find((p) => p.kind === "muscle_base");
+  const muscleMap = prompts.find((p) => p.kind === "muscle_map");
+  if (!system || !start || !mid || !end || !support || !muscleBase || !muscleMap) {
     throw new Error("Style is missing one or more required prompt slots");
   }
-  return { system, start, mid, end, support };
+  return { system, start, mid, end, support, muscleBase, muscleMap };
 }
 
 export async function createStyle(
@@ -287,7 +289,7 @@ export async function createStyle(
   );
   const created = normalizeStyle(data.insert_images_styles_one);
 
-  const clones = [slots.system, slots.start, slots.mid, slots.end, slots.support].map((p) => ({
+  const clones = Object.values(slots).map((p) => ({
     style_id: created.id,
     kind: p.kind,
     position: p.position,

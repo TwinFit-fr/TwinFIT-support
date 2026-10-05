@@ -229,7 +229,7 @@ export function PromptOverridesPanel({
         ))}
       </div>
       <p className="text-[11px] text-zinc-400">
-        Placeholders: {PROMPT_PLACEHOLDERS.join(", ")}
+        Placeholders: {PROMPT_PLACEHOLDERS.exercise.join(", ")}
       </p>
     </div>
   );

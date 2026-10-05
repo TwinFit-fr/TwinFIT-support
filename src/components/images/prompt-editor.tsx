@@ -2,21 +2,31 @@
 
 import { useMemo, useState } from "react";
 import { mutate } from "swr";
+import type { TaxonomyData } from "@/components/catalog/taxonomy/types";
 import { Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
-import { PROMPT_PLACEHOLDERS, assembleImagePrompt, selectedPrompts } from "@/lib/images/prompt";
-import type { ImagePrompt, ImageStyle, Subject } from "@/lib/images/types";
-import { FRAME_POSITIONS, SUBJECTS } from "@/lib/images/types";
+import {
+  PROMPT_PLACEHOLDERS,
+  assembleImagePrompt,
+  fillMuscleMapTemplate,
+  muscleGroupTarget,
+  muscleTarget,
+  selectedPrompts,
+} from "@/lib/images/prompt";
+import type {
+  ImagePrompt,
+  ImageStyle,
+  MuscleMapTargetKind,
+  MuscleMapView,
+  StylePrompts,
+  Subject,
+} from "@/lib/images/types";
+import { FRAME_POSITIONS, MUSCLE_MAP_VIEWS, SUBJECTS } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 
-type StylePromptsResponse = {
+type StylePromptsResponse = StylePrompts & {
   styleId: string;
-  system: ImagePrompt;
-  start: ImagePrompt;
-  mid: ImagePrompt;
-  end: ImagePrompt;
-  support: ImagePrompt;
   prompts: ImagePrompt[];
 };
 
@@ -28,6 +38,8 @@ type ListResponse = {
     prompt_details: string;
   }[];
 };
+
+type PreviewMode = "exercise" | "muscle_map";
 
 function PromptSlotEditor({
   title,
@@ -84,14 +96,42 @@ function PromptSlotEditor({
   );
 }
 
+/** One kind of output (exercise frames, support references, muscle maps) and its slots. */
+function SlotGroup({
+  title,
+  description,
+  placeholders,
+  children,
+}: {
+  title: string;
+  description: string;
+  placeholders: readonly string[];
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">{title}</p>
+        <p className="text-xs text-zinc-500">
+          {description} Placeholders: {placeholders.join(", ")}.
+        </p>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export function ImagePromptsPage() {
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = useMemo(() => stylesData?.styles ?? [], [stylesData]);
   const fallbackStyleId = styles.find((s) => s.is_default)?.id ?? styles[0]?.id ?? null;
   const [styleIdOverride, setStyleIdOverride] = useState<string | null>(null);
   const styleId = styleIdOverride ?? fallbackStyleId;
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("exercise");
   const [previewPosition, setPreviewPosition] = useState(0);
   const [previewSubject, setPreviewSubject] = useState<Subject>("man");
+  const [previewTargetKind, setPreviewTargetKind] = useState<MuscleMapTargetKind>("muscle_group");
+  const [previewView, setPreviewView] = useState<MuscleMapView>("front");
 
   const style = styles.find((s) => s.id === styleId) ?? null;
   const promptsKey = styleId ? `/api/images/prompts?styleId=${styleId}` : null;
@@ -99,9 +139,30 @@ export function ImagePromptsPage() {
   const { data: exercisesData } = useStaffSWR<ListResponse>(
     styleId ? `/api/images/exercises?style=${styleId}` : null,
   );
+  const { data: taxonomy } = useStaffSWR<{ data: TaxonomyData }>(
+    previewMode === "muscle_map" ? "/api/catalog/taxonomy" : null,
+  );
   const sample = exercisesData?.exercises?.[0];
 
+  const sampleTarget = useMemo(() => {
+    const group = taxonomy?.data?.catalog_muscle_groups.find(
+      (g) => g.active !== false && g.group_muscles.some((link) => link.role === "target"),
+    );
+    if (!group) return null;
+    if (previewTargetKind === "muscle_group") return muscleGroupTarget(group);
+    const muscle = group.group_muscles.find((link) => link.role === "target")?.muscle;
+    return muscle ? muscleTarget(muscle) : null;
+  }, [taxonomy, previewTargetKind]);
+
   const preview = useMemo(() => {
+    if (previewMode === "muscle_map") {
+      if (!data?.muscleMap || !sampleTarget) return "";
+      return fillMuscleMapTemplate(data.muscleMap.content, {
+        view: previewView,
+        background_color: style?.params.background_color,
+        target: sampleTarget,
+      });
+    }
     const chosen = selectedPrompts(data?.prompts ?? [], previewPosition);
     if (!chosen.system || !chosen.position || !sample) return "";
     return assembleImagePrompt({
@@ -114,22 +175,35 @@ export function ImagePromptsPage() {
       background_color: style?.params.background_color,
       details: sample.prompt_details,
     });
-  }, [data, style, sample, previewPosition, previewSubject]);
+  }, [
+    data,
+    style,
+    sample,
+    sampleTarget,
+    previewMode,
+    previewPosition,
+    previewSubject,
+    previewView,
+  ]);
+
+  const previewSubjectLabel =
+    previewMode === "muscle_map" ? sampleTarget?.name : sample?.display_name;
 
   const pill = (active: boolean) =>
     cn(
       "rounded-full px-2.5 py-1 text-xs font-medium",
       active ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200",
     );
+  const divider = <span className="mx-1 w-px bg-zinc-200" />;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-zinc-900">Prompts</h1>
           <p className="text-sm text-zinc-500">
-            Each style owns five prompt slots (system, start, mid, end, support). Placeholders:{" "}
-            {PROMPT_PLACEHOLDERS.join(", ")}.
+            Each style owns one prompt per slot: exercise frames, support references and muscle
+            maps.
           </p>
         </div>
         <label className="block text-xs font-medium text-zinc-600">
@@ -153,50 +227,130 @@ export function ImagePromptsPage() {
         <p className="text-sm text-zinc-500">Select a style to edit its prompts.</p>
       ) : (
         <>
-          <PromptSlotEditor title="System prompt" prompt={data?.system} styleId={styleId} />
-          <div className="grid gap-4 lg:grid-cols-3">
-            {FRAME_POSITIONS.map((frame) => {
-              const key = frame.id === 0 ? "start" : frame.id === 1 ? "mid" : "end";
-              return (
-                <PromptSlotEditor
-                  key={frame.id}
-                  title={`Position ${frame.id} · ${frame.label}`}
-                  prompt={data?.[key]}
-                  styleId={styleId}
-                />
-              );
-            })}
-          </div>
-          <PromptSlotEditor title="Support prompt" prompt={data?.support} styleId={styleId} />
+          <SlotGroup
+            title="Exercise frames"
+            description="System prompt plus one prompt per frame position."
+            placeholders={PROMPT_PLACEHOLDERS.exercise}
+          >
+            <PromptSlotEditor title="System prompt" prompt={data?.system} styleId={styleId} />
+            <div className="grid gap-4 lg:grid-cols-3">
+              {FRAME_POSITIONS.map((frame) => {
+                const key = frame.id === 0 ? "start" : frame.id === 1 ? "mid" : "end";
+                return (
+                  <PromptSlotEditor
+                    key={frame.id}
+                    title={`Position ${frame.id} · ${frame.label}`}
+                    prompt={data?.[key]}
+                    styleId={styleId}
+                  />
+                );
+              })}
+            </div>
+          </SlotGroup>
+
+          <SlotGroup
+            title="Support equipment"
+            description="Generates the support references of the style."
+            placeholders={PROMPT_PLACEHOLDERS.support}
+          >
+            <PromptSlotEditor title="Support prompt" prompt={data?.support} styleId={styleId} />
+          </SlotGroup>
+
+          <SlotGroup
+            title="Muscle maps"
+            description="The base draws the blank body once per view; each map edits that base to highlight a muscle or a group."
+            placeholders={PROMPT_PLACEHOLDERS.muscleMap}
+          >
+            <div className="grid gap-4 lg:grid-cols-2">
+              <PromptSlotEditor
+                title="Base body (front / back)"
+                prompt={data?.muscleBase}
+                styleId={styleId}
+              />
+              <PromptSlotEditor
+                title="Muscle map"
+                prompt={data?.muscleMap}
+                styleId={styleId}
+              />
+            </div>
+          </SlotGroup>
+
           <div className="rounded-xl border border-zinc-200 bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-zinc-900">
                 Live preview
-                {sample ? ` · ${sample.display_name}` : ""}
+                {previewSubjectLabel ? ` · ${previewSubjectLabel}` : ""}
                 {style ? ` · ${style.code}` : ""}
               </h2>
               <div className="flex flex-wrap gap-1.5">
-                {SUBJECTS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setPreviewSubject(s)}
-                    className={pill(previewSubject === s)}
-                  >
-                    {s}
-                  </button>
-                ))}
-                <span className="mx-1 w-px bg-zinc-200" />
-                {FRAME_POSITIONS.map((frame) => (
-                  <button
-                    key={frame.id}
-                    type="button"
-                    onClick={() => setPreviewPosition(frame.id)}
-                    className={pill(previewPosition === frame.id)}
-                  >
-                    {frame.label}
-                  </button>
-                ))}
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode("exercise")}
+                  className={pill(previewMode === "exercise")}
+                >
+                  Exercise
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode("muscle_map")}
+                  className={pill(previewMode === "muscle_map")}
+                >
+                  Muscle map
+                </button>
+                {divider}
+                {previewMode === "exercise" ? (
+                  <>
+                    {SUBJECTS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setPreviewSubject(s)}
+                        className={pill(previewSubject === s)}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                    {divider}
+                    {FRAME_POSITIONS.map((frame) => (
+                      <button
+                        key={frame.id}
+                        type="button"
+                        onClick={() => setPreviewPosition(frame.id)}
+                        className={pill(previewPosition === frame.id)}
+                      >
+                        {frame.label}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTargetKind("muscle_group")}
+                      className={pill(previewTargetKind === "muscle_group")}
+                    >
+                      Group
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTargetKind("muscle")}
+                      className={pill(previewTargetKind === "muscle")}
+                    >
+                      Muscle
+                    </button>
+                    {divider}
+                    {MUSCLE_MAP_VIEWS.map((view) => (
+                      <button
+                        key={view}
+                        type="button"
+                        onClick={() => setPreviewView(view)}
+                        className={cn(pill(previewView === view), "capitalize")}
+                      >
+                        {view}
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
             <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-50 p-3 text-xs text-zinc-700">

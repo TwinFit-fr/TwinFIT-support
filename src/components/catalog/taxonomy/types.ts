@@ -70,6 +70,7 @@ export type MuscleGroupRow = {
       id: string;
       code: string;
       name: string;
+      description?: string | null;
       active?: boolean;
       localizations?: LocalizationRow[];
     };
