@@ -1,4 +1,4 @@
-import type { Subject } from "./types";
+import type { MuscleMapView, Subject } from "./types";
 
 /** Appended when a generation uses the style character reference as input image. */
 export const REFERENCE_USE_DIRECTIVE = `CHARACTER REFERENCE: the input image is the official character for this style. Draw exactly this same person — same face, hair, body type, skin tone, clothing, colors and illustration style. Do NOT copy the pose, framing or camera angle of the reference: use only the pose described above, and show any equipment it requires.`;
@@ -19,7 +19,7 @@ export const LOGO_DIRECTIVE = `BRAND LOGO: one of the input images is the brand 
 
 export function styleAssetPath(
   styleCode: string,
-  kind: "characters" | "supports" | "brand" | "frames",
+  kind: "characters" | "supports" | "brand" | "frames" | "muscles",
   name: string,
 ): string {
   return `styles/${styleCode.toLowerCase()}/${kind}/${name}`;
@@ -35,6 +35,14 @@ export function supportFileName(styleCode: string, supportCode: string, extensio
     "supports",
     `${supportCode.toLowerCase()}_${Date.now()}.${extension}`,
   );
+}
+
+export function muscleBaseFileName(
+  styleCode: string,
+  view: MuscleMapView,
+  extension: string,
+): string {
+  return styleAssetPath(styleCode, "muscles", `base_${view}_${Date.now()}.${extension}`);
 }
 
 export function logoFileName(styleCode: string, extension: string): string {

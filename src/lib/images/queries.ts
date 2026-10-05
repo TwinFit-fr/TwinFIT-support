@@ -56,6 +56,7 @@ const STYLE_FIELDS = `
   updated_at
   updated_by
   characters { subject file_id }
+  muscle_bases { view file_id }
   supports {
     support_equipment_id
     file_id
@@ -183,6 +184,7 @@ function normalizeStyle(row: ImageStyle): ImageStyle {
     ...row,
     params: { ...DEFAULT_GENERATION_PARAMS, ...(row.params ?? {}) },
     characters: row.characters ?? [],
+    muscle_bases: row.muscle_bases ?? [],
     supports: row.supports ?? [],
   };
 }

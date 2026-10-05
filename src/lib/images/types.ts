@@ -39,6 +39,8 @@ export type ImageStyle = {
   updated_at: string;
   updated_by: string | null;
   characters: { subject: Subject; file_id: string }[];
+  /** Blank body per view: the input image of every muscle map of that view. */
+  muscle_bases: { view: MuscleMapView; file_id: string }[];
   supports: {
     support_equipment_id: string;
     file_id: string;

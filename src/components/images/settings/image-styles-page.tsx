@@ -7,10 +7,11 @@ import { Button, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { validateGenerationParams } from "@/lib/images/capabilities";
-import type { GenerationParams, ImageStyle, Subject } from "@/lib/images/types";
+import type { GenerationParams, ImageStyle, MuscleMapView, Subject } from "@/lib/images/types";
 import { CharactersSection } from "./characters-section";
 import { CollapsibleSection, Section, readAsBase64, selectClass } from "./form-ui";
 import { ModelSection } from "./model-section";
+import { MuscleBasesSection } from "./muscle-bases-section";
 import { StyleBar } from "./style-bar";
 import { SupportsSection } from "./supports-section";
 
@@ -77,6 +78,7 @@ export function ImageStylesPage() {
   const [savingStyle, setSavingStyle] = useState(false);
   const [characterBusy, setCharacterBusy] = useState<Subject | null>(null);
   const [supportBusy, setSupportBusy] = useState<string | null>(null);
+  const [muscleBaseBusy, setMuscleBaseBusy] = useState<MuscleMapView | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -233,6 +235,24 @@ export function ImageStylesPage() {
     }
   }
 
+  /** POST generate / upload or DELETE one style asset; every asset route returns the style. */
+  async function assetRequest(
+    path: string,
+    action: "generate" | "remove" | File,
+  ): Promise<StyleResponse> {
+    if (action === "remove") {
+      return (await staffFetch(path, { method: "DELETE" })) as StyleResponse;
+    }
+    const body =
+      action === "generate"
+        ? { action: "generate" }
+        : { action: "upload", mimeType: action.type, data: await readAsBase64(action) };
+    return (await staffFetch(path, {
+      method: "POST",
+      body: JSON.stringify(body),
+    })) as StyleResponse;
+  }
+
   async function characterAction(subject: Subject, action: "generate" | "remove" | File) {
     if (!selectedStyleId) return;
     if (action === "generate" && !styleDirty) {
@@ -241,30 +261,10 @@ export function ImageStylesPage() {
     if (action === "remove" && !window.confirm(`Remove the ${subject} reference?`)) return;
     setCharacterBusy(subject);
     try {
-      let result: StyleResponse;
-      if (action === "remove") {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/characters/${subject}`,
-          { method: "DELETE" },
-        )) as StyleResponse;
-      } else if (action === "generate") {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/characters/${subject}`,
-          { method: "POST", body: JSON.stringify({ action: "generate" }) },
-        )) as StyleResponse;
-      } else {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/characters/${subject}`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              action: "upload",
-              mimeType: action.type,
-              data: await readAsBase64(action),
-            }),
-          },
-        )) as StyleResponse;
-      }
+      const result = await assetRequest(
+        `/api/images/styles/${selectedStyleId}/characters/${subject}`,
+        action,
+      );
       await refreshStyle(result.style);
       success(action === "remove" ? "Reference removed" : "Reference updated");
     } catch (err) {
@@ -278,36 +278,33 @@ export function ImageStylesPage() {
     if (!selectedStyleId) return;
     setSupportBusy(supportId);
     try {
-      let result: StyleResponse;
-      if (action === "remove") {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/supports/${supportId}`,
-          { method: "DELETE" },
-        )) as StyleResponse;
-      } else if (action === "generate") {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/supports/${supportId}`,
-          { method: "POST", body: JSON.stringify({ action: "generate" }) },
-        )) as StyleResponse;
-      } else {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/supports/${supportId}`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              action: "upload",
-              mimeType: action.type,
-              data: await readAsBase64(action),
-            }),
-          },
-        )) as StyleResponse;
-      }
+      const result = await assetRequest(
+        `/api/images/styles/${selectedStyleId}/supports/${supportId}`,
+        action,
+      );
       await refreshStyle(result.style);
       success(action === "remove" ? "Support reference removed" : "Support reference updated");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Support update failed");
     } finally {
       setSupportBusy(null);
+    }
+  }
+
+  async function muscleBaseAction(view: MuscleMapView, action: "generate" | "remove" | File) {
+    if (!selectedStyleId) return;
+    setMuscleBaseBusy(view);
+    try {
+      const result = await assetRequest(
+        `/api/images/styles/${selectedStyleId}/muscle-bases/${view}`,
+        action,
+      );
+      await refreshStyle(result.style);
+      success(action === "remove" ? "Muscle map base removed" : "Muscle map base updated");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Muscle map base update failed");
+    } finally {
+      setMuscleBaseBusy(null);
     }
   }
 
@@ -355,7 +352,7 @@ export function ImageStylesPage() {
         <div>
           <h1 className="text-xl font-semibold text-zinc-900">Styles</h1>
           <p className="text-sm text-zinc-500">
-            Model, prompts, logo and reference sheets per style.
+            Model, prompts, references and muscle map bases per style.
             {style.updated_at
               ? ` Last saved ${new Date(style.updated_at).toLocaleString()}.`
               : ""}
@@ -461,7 +458,7 @@ export function ImageStylesPage() {
               Copy params, prompts and flags from{" "}
               <span className="font-medium">{style.code}</span>
               <span className="block text-[11px] text-zinc-500">
-                Character/support reference files are not copied.
+                Reference images (characters, supports, muscle bases) are not copied.
               </span>
             </span>
           </label>
@@ -500,7 +497,7 @@ export function ImageStylesPage() {
 
       <Section title="Prompts" description="Prompt texts are owned by each style.">
         <p className="text-sm text-zinc-600">
-          Edit system / start / mid / end / support prompts on the{" "}
+          Edit exercise, support and muscle map prompts on the{" "}
           <Link href="/images/prompts" className="underline">
             Prompts
           </Link>{" "}
@@ -522,7 +519,7 @@ export function ImageStylesPage() {
 
       <CollapsibleSection
         title="References"
-        description="Character sheets, brand logo and support-equipment references."
+        description="Character sheets, brand logo, support equipment and muscle map bases. Used automatically by their rules."
         defaultOpen={false}
       >
         <CharactersSection
@@ -550,6 +547,12 @@ export function ImageStylesPage() {
           dirty={styleDirty}
           busyId={supportBusy}
           onAction={(supportId, action) => void supportAction(supportId, action)}
+        />
+        <MuscleBasesSection
+          style={style}
+          dirty={styleDirty}
+          busyView={muscleBaseBusy}
+          onAction={(view, action) => void muscleBaseAction(view, action)}
         />
       </CollapsibleSection>
     </div>
