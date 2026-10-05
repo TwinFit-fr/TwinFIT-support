@@ -23,13 +23,13 @@ Users with the Nhost **`staff`** or **`admin`** JWT role can sign in. Staff have
 
 ```bash
 cd TwinFIT-support
-cp .env.local.example .env.local
-# Edit .env.local with your Nhost subdomain and region
+cp .env.local.example .env
+# Edit .env with your Nhost subdomain/region (and OPENAI_API_KEY if using images)
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000/login](http://localhost:3000/login).
+`.env` is gitignored. Open [http://localhost:3000/login](http://localhost:3000/login).
 
 ## Environment variables
 
