@@ -44,6 +44,8 @@ const TABLE_HINTS: Partial<Record<TaxonomyTabId, string>> = {
   catalog_support_equipment:
     "station / auxiliary (not the load); optional description feeds image-generation prompts",
   catalog_grips: "optional description feeds image-generation prompts",
+  catalog_muscles: "optional description feeds muscle-map prompts",
+  catalog_muscle_groups: "optional description feeds muscle-map prompts",
 };
 
 function labelsFromRow(row: LookupRowFull): Record<CatalogLocale, string> {

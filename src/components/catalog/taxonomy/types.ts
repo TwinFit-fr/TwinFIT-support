@@ -42,13 +42,15 @@ export const LOCALIZED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
 export const DESCRIBED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
   "catalog_grips",
   "catalog_support_equipment",
+  "catalog_muscles",
+  "catalog_muscle_groups",
 ]);
 
 export type LookupRowFull = {
   id: string;
   code: string;
   name: string;
-  /** Internal visual description (grips / support only); not localized. */
+  /** Internal visual description (grips / support / muscles / groups); not localized. */
   description?: string | null;
   sort_order?: number;
   active?: boolean;
@@ -59,6 +61,7 @@ export type MuscleGroupRow = {
   id: string;
   code: string;
   name: string;
+  description?: string | null;
   active?: boolean;
   localizations?: LocalizationRow[];
   group_muscles: Array<{

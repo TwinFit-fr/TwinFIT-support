@@ -305,7 +305,12 @@ export type UpdateLookupPayload = {
   description?: unknown;
 };
 
-const DESCRIBED_LOOKUP_TABLES = new Set(["catalog_grips", "catalog_support_equipment"]);
+const DESCRIBED_LOOKUP_TABLES = new Set([
+  "catalog_grips",
+  "catalog_support_equipment",
+  "catalog_muscles",
+  "catalog_muscle_groups",
+]);
 
 export async function updateLookup(token: string, payload: UpdateLookupPayload) {
   const table = assertLookupTable(payload.table);
@@ -458,7 +463,7 @@ export function fetchTaxonomy(token: string) {
     token,
     `query TaxonomyAdmin {
       catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {
-        id code name sort_order active
+        id code name description sort_order active
         localizations(order_by: { locale: asc }) { locale display_name }
         group_muscles { role muscle { id code name active localizations(order_by: { locale: asc }) { locale display_name } } }
         group_movement_types {
@@ -467,7 +472,7 @@ export function fetchTaxonomy(token: string) {
         }
       }
       catalog_muscles(order_by: { code: asc }) {
-        id code name sort_order active
+        id code name description sort_order active
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_movement_types(order_by: { sort_order: asc, code: asc }) {
