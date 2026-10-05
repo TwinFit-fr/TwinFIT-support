@@ -5,14 +5,24 @@ import Link from "next/link";
 import { Loader2, X } from "lucide-react";
 import { CHECKER_STYLE } from "@/components/images/checker";
 import { Button } from "@/components/ui/primitives";
+import {
+  RunInputsPanel,
+  type AutomaticInput,
+  type RunReferences,
+} from "@/components/images/run-inputs-panel";
 import { PROMPT_PLACEHOLDERS } from "@/lib/images/prompt";
-import type { MuscleMapBoardTarget, MuscleMapImage, MuscleMapView } from "@/lib/images/types";
+import type {
+  MuscleMapBoardTarget,
+  MuscleMapImage,
+  MuscleMapView,
+  StyleReference,
+} from "@/lib/images/types";
 import { MUSCLE_MAP_VIEWS } from "@/lib/images/types";
 import { imageThumbUrl } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 import { VIEW_LABEL } from "./muscle-map-card";
 
-export type MuscleMapRun = { promptOverride?: string };
+export type MuscleMapRun = { promptOverride?: string; referenceIds?: string[] };
 
 function ViewColumn({
   view,
@@ -147,7 +157,8 @@ function ViewColumn({
 export function MuscleMapInspector({
   target,
   template,
-  baseViews,
+  bases,
+  library,
   busyViews,
   onClose,
   onGenerate,
@@ -158,8 +169,10 @@ export function MuscleMapInspector({
   target: MuscleMapBoardTarget;
   /** The style's muscle map prompt, the starting point of a one-off edit. */
   template: string;
-  /** Views the style has a base for. */
-  baseViews: MuscleMapView[];
+  /** The style's base file per view. */
+  bases: { view: MuscleMapView; file_id: string }[];
+  /** Every reference of the style; the ones linked to this target start on. */
+  library: StyleReference[];
   busyViews: MuscleMapView[];
   onClose: () => void;
   onGenerate: (view: MuscleMapView, run: MuscleMapRun) => void;
@@ -170,6 +183,16 @@ export function MuscleMapInspector({
   const [prompt, setPrompt] = useState<string | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
   const edited = prompt != null && prompt !== template;
+  const [references, setReferences] = useState<RunReferences>(undefined);
+  const baseViews = bases.map((b) => b.view);
+  const linked = library.filter((r) =>
+    r.links.some((l) => l.kind === target.kind && l.id === target.id),
+  );
+  const automatic: AutomaticInput[] = MUSCLE_MAP_VIEWS.map((view) => ({
+    label: `Base · ${VIEW_LABEL[view]}`,
+    detail: `For the ${view} map`,
+    fileId: bases.find((b) => b.view === view)?.file_id ?? null,
+  }));
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -179,7 +202,10 @@ export function MuscleMapInspector({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  const run: MuscleMapRun = edited ? { promptOverride: prompt ?? undefined } : {};
+  const run: MuscleMapRun = {
+    ...(edited ? { promptOverride: prompt ?? undefined } : {}),
+    ...(references !== undefined ? { referenceIds: references } : {}),
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/20" onClick={onClose}>
@@ -225,6 +251,16 @@ export function MuscleMapInspector({
               />
             ))}
           </div>
+
+          <RunInputsPanel
+            automatic={automatic}
+            linked={linked}
+            library={library}
+            value={references}
+            onChange={setReferences}
+            note="Each map edits the base of its view; library references are sent with both views."
+            disabled={busyViews.length > 0}
+          />
 
           <section className="rounded-lg border border-zinc-200">
             <button

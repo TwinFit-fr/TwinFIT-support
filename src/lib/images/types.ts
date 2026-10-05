@@ -77,6 +77,8 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   target_position?: number;
   reference_file_id?: string | null;
   support_reference_file_id?: string | null;
+  /** Library references sent with this frame. */
+  reference_ids?: string[];
   guide_image_id?: string | null;
   logo_sent?: boolean;
   feet_shift_px?: number;
@@ -171,6 +173,9 @@ export type StyleReference = {
   links: ReferenceLink[];
 };
 
+/** Library images one generation may send, on top of the style's automatic inputs. */
+export const MAX_RUN_REFERENCES = 6;
+
 export function referenceTargetKey(target: ReferenceTarget): string {
   return `${target.kind}:${target.id}`;
 }
@@ -219,6 +224,8 @@ export type ExerciseImageBoardItem = {
   active: boolean;
   primary_muscle_group: { id: string; name: string } | null;
   equipment: { id: string; name: string } | null;
+  /** Its reference image (style supports) is sent with Start frames. */
+  support_equipment: { id: string; name: string } | null;
   description: string | null;
   image_count: number;
   active_count: number;

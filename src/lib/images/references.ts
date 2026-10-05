@@ -1,6 +1,11 @@
+import { NextResponse } from "next/server";
 import { staffGql } from "@/lib/staff-gql";
 import { getUserIdFromToken } from "./queries";
+import { downloadImageFile } from "./storage";
+import { MAX_RUN_REFERENCES } from "./types";
 import type { ReferenceLink, ReferenceTarget, StyleReference } from "./types";
+
+export { MAX_RUN_REFERENCES };
 
 const REFERENCE_FIELDS = `
   id
@@ -200,4 +205,61 @@ export async function deleteStyleReference(token: string, id: string): Promise<s
     { id },
   );
   return data.delete_images_style_references_by_pk?.file_id ?? null;
+}
+
+/**
+ * References a run sends: exactly `referenceIds` when given (the user's choice for this run),
+ * otherwise the ones linked to `target`. Only references with an image are sent.
+ */
+export async function resolveRunReferences(
+  token: string,
+  styleId: string,
+  target: ReferenceTarget,
+  referenceIds?: string[],
+): Promise<StyleReference[]> {
+  let references: StyleReference[];
+  if (referenceIds) {
+    if (!referenceIds.length) return [];
+    const data = await staffGql<{ images_style_references: RawReference[] }>(
+      token,
+      `query($styleId: uuid!, $ids: [uuid!]!) {
+        images_style_references(where: { style_id: { _eq: $styleId }, id: { _in: $ids } }) {
+          ${REFERENCE_FIELDS}
+        }
+      }`,
+      { styleId, ids: referenceIds },
+    );
+    const byId = new Map(
+      (data.images_style_references ?? []).map((row) => [row.id, toReference(row)]),
+    );
+    if (byId.size !== new Set(referenceIds).size) {
+      throw NextResponse.json({ error: "Unknown reference for this style" }, { status: 400 });
+    }
+    references = [...new Set(referenceIds)].map((id) => byId.get(id) as StyleReference);
+  } else {
+    references = await listLinkedReferences(token, styleId, target);
+  }
+  const withImage = references.filter((r) => r.file_id);
+  if (withImage.length > MAX_RUN_REFERENCES) {
+    throw NextResponse.json(
+      {
+        error: `At most ${MAX_RUN_REFERENCES} library references per image (${withImage.length} selected)`,
+      },
+      { status: 400 },
+    );
+  }
+  return withImage;
+}
+
+/** Download the images of `references`, in order. */
+export async function loadReferenceInputs(
+  token: string,
+  references: StyleReference[],
+): Promise<{ bytes: Buffer; mimeType: string }[]> {
+  return Promise.all(
+    references.map(async (reference) => {
+      const file = await downloadImageFile(token, reference.file_id as string);
+      return { bytes: file.bytes, mimeType: file.contentType };
+    }),
+  );
 }

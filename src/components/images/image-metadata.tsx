@@ -1,7 +1,12 @@
 "use client";
 
 import { capabilitiesFor, resolveSize } from "@/lib/images/capabilities";
-import type { ExerciseImage, GenerationParams, ImagePrompt } from "@/lib/images/types";
+import type {
+  ExerciseImage,
+  GenerationParams,
+  ImagePrompt,
+  StyleReference,
+} from "@/lib/images/types";
 import { framePositionLabel } from "@/lib/images/types";
 
 function generationMethod(image: ExerciseImage): string {
@@ -54,12 +59,21 @@ function promptSlotLabel(
   return "Prompt";
 }
 
+/** Names of the library references sent with the image. */
+function referencesLabel(ids: string[] | undefined, library: StyleReference[] | undefined): string {
+  if (!ids?.length) return "—";
+  return ids.map((id) => library?.find((r) => r.id === id)?.name ?? "deleted").join(", ");
+}
+
 export function ImageMetadataPanel({
   image,
   prompts,
+  references,
 }: {
   image: ExerciseImage;
   prompts: ImagePrompt[] | undefined;
+  /** The style's library, to name the references the image was made with. */
+  references?: StyleReference[];
 }) {
   const p = image.params ?? {};
   const hasOutputParams = Boolean(p.model && p.shape && p.size);
@@ -89,6 +103,7 @@ export function ImageMetadataPanel({
       "Position prompt",
       `${promptSlotLabel(prompts, p.position_prompt_id)}${p.position_prompt_edited ? " · edited" : ""}`,
     ],
+    ["References", referencesLabel(p.reference_ids, references)],
     ["Logo", p.logo_sent == null ? "—" : p.logo_sent ? "Yes" : "No"],
     ["Feet shift", p.feet_shift_px != null ? `${p.feet_shift_px}px` : "—"],
     ["Tokens", usageLabel(image.usage)],

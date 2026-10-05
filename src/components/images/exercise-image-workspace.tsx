@@ -11,6 +11,7 @@ import {
   ImageOff,
   Loader2,
   Move,
+  Layers,
   Pencil,
   SlidersHorizontal,
   Trash2,
@@ -36,6 +37,12 @@ import {
   countOverrides,
   type PromptOverrides,
 } from "@/components/images/prompt-overrides";
+import {
+  RunInputsPanel,
+  effectiveReferenceIds,
+  type AutomaticInput,
+  type RunReferences,
+} from "@/components/images/run-inputs-panel";
 import { selectedPrompts } from "@/lib/images/prompt";
 import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
 import {
@@ -49,6 +56,7 @@ import type {
   ExerciseImageDetail,
   ImagePrompt,
   ImageStyle,
+  StyleReference,
   Subject,
 } from "@/lib/images/types";
 import {
@@ -377,6 +385,7 @@ function Inspector({
   image,
   framePositions,
   prompts,
+  references,
   busy,
   onAssign,
   onDeactivate,
@@ -385,6 +394,7 @@ function Inspector({
   image: ExerciseImage | null;
   framePositions: number[];
   prompts: ImagePrompt[] | undefined;
+  references: StyleReference[];
   busy: boolean;
   onAssign: (position: number) => void;
   onDeactivate: () => void;
@@ -481,7 +491,7 @@ function Inspector({
         </Button>
       </div>
 
-      <ImageMetadataPanel image={image} prompts={prompts} />
+      <ImageMetadataPanel image={image} prompts={prompts} references={references} />
     </div>
   );
 }
@@ -540,6 +550,23 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   });
   const overrides = overridesFor.exoId === exoId ? overridesFor.value : NO_OVERRIDES;
   const setOverrides = (value: PromptOverrides) => setOverridesFor({ exoId, value });
+  const [showInputs, setShowInputs] = useState(false);
+  // Like prompt edits, a run's reference choice belongs to one exercise.
+  const [referencesFor, setReferencesFor] = useState<{ exoId: number; value: RunReferences }>({
+    exoId,
+    value: undefined,
+  });
+  const runReferences = referencesFor.exoId === exoId ? referencesFor.value : undefined;
+  const style = styles.find((s) => s.id === styleId) ?? null;
+  const { data: referencesData } = useStaffSWR<{ references: StyleReference[] }>(
+    styleId ? `/api/images/styles/${styleId}/references` : null,
+  );
+  const library = useMemo(() => referencesData?.references ?? [], [referencesData]);
+  const linkedReferences = useMemo(
+    () => library.filter((r) => r.links.some((l) => l.kind === "exercise" && l.id === exoId)),
+    [library, exoId],
+  );
+  const referenceCount = effectiveReferenceIds(runReferences, linkedReferences).length;
 
   const templates = useMemo(() => {
     const prompts = promptsData?.prompts ?? [];
@@ -592,6 +619,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   async function runGenerate() {
     if (!exercise || !styleId || queue.running || missingStart) return;
     const run = overrides;
+    const referenceIds = runReferences;
     await queue.start({
       exercises: [
         {
@@ -615,6 +643,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             systemPromptId: run.systemPromptId,
             positionOverride: run.positions[position],
             guideImageId,
+            referenceIds,
           }),
         })) as { image: ExerciseImage };
         await refresh();
@@ -860,6 +889,32 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   }
 
   const plannedCount = subjects.length * runPositions.length;
+  // Start is the only frame built from references; Mid/End edit it.
+  const startInRun = runPositions.includes(0);
+  const support = exercise.support_equipment;
+  const automaticInputs: AutomaticInput[] = startInRun
+    ? [
+        ...subjects.map((subject) => ({
+          label: `Character · ${SUBJECT_LABEL[subject]}`,
+          fileId: style?.characters.find((c) => c.subject === subject)?.file_id ?? null,
+        })),
+        ...(support
+          ? [
+              {
+                label: "Support",
+                detail: support.name,
+                fileId:
+                  style?.supports.find((s) => s.support_equipment_id === support.id)?.file_id ??
+                  null,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const logoInputs: AutomaticInput[] =
+    style?.logo_in_exercises && style.logo_file_id
+      ? [{ label: "Logo", fileId: style.logo_file_id }]
+      : [];
   const startThumb =
     exercise.by_subject.find((s) => s.subject === subjects[0])?.active_frames.find(
       (f) => f.position === 0,
@@ -920,6 +975,29 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
               </span>
             )}
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className={cn("h-8 py-0 text-xs", showInputs && "bg-zinc-100 text-zinc-900")}
+            aria-expanded={showInputs}
+            onClick={() => setShowInputs((v) => !v)}
+          >
+            <Layers className="h-3.5 w-3.5" />
+            Inputs
+            {referenceCount > 0 && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 text-[10px] font-semibold",
+                  runReferences === undefined
+                    ? "bg-zinc-200 text-zinc-700"
+                    : "bg-amber-100 text-amber-800",
+                )}
+                title="Library references sent with Start"
+              >
+                {referenceCount}
+              </span>
+            )}
+          </Button>
           {queue.running ? (
             <Button type="button" variant="secondary" className="h-8 py-0" onClick={queue.cancel}>
               Cancel
@@ -965,6 +1043,23 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         />
       )}
 
+      {showInputs && (
+        <RunInputsPanel
+          automatic={automaticInputs}
+          automaticLast={logoInputs}
+          linked={linkedReferences}
+          library={library}
+          value={runReferences}
+          onChange={(value) => setReferencesFor({ exoId, value })}
+          note={
+            startInRun
+              ? "Sent with Start. Mid and End edit that Start, so they only add the logo."
+              : "This run has no Start: Mid and End edit the active Start, so library references are not sent."
+          }
+          disabled={queue.running || !startInRun}
+        />
+      )}
+
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4">
           <FrameMatrix
@@ -991,6 +1086,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             image={selected}
             framePositions={framePositions}
             prompts={promptsData?.prompts}
+            references={library}
             busy={busy}
             onAssign={(position) => selected && void setPosition(selected.id, position, true)}
             onDeactivate={() => selected && void setPosition(selected.id, null, false)}

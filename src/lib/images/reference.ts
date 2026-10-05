@@ -22,6 +22,15 @@ export function muscleBaseDirective(view: MuscleMapView): string {
   return `BODY MAP BASE: the first input image is this style's blank body map, ${view} view. Keep EXACTLY the same figure, pose, framing, scale, background, line work and colors. Change ONLY the fill of the muscles to highlight; never redraw or move the body.`;
 }
 
+/** Appended for each library reference sent; `inputNumber` is its 1-based input position. */
+export function libraryReferenceDirective(
+  inputNumber: number,
+  reference: { name: string; instruction: string },
+): string {
+  const use = reference.instruction.trim() || "Use it as the visual reference for this detail.";
+  return `REFERENCE IMAGE ${inputNumber} ("${reference.name}"): ${use}`;
+}
+
 export function styleAssetPath(
   styleCode: string,
   kind: "characters" | "supports" | "brand" | "frames" | "muscles" | "library",

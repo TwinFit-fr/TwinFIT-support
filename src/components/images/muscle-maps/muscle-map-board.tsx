@@ -26,6 +26,7 @@ import type {
   MuscleMapTargetRef,
   MuscleMapView,
   StylePrompts,
+  StyleReference,
 } from "@/lib/images/types";
 import { MUSCLE_MAP_VIEWS, muscleMapTargetKey } from "@/lib/images/types";
 import { MuscleMapCard } from "./muscle-map-card";
@@ -52,6 +53,9 @@ export function MuscleMapBoard() {
   const { data, isLoading, error } = useStaffSWR<BoardResponse>(boardKey);
   const { data: prompts } = useStaffSWR<StylePrompts>(
     styleId ? `/api/images/prompts?styleId=${styleId}` : null,
+  );
+  const { data: referencesData } = useStaffSWR<{ references: StyleReference[] }>(
+    styleId ? `/api/images/styles/${styleId}/references` : null,
   );
   const [views, setViews] = useViewSelection();
   const [search, setSearch] = useState("");
@@ -289,7 +293,8 @@ export function MuscleMapBoard() {
           key={openKey}
           target={openTarget}
           template={prompts?.muscleMap?.content ?? ""}
-          baseViews={baseViews}
+          bases={style?.muscle_bases ?? []}
+          library={referencesData?.references ?? []}
           busyViews={busyViews(openTarget)}
           onClose={() => setOpenKey(null)}
           onGenerate={(view, run) => void generateOne(openTarget, view, run)}

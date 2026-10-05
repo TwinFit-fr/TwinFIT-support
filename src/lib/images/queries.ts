@@ -163,6 +163,9 @@ function toBoardItem(
     active: exercise.active,
     primary_muscle_group: exercise.primary_muscle_group,
     equipment: exercise.equipment,
+    support_equipment: exercise.support_equipment
+      ? { id: exercise.support_equipment.id, name: exercise.support_equipment.name }
+      : null,
     description: englishDescription(exercise.localizations) || null,
     image_count: images.length,
     active_count: active.length,

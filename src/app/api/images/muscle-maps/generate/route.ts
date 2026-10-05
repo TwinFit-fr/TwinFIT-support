@@ -10,7 +10,16 @@ import {
 import { editImage } from "@/lib/images/openai";
 import { fillMuscleMapTemplate } from "@/lib/images/prompt";
 import { getStyle, getUserIdFromToken, listImagePromptsForStyle } from "@/lib/images/queries";
-import { muscleBaseDirective, muscleMapFileName } from "@/lib/images/reference";
+import {
+  libraryReferenceDirective,
+  muscleBaseDirective,
+  muscleMapFileName,
+} from "@/lib/images/reference";
+import {
+  MAX_RUN_REFERENCES,
+  loadReferenceInputs,
+  resolveRunReferences,
+} from "@/lib/images/references";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { extensionForMime } from "@/lib/images/style-assets";
 
@@ -24,12 +33,14 @@ const bodySchema = z.object({
   }),
   view: z.enum(["front", "back"]),
   promptOverride: z.string().trim().min(1).max(32000).optional(),
+  /** Library references for this run; omitted = the ones linked to the target. */
+  referenceIds: z.array(z.string().uuid()).max(MAX_RUN_REFERENCES).optional(),
 });
 
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
-    const { styleId, target: ref, view, promptOverride } = bodySchema.parse(
+    const { styleId, target: ref, view, promptOverride, referenceIds } = bodySchema.parse(
       await request.json(),
     );
 
@@ -47,7 +58,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const template = (await listImagePromptsForStyle(token, styleId)).muscleMap;
+    const [template, references] = await Promise.all([
+      listImagePromptsForStyle(token, styleId).then((slots) => slots.muscleMap),
+      resolveRunReferences(token, styleId, ref, referenceIds),
+    ]);
+    // Input 1 is the base; library references follow from input 2.
     const prompt = [
       fillMuscleMapTemplate(promptOverride ?? template.content, {
         view,
@@ -55,13 +70,17 @@ export async function POST(request: Request) {
         target,
       }),
       muscleBaseDirective(view),
+      ...references.map((reference, i) => libraryReferenceDirective(i + 2, reference)),
     ].join("\n\n");
 
     const base = await downloadImageFile(token, baseFileId);
     const result = await editImage(
       prompt,
       style.params,
-      [{ bytes: base.bytes, mimeType: base.contentType }],
+      [
+        { bytes: base.bytes, mimeType: base.contentType },
+        ...(await loadReferenceInputs(token, references)),
+      ],
       { useFidelity: true },
     );
 
@@ -90,6 +109,7 @@ export async function POST(request: Request) {
           base_file_id: baseFileId,
           prompt_id: template.id,
           prompt_edited: promptOverride != null,
+          reference_ids: references.map((r) => r.id),
         },
         usage: result.usage,
         created_by: getUserIdFromToken(token),

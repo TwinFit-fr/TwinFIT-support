@@ -23,7 +23,13 @@ import {
   START_GUIDE_DIRECTIVE,
   SUPPORT_REFERENCE_DIRECTIVE,
   frameFileName,
+  libraryReferenceDirective,
 } from "@/lib/images/reference";
+import {
+  MAX_RUN_REFERENCES,
+  loadReferenceInputs,
+  resolveRunReferences,
+} from "@/lib/images/references";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { MID_POSITION, targetPosition } from "@/lib/images/types";
 import type { ExerciseImage, Subject } from "@/lib/images/types";
@@ -41,6 +47,8 @@ const bodySchema = z.object({
   systemPromptId: z.string().uuid().optional(),
   positionOverride: promptText.optional(),
   guideImageId: z.string().uuid().optional(),
+  /** Library references for this run; omitted = the ones linked to the exercise. */
+  referenceIds: z.array(z.string().uuid()).max(MAX_RUN_REFERENCES).optional(),
 });
 
 export async function POST(request: Request) {
@@ -127,33 +135,51 @@ export async function POST(request: Request) {
       background_color: params.background_color,
       details: exerciseDetails(exercise),
     });
+    // Library references belong to the Start: Mid/End copy them from the Start they edit.
+    const references = usableGuide
+      ? []
+      : await resolveRunReferences(
+          token,
+          styleId,
+          { kind: "exercise", id: exercise.exo_id },
+          body.referenceIds,
+        );
     const logo = style.logo_in_exercises ? await loadLogoInput(token, style) : null;
-    const directives = [
-      usableGuide
-        ? START_GUIDE_DIRECTIVE
-        : characterFileId
-          ? REFERENCE_USE_DIRECTIVE
-          : null,
-      supportFileId ? SUPPORT_REFERENCE_DIRECTIVE : null,
-      logo ? LOGO_DIRECTIVE : null,
-    ].filter(Boolean);
-    const prompt = [basePrompt, ...directives].join("\n\n");
 
+    // Input order: guide or character, support, library references, logo.
     const inputs = [];
     const primaryFileId = usableGuide?.file_id ?? characterFileId;
     if (primaryFileId) {
       const input = await downloadImageFile(token, primaryFileId);
       inputs.push({ bytes: input.bytes, mimeType: input.contentType });
     }
+    let supportSent = false;
     if (supportFileId) {
       try {
         const support = await downloadImageFile(token, supportFileId);
         inputs.push({ bytes: support.bytes, mimeType: support.contentType });
+        supportSent = true;
       } catch {
         /* missing support ref must not block generation */
       }
     }
+    const firstReferenceInput = inputs.length + 1;
+    inputs.push(...(await loadReferenceInputs(token, references)));
     if (logo) inputs.push(logo);
+
+    const directives = [
+      usableGuide
+        ? START_GUIDE_DIRECTIVE
+        : characterFileId
+          ? REFERENCE_USE_DIRECTIVE
+          : null,
+      supportSent ? SUPPORT_REFERENCE_DIRECTIVE : null,
+      ...references.map((reference, i) =>
+        libraryReferenceDirective(firstReferenceInput + i, reference),
+      ),
+      logo ? LOGO_DIRECTIVE : null,
+    ].filter(Boolean);
+    const prompt = [basePrompt, ...directives].join("\n\n");
 
     const result = inputs.length
       ? await editImage(prompt, params, inputs, { useFidelity: Boolean(primaryFileId) })
@@ -177,7 +203,8 @@ export async function POST(request: Request) {
       ...params,
       target_position: position,
       reference_file_id: characterFileId,
-      support_reference_file_id: supportFileId,
+      support_reference_file_id: supportSent ? supportFileId : null,
+      reference_ids: references.map((r) => r.id),
       guide_image_id: usableGuide?.id ?? null,
       logo_sent: Boolean(logo),
       feet_shift_px: aligned.shiftPx,
