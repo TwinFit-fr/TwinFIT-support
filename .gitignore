@@ -28,8 +28,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
-.env*.local
+# env files (never commit secrets — use .env.local.example as template)
+.env
+.env.*
+!.env.local.example
 
 # typescript
 *.tsbuildinfo

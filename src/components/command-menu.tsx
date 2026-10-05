@@ -15,7 +15,9 @@ import {
   X,
   Image as ImageIcon,
 } from "lucide-react";
+import { RoleBadges } from "@/components/support/role-badges";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
+import type { SupportUserSearchHit } from "@/lib/support/types";
 
 type CommandItem = {
   id: string;
@@ -59,15 +61,15 @@ export function CommandMenu({
     const timer = setTimeout(() => setDebouncedQuery(trimmedQuery), 300);
     return () => clearTimeout(timer);
   }, [trimmedQuery]);
-  const looksLikeUser =
-    Boolean(trimmedQuery) && (trimmedQuery.includes("@") || trimmedQuery.length >= 3);
-  const lookupTerm = looksLikeUser && debouncedQuery === trimmedQuery ? trimmedQuery : null;
-  const { data: lookup, isValidating } = useStaffSWR<{ user?: { id: string; email: string } }>(
-    lookupTerm ? `/api/support/lookup?q=${encodeURIComponent(lookupTerm)}` : null,
-    { shouldRetryOnError: false, keepPreviousData: false },
+  const searchTerm =
+    debouncedQuery.length >= 4 && debouncedQuery === trimmedQuery ? trimmedQuery : null;
+  const { data: searchData, isValidating: searchingUser } = useStaffSWR<{
+    results: SupportUserSearchHit[];
+  }>(
+    searchTerm ? `/api/support/search?q=${encodeURIComponent(searchTerm)}` : null,
+    { shouldRetryOnError: false, keepPreviousData: true },
   );
-  const userResult = lookupTerm ? (lookup?.user ?? null) : null;
-  const searchingUser = Boolean(lookupTerm) && isValidating;
+  const userResults = searchTerm ? (searchData?.results ?? []) : [];
 
   const defaultItems: CommandItem[] = useMemo(
     () => [
@@ -218,32 +220,44 @@ export function CommandMenu({
         </div>
 
         <div className="overflow-y-auto p-2 divide-y divide-zinc-100">
-          {/* User search result match if detected */}
-          {userResult && (
+          {userResults.length > 0 && (
             <div className="pb-2">
               <div className="px-3 py-1.5 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
-                User Match
+                Users
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenChange(false);
-                  setQuery("");
-                  router.push(`/support/${userResult.id}`);
-                }}
-                className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left text-sm hover:bg-zinc-100 transition-colors group cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-medium text-xs">
-                    {userResult.email.charAt(0).toUpperCase()}
+              {userResults.map((userResult) => (
+                <button
+                  key={userResult.id}
+                  type="button"
+                  onClick={() => {
+                    onOpenChange(false);
+                    setQuery("");
+                    router.push(`/support/${userResult.id}`);
+                  }}
+                  className="group flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-100"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-medium text-emerald-700">
+                      {userResult.email.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-zinc-900">
+                        {userResult.display_name || userResult.username || userResult.email}
+                      </p>
+                      <p className="truncate text-xs text-zinc-500">
+                        {userResult.email}
+                        {userResult.username ? ` · @${userResult.username}` : ""}
+                      </p>
+                      <RoleBadges
+                        defaultRole={userResult.defaultRole}
+                        roles={userResult.roles}
+                        className="mt-1"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-zinc-900">{userResult.email}</p>
-                    <p className="text-xs text-zinc-500 font-mono">ID: {userResult.id}</p>
-                  </div>
-                </div>
-                <ArrowRight className="h-4 w-4 text-zinc-400 group-hover:text-zinc-700 transition-colors" />
-              </button>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-zinc-400 transition-colors group-hover:text-zinc-700" />
+                </button>
+              ))}
             </div>
           )}
 
@@ -279,7 +293,7 @@ export function CommandMenu({
               </button>
             ))}
 
-            {filteredItems.length === 0 && !userResult && !searchingUser && (
+            {filteredItems.length === 0 && userResults.length === 0 && !searchingUser && (
               <div className="py-8 text-center text-sm text-zinc-500">
                 No matching commands or pages found for &quot;{query}&quot;.
               </div>
