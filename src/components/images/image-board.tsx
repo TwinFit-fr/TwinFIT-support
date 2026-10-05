@@ -5,7 +5,14 @@ import { mutate } from "swr";
 import { Search } from "lucide-react";
 import { Input, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
-import { ExerciseImageCard, STATUS_DOT } from "@/components/images/exercise-image-card";
+import {
+  BOARD_GRID,
+  EmptyState,
+  StatusTabs,
+  statusCounts,
+  type StatusFilter,
+} from "@/components/images/board-ui";
+import { ExerciseImageCard } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
 import { StyleSelector, runPositionsFor } from "@/components/images/position-selector";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
@@ -28,25 +35,6 @@ import type {
 import { cn } from "@/lib/utils";
 
 type ListResponse = { exercises: ExerciseImageBoardItem[]; count: number };
-type StatusFilter = "all" | ExerciseImageBoardItem["status"];
-
-const STATUS_FILTERS: [StatusFilter, string][] = [
-  ["all", "All"],
-  ["empty", "Empty"],
-  ["partial", "Partial"],
-  ["complete", "Complete"],
-  ["inactive_only", "Inactive"],
-];
-
-const BOARD_GRID = "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6";
-
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-12 text-center text-sm text-zinc-500">
-      {children}
-    </div>
-  );
-}
 
 function FilterSelect({
   value,
@@ -142,19 +130,7 @@ export function ImageBoard() {
     });
   }, [exercises, search, status, muscle, equipment]);
 
-  const counts = useMemo(() => {
-    const c = {
-      all: exercises.length,
-      empty: 0,
-      partial: 0,
-      complete: 0,
-      inactive_only: 0,
-    };
-    for (const ex of exercises) {
-      if (ex.status in c) c[ex.status as keyof typeof c] += 1;
-    }
-    return c;
-  }, [exercises]);
+  const counts = useMemo(() => statusCounts(exercises.map((ex) => ex.status)), [exercises]);
 
   // With a batch frame count, positions it lacks (Mid for 2 frames) are not offered.
   const batchPositions = frameCount === "exercise" ? undefined : framePositionsFor(frameCount === 2);
@@ -272,7 +248,7 @@ export function ImageBoard() {
   return (
     <div className="space-y-4 pb-28">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Images</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Exercises</h1>
         <StyleSelector
           styles={styles}
           value={styleId}
@@ -282,29 +258,7 @@ export function ImageBoard() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg bg-zinc-100 p-0.5" role="tablist">
-          {STATUS_FILTERS.map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={status === id}
-              onClick={() => setStatus(id)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
-                status === id
-                  ? "bg-white text-zinc-900 shadow-xs"
-                  : "text-zinc-600 hover:text-zinc-900",
-              )}
-            >
-              {id !== "all" && (
-                <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[id])} />
-              )}
-              {label}
-              <span className="tabular-nums text-zinc-400">{counts[id]}</span>
-            </button>
-          ))}
-        </div>
+        <StatusTabs value={status} onChange={setStatus} counts={counts} />
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />

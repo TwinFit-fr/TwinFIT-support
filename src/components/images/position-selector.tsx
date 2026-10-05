@@ -1,8 +1,8 @@
 "use client";
 
 import { SUBJECT_OPTIONS } from "@/lib/images/capabilities";
-import { FRAME_POSITIONS, SUBJECTS, framePositionLabel } from "@/lib/images/types";
-import type { FrameCountChoice, ImageStyle, Subject } from "@/lib/images/types";
+import { FRAME_POSITIONS, MUSCLE_MAP_VIEWS, SUBJECTS, framePositionLabel } from "@/lib/images/types";
+import type { FrameCountChoice, ImageStyle, MuscleMapView, Subject } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 
 /** A native select with a visible label, so each generation option reads on its own. */
@@ -133,6 +133,42 @@ export function SubjectSelector({
       }}
     >
       {SUBJECT_PRESETS.map((option) => (
+        <option key={option.id} value={option.id}>
+          {option.label}
+        </option>
+      ))}
+    </SelectField>
+  );
+}
+
+const VIEW_PRESETS: { id: string; label: string; views: MuscleMapView[] }[] = [
+  { id: "both", label: "Front + back", views: [...MUSCLE_MAP_VIEWS] },
+  { id: "front", label: "Front", views: ["front"] },
+  { id: "back", label: "Back", views: ["back"] },
+];
+
+/** Muscle map views to generate: both, front or back. */
+export function ViewSelector({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: MuscleMapView[];
+  onChange: (next: MuscleMapView[]) => void;
+  disabled?: boolean;
+}) {
+  const key = value.length === MUSCLE_MAP_VIEWS.length ? "both" : (value[0] ?? "both");
+  return (
+    <SelectField
+      label="Views"
+      value={key}
+      disabled={disabled}
+      onChange={(next) => {
+        const preset = VIEW_PRESETS.find((p) => p.id === next);
+        if (preset) onChange(preset.views);
+      }}
+    >
+      {VIEW_PRESETS.map((option) => (
         <option key={option.id} value={option.id}>
           {option.label}
         </option>

@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { FRAME_POSITIONS, SUBJECTS } from "@/lib/images/types";
-import type { FrameCountChoice, Subject } from "@/lib/images/types";
+import { createPrioritySemaphore } from "@/lib/priority-semaphore";
+import { FRAME_POSITIONS, MUSCLE_MAP_VIEWS, SUBJECTS } from "@/lib/images/types";
+import type { FrameCountChoice, MuscleMapView, Subject } from "@/lib/images/types";
 
 export type StepStatus = "waiting" | "processing" | "done" | "error" | "cancelled";
 
@@ -39,29 +40,6 @@ function itemStatus(steps: QueueStep[]): StepStatus {
   if (steps.some((s) => s.status === "error")) return "error";
   if (steps.every((s) => s.status === "cancelled")) return "cancelled";
   return "done";
-}
-
-/** At most `limit` holders; waiters with the lowest priority number go first. */
-function createPrioritySemaphore(limit: number) {
-  let active = 0;
-  const waiters: { priority: number; resolve: () => void }[] = [];
-  return {
-    acquire(priority: number): Promise<void> {
-      if (active < limit) {
-        active++;
-        return Promise.resolve();
-      }
-      return new Promise((resolve) => {
-        waiters.push({ priority, resolve });
-        waiters.sort((a, b) => a.priority - b.priority);
-      });
-    },
-    release() {
-      const next = waiters.shift();
-      if (next) next.resolve();
-      else active--;
-    },
-  };
 }
 
 /**
@@ -270,6 +248,12 @@ function parseSubjects(raw: unknown): Subject[] | null {
   return valid.length ? valid : null;
 }
 
+function parseViews(raw: unknown): MuscleMapView[] | null {
+  if (!Array.isArray(raw)) return null;
+  const valid = MUSCLE_MAP_VIEWS.filter((v) => raw.includes(v));
+  return valid.length ? valid : null;
+}
+
 function parseFrameCount(raw: unknown): FrameCountChoice | null {
   return raw === "exercise" || raw === 2 || raw === 3 ? raw : null;
 }
@@ -305,6 +289,18 @@ export function useSubjectSelection() {
     [setSubjects],
   );
   return [subjects, setSorted] as const;
+}
+
+const ALL_VIEWS = [...MUSCLE_MAP_VIEWS];
+
+/** Muscle map views to generate; default is front and back. */
+export function useViewSelection() {
+  const [views, setViews] = useStoredChoice("twinfit.images.views", ALL_VIEWS, parseViews);
+  const setSorted = useCallback(
+    (next: MuscleMapView[]) => setViews(ALL_VIEWS.filter((v) => next.includes(v))),
+    [setViews],
+  );
+  return [views, setSorted] as const;
 }
 
 export function useFrameCountChoice() {

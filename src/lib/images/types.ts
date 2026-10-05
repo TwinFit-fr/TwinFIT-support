@@ -98,6 +98,56 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   subject?: Subject;
 };
 
+/** Snapshot stored on each generated muscle map. */
+export type MuscleMapSnapshot = Partial<GenerationParams> & {
+  base_file_id?: string | null;
+  prompt_id?: string | null;
+  prompt_edited?: boolean;
+  reference_ids?: string[];
+};
+
+export type MuscleMapImage = {
+  id: string;
+  style_id: string;
+  muscle_id: string | null;
+  muscle_group_id: string | null;
+  view: MuscleMapView;
+  file_id: string;
+  image_url: string;
+  active: boolean;
+  model: string;
+  prompt: string;
+  params: MuscleMapSnapshot | null;
+  usage: Record<string, unknown> | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MuscleMapTargetRef = { kind: MuscleMapTargetKind; id: string };
+
+/** A muscle or a muscle group on the muscle map board, with its maps for one style. */
+export type MuscleMapBoardTarget = MuscleMapTargetRef & {
+  code: string;
+  name: string;
+  description: string | null;
+  /** Newest first. */
+  images: MuscleMapImage[];
+  active: Partial<Record<MuscleMapView, MuscleMapImage>>;
+  /** Complete when both views have an active map. */
+  status: "complete" | "partial" | "inactive_only" | "empty";
+};
+
+/** A group and the muscles whose home it is; group is null for muscles without one. */
+export type MuscleMapBoardRow = {
+  group: MuscleMapBoardTarget | null;
+  muscles: MuscleMapBoardTarget[];
+};
+
+export function muscleMapTargetKey(ref: MuscleMapTargetRef): string {
+  return `${ref.kind}:${ref.id}`;
+}
+
 export type ImagePrompt = {
   id: string;
   style_id: string;

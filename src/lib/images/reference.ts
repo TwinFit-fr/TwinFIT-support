@@ -1,4 +1,4 @@
-import type { MuscleMapView, Subject } from "./types";
+import type { MuscleMapTargetKind, MuscleMapView, Subject } from "./types";
 
 /** Appended when a generation uses the style character reference as input image. */
 export const REFERENCE_USE_DIRECTIVE = `CHARACTER REFERENCE: the input image is the official character for this style. Draw exactly this same person — same face, hair, body type, skin tone, clothing, colors and illustration style. Do NOT copy the pose, framing or camera angle of the reference: use only the pose described above, and show any equipment it requires.`;
@@ -16,6 +16,11 @@ export const START_GUIDE_DIRECTIVE = `EDIT OF THE START FRAME: the input image i
 
 /** Appended whenever the brand logo is one of the input images. */
 export const LOGO_DIRECTIVE = `BRAND LOGO: one of the input images is the brand symbol (on a transparent background). Print exactly this symbol — same shape and same colors, no added text or letters — small and centered on the chest of the character's shirt. Do not draw the symbol anywhere else and do not copy its background.`;
+
+/** Appended when a muscle map edits the style's blank body of that view. */
+export function muscleBaseDirective(view: MuscleMapView): string {
+  return `BODY MAP BASE: the first input image is this style's blank body map, ${view} view. Keep EXACTLY the same figure, pose, framing, scale, background, line work and colors. Change ONLY the fill of the muscles to highlight; never redraw or move the body.`;
+}
 
 export function styleAssetPath(
   styleCode: string,
@@ -43,6 +48,20 @@ export function muscleBaseFileName(
   extension: string,
 ): string {
   return styleAssetPath(styleCode, "muscles", `base_${view}_${Date.now()}.${extension}`);
+}
+
+export function muscleMapFileName(
+  styleCode: string,
+  target: { kind: MuscleMapTargetKind; code: string },
+  view: MuscleMapView,
+  extension: string,
+): string {
+  const prefix = target.kind === "muscle_group" ? "group" : "muscle";
+  return styleAssetPath(
+    styleCode,
+    "muscles",
+    `${prefix}_${target.code.toLowerCase()}_${view}_${Date.now()}.${extension}`,
+  );
 }
 
 export function logoFileName(styleCode: string, extension: string): string {

@@ -1,5 +1,6 @@
 import { staffGql } from "@/lib/staff-gql";
 import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
+import { countStyleMuscleMaps } from "./muscle-maps";
 import { exerciseDetails, type ExerciseTaxonomy } from "./prompt";
 import { MID_POSITION, SUBJECTS, framePositionsFor, resolveTwoFrames } from "./types";
 import type {
@@ -384,6 +385,9 @@ export async function deleteStyle(token: string, styleId: string): Promise<void>
   );
   if ((data.images_exercise_images_aggregate.aggregate?.count ?? 0) > 0) {
     throw new Error("Cannot delete a style that still has frames");
+  }
+  if ((await countStyleMuscleMaps(token, styleId)) > 0) {
+    throw new Error("Cannot delete a style that still has muscle maps");
   }
   await staffGql(token, `mutation($id: uuid!) { delete_images_styles_by_pk(id: $id) { id } }`, {
     id: styleId,
