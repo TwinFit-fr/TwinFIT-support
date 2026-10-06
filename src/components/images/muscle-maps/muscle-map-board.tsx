@@ -239,8 +239,8 @@ export function MuscleMapBoard() {
           {style.name} has no{" "}
           {MUSCLE_MAP_VIEWS.filter((v) => !baseViews.includes(v)).join(" or ")} base yet. Maps
           edit the base of their view:{" "}
-          <Link href="/images/styles" className="font-medium underline">
-            add it on Styles → References
+          <Link href="/images/styles?tab=assets" className="font-medium underline">
+            add it on Styles → Assets
           </Link>
           .
         </div>

@@ -79,7 +79,7 @@ function ViewColumn({
             ) : (
               <>
                 No {view} base.{" "}
-                <Link href="/images/styles" className="underline">
+                <Link href="/images/styles?tab=assets" className="underline">
                   Add it on Styles
                 </Link>
               </>
@@ -305,8 +305,8 @@ export function MuscleMapInspector({
                 </div>
                 <p className="text-[11px] text-zinc-500">
                   Not saved: it applies to the next Generate here. Edit the style prompt on{" "}
-                  <Link href="/images/prompts" className="underline">
-                    Prompts
+                  <Link href="/images/styles?tab=prompts" className="underline">
+                    Styles → Prompts
                   </Link>
                   .
                 </p>

@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     const baseFileId = style.muscle_bases.find((b) => b.view === view)?.file_id;
     if (!baseFileId) {
       return NextResponse.json(
-        { error: `This style has no ${view} base: add it on Styles → References first` },
+        { error: `This style has no ${view} base: add it on Styles → Assets first` },
         { status: 409 },
       );
     }

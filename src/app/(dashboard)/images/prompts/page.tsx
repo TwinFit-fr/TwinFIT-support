@@ -1,5 +1,6 @@
-import { ImagePromptsPage } from "@/components/images/prompt-editor";
+import { redirect } from "next/navigation";
 
+/** Prompts are a tab of each style. */
 export default function ImagesPromptsRoute() {
-  return <ImagePromptsPage />;
+  redirect("/images/styles?tab=prompts");
 }
