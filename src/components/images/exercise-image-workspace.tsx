@@ -17,6 +17,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button, Skeleton } from "@/components/ui/primitives";
+import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
@@ -541,6 +542,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const router = useRouter();
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
+  const confirm = useConfirm();
   const [positions, setPositions] = usePositionSelection();
   const [subjects, setSubjects] = useSubjectSelection();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
@@ -700,7 +702,11 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     if (
       next &&
       hasActiveMid &&
-      !window.confirm("Use only Start and End? Active Mid frames will be deactivated.")
+      !(await confirm({
+        title: "Use only Start and End?",
+        description: "Active Mid frames will be deactivated.",
+        confirmLabel: "Use 2 frames",
+      }))
     ) {
       return;
     }
@@ -737,7 +743,13 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
 
   async function removeImage(image: ExerciseImage | null) {
     if (!image || !isDeletableImage(image) || busy) return;
-    if (!window.confirm(`Delete this ${imageLabel(image)} image permanently?`)) return;
+    const remove = await confirm({
+      title: `Delete this ${imageLabel(image)} image?`,
+      description: "It is deleted permanently.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!remove) return;
     setBusy(true);
     try {
       await staffFetch(`/api/images/items/${image.id}`, { method: "DELETE" });

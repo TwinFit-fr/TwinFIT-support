@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { mutate } from "swr";
 import { Button, Skeleton } from "@/components/ui/primitives";
+import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { useStyleChoice } from "@/hooks/use-generation-queue";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
@@ -54,6 +55,7 @@ function normalizeCode(raw: string): string {
 export function ImageStylesPage() {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
+  const confirm = useConfirm();
 
   const { data: stylesData, isLoading: stylesLoading } =
     useStaffSWR<StylesResponse>("/api/images/styles");
@@ -131,10 +133,19 @@ export function ImageStylesPage() {
   const issues = validateGenerationParams(styleDraft.params);
   const styleDirty = JSON.stringify(styleDraft) !== JSON.stringify(toStyleDraft(style));
 
-  function openCreate() {
-    if (styleDirty && !window.confirm("Discard unsaved style changes and create a new style?")) {
-      return;
-    }
+  /** True when there is nothing unsaved, or the user agrees to drop it. */
+  async function discardEdits(next: string): Promise<boolean> {
+    if (!styleDirty) return true;
+    return confirm({
+      title: "Discard unsaved style changes?",
+      description: `Your edits to ${style?.name ?? "this style"} are lost if you ${next}.`,
+      confirmLabel: "Discard",
+      variant: "danger",
+    });
+  }
+
+  async function openCreate() {
+    if (!(await discardEdits("create a new style"))) return;
     setCreateDraft({
       code: "",
       name: "",
@@ -220,7 +231,14 @@ export function ImageStylesPage() {
       toastError("Cannot delete the default style");
       return;
     }
-    if (!window.confirm(`Delete style "${style.code}"? This cannot be undone.`)) return;
+    const remove = await confirm({
+      title: `Delete style "${style.code}"?`,
+      description:
+        "Its prompts and reference images are deleted with it. This cannot be undone.",
+      confirmLabel: "Delete style",
+      variant: "danger",
+    });
+    if (!remove) return;
     try {
       await staffFetch(`/api/images/styles/${selectedStyleId}`, { method: "DELETE" });
       await mutate("/api/images/styles");
@@ -328,7 +346,12 @@ export function ImageStylesPage() {
 
   async function removeLogo() {
     if (!selectedStyleId) return;
-    if (!window.confirm("Remove the brand logo from this style?")) return;
+    const remove = await confirm({
+      title: "Remove the brand logo?",
+      confirmLabel: "Remove",
+      variant: "danger",
+    });
+    if (!remove) return;
     setLogoBusy(true);
     try {
       const result = (await staffFetch(`/api/images/styles/${selectedStyleId}/logo`, {
@@ -388,9 +411,8 @@ export function ImageStylesPage() {
         published={styleDraft.published}
         isDefault={styleDraft.is_default}
         busy={savingStyle || creating}
-        onSelect={(id) => {
-          if (styleDirty && !window.confirm("Discard unsaved style changes?")) return;
-          selectStyle(id);
+        onSelect={async (id) => {
+          if (await discardEdits("switch styles")) selectStyle(id);
         }}
         onPublishedChange={(published) =>
           editStyle({
@@ -406,7 +428,7 @@ export function ImageStylesPage() {
             published: is_default || styleDraft.published,
           })
         }
-        onNew={openCreate}
+        onNew={() => void openCreate()}
         onDelete={() => void deleteStyle()}
       />
 

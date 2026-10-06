@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { mutate } from "swr";
 import type { TaxonomyData } from "@/components/catalog/taxonomy/types";
 import { Button, Skeleton } from "@/components/ui/primitives";
+import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import type { ImageStyle, ReferenceLink, StyleReference } from "@/lib/images/types";
@@ -237,6 +238,7 @@ function ReferenceCard({
 export function ReferencesLibrary({ style }: { style: ImageStyle }) {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
+  const confirm = useConfirm();
   const listKey = `/api/images/styles/${style.id}/references`;
   const { data, isLoading } = useStaffSWR<ReferencesResponse>(listKey);
   const [dialog, setDialog] = useState<{ reference: StyleReference | null } | null>(null);
@@ -319,9 +321,13 @@ export function ReferencesLibrary({ style }: { style: ImageStyle }) {
   }
 
   async function remove(reference: StyleReference) {
-    if (!window.confirm(`Delete "${reference.name}" and its links? This cannot be undone.`)) {
-      return;
-    }
+    const remove = await confirm({
+      title: `Delete "${reference.name}"?`,
+      description: "The reference and its links are deleted. This cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!remove) return;
     setBusyId(reference.id);
     try {
       await staffFetch(`${listKey}/${reference.id}`, { method: "DELETE" });

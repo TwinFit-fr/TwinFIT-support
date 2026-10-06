@@ -13,6 +13,7 @@ import {
 } from "@/components/images/board-ui";
 import { StyleSelector } from "@/components/images/position-selector";
 import { Input, Skeleton } from "@/components/ui/primitives";
+import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { useStyleChoice, useViewSelection } from "@/hooks/use-generation-queue";
 import { useBoardSelection } from "@/hooks/use-board-selection";
@@ -45,6 +46,7 @@ function matches(target: MuscleMapBoardTarget, status: StatusFilter, query: stri
 export function MuscleMapBoard() {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
+  const confirm = useConfirm();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
   const [styleId, setStyleId] = useStyleChoice(styles);
@@ -157,7 +159,13 @@ export function MuscleMapBoard() {
   async function updateImage(image: MuscleMapImage, change: "activate" | "deactivate" | "delete") {
     try {
       if (change === "delete") {
-        if (!window.confirm("Delete this muscle map? This cannot be undone.")) return;
+        const remove = await confirm({
+          title: "Delete this muscle map?",
+          description: "This cannot be undone.",
+          confirmLabel: "Delete",
+          variant: "danger",
+        });
+        if (!remove) return;
         await staffFetch(`/api/images/muscle-maps/items/${image.id}`, { method: "DELETE" });
       } else {
         await staffFetch(`/api/images/muscle-maps/items/${image.id}`, {

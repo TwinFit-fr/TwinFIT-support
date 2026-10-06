@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { mutate } from "swr";
 import { Search } from "lucide-react";
 import { Input, Skeleton } from "@/components/ui/primitives";
+import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import {
   BOARD_GRID,
@@ -81,6 +82,7 @@ function subjectHasStart(exercise: ExerciseImageBoardItem, subject: Subject): bo
 export function ImageBoard() {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
+  const confirm = useConfirm();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
   const [styleId, setStyleId] = useStyleChoice(styles);
@@ -178,9 +180,11 @@ export function ImageBoard() {
     );
     if (
       losingMid.length &&
-      !window.confirm(
-        `${losingMid.length} exercise(s) have an active Mid frame. Switching them to 2 frames deactivates it. Continue?`,
-      )
+      !(await confirm({
+        title: "Switch to 2 frames?",
+        description: `${losingMid.length} exercise(s) have an active Mid frame. Switching them to 2 frames deactivates it.`,
+        confirmLabel: "Use 2 frames",
+      }))
     ) {
       return false;
     }
