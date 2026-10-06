@@ -83,6 +83,24 @@ export function useMuscleMapActions(styleId: string | null) {
     }
   }
 
+  /** Queues an edit of a map; the result lands in the view's history as a candidate. */
+  async function editMap(target: MuscleMapTargetRef, image: MuscleMapImage, instruction: string) {
+    if (!(await confirmGeneration.run(1))) return;
+    try {
+      await jobs.enqueue([
+        {
+          kind: "muscle_map",
+          target: { kind: target.kind, id: target.id },
+          view: image.view,
+          options: { editOf: image.id, instruction },
+        },
+      ]);
+      success("Edit queued: it will appear in the view's history");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
+    }
+  }
+
   const matches = (job: GenerationJob, target: MuscleMapTargetRef, view?: MuscleMapView) => {
     const ref = jobTarget(job);
     return ref?.kind === target.kind && ref.id === target.id && (!view || job.view === view);
@@ -150,6 +168,7 @@ export function useMuscleMapActions(styleId: string | null) {
     jobs,
     enqueue,
     generateOne,
+    editMap,
     update,
     /** A map of this target and view is queued or being made. */
     isBusy: (target: MuscleMapTargetRef, view: MuscleMapView) =>

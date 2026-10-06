@@ -12,6 +12,7 @@ import {
   SegmentedControl,
   StyleSelector,
 } from "@/components/images/generation-controls";
+import { EditInstruction } from "@/components/images/edit-instruction";
 import { MuscleMapMetadataPanel } from "@/components/images/image-metadata";
 import {
   RunInputsPanel,
@@ -58,6 +59,7 @@ function ViewColumn({
   onActivate,
   onDeactivate,
   onDelete,
+  onEdit,
 }: {
   view: MuscleMapView;
   images: MuscleMapImage[];
@@ -68,6 +70,7 @@ function ViewColumn({
   onActivate: (image: MuscleMapImage) => void;
   onDeactivate: (image: MuscleMapImage) => void;
   onDelete: (image: MuscleMapImage) => void;
+  onEdit: (image: MuscleMapImage, instruction: string) => void;
 }) {
   const [pickedId, setPickedId] = useState<string | null>(null);
   const shown =
@@ -175,6 +178,9 @@ function ViewColumn({
           ))}
         </div>
       )}
+      {shown && (
+        <EditInstruction disabled={busy} onSubmit={(instruction) => onEdit(shown, instruction)} />
+      )}
       {shown && <MuscleMapMetadataPanel image={shown} references={library} />}
     </div>
   );
@@ -189,6 +195,7 @@ function TargetMaps({
   isBusy,
   onGenerate,
   onUpdate,
+  onEdit,
 }: {
   target: MuscleMapBoardTarget;
   /** The style's muscle map prompt, the starting point of a one-off edit. */
@@ -200,6 +207,7 @@ function TargetMaps({
   isBusy: (view: MuscleMapView) => boolean;
   onGenerate: (view: MuscleMapView, run: MuscleMapRun, variants: number) => void;
   onUpdate: (image: MuscleMapImage, change: "activate" | "deactivate" | "delete") => void;
+  onEdit: (image: MuscleMapImage, instruction: string) => void;
 }) {
   const [prompt, setPrompt] = useState<string | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
@@ -238,6 +246,7 @@ function TargetMaps({
             onActivate={(image) => onUpdate(image, "activate")}
             onDeactivate={(image) => onUpdate(image, "deactivate")}
             onDelete={(image) => onUpdate(image, "delete")}
+            onEdit={onEdit}
           />
         ))}
       </div>
@@ -449,6 +458,7 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
             void actions.generateOne(target, view, run, variants)
           }
           onUpdate={(image, change) => void actions.update(target, image, change)}
+          onEdit={(image, instruction) => void actions.editMap(target, image, instruction)}
         />
       )}
 

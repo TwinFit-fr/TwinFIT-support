@@ -14,6 +14,13 @@ export function referenceSheetDirective(subject: Subject): string {
 /** Appended when Mid/End are produced by editing the exercise's Start frame. */
 export const START_GUIDE_DIRECTIVE = `EDIT OF THE START FRAME: the input image is the start position of this same exercise. Keep EXACTLY the same character, face, clothing, colors, illustration style, background, camera angle, zoom level and scale. Keep the feet in exactly the same place and do not move, resize or re-frame the person. Change ONLY the body pose (and the equipment it holds) to the position described above.`;
 
+/** The whole prompt of an edit: the input image is the current version; change only this. */
+export function imageEditDirective(instruction: string): string {
+  return `EDIT OF THIS IMAGE: the input image is the current version. Apply ONLY this change: ${instruction.trim()}
+
+Keep everything else EXACTLY the same: character, face, clothing, colors, illustration style, background, camera angle, zoom level, scale and position in the frame.`;
+}
+
 /** Appended whenever the brand logo is one of the input images. */
 export const LOGO_DIRECTIVE = `BRAND LOGO: one of the input images is the brand symbol (on a transparent background). Print exactly this symbol — same shape and same colors, no added text or letters — small and centered on the chest of the character's shirt. Do not draw the symbol anywhere else and do not copy its background.`;
 

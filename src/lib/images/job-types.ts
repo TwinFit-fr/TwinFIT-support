@@ -7,6 +7,9 @@ import type { MuscleMapTargetRef, MuscleMapView, Subject } from "./types";
 
 export type JobStatus = "queued" | "running" | "done" | "error" | "cancelled";
 
+/** Edit an existing image of the job's target with an instruction (result: a candidate). */
+export type ImageEditOptions = { editOf?: string; instruction?: string };
+
 /** Automatic inputs of an exercise frame a run can leave out. */
 export type SkippableInput = "character" | "support" | "logo";
 
@@ -22,7 +25,7 @@ export type FrameJobOptions = {
   skipInputs?: SkippableInput[];
   /** Keep the result as an inactive candidate instead of replacing the active frame. */
   candidate?: boolean;
-};
+} & ImageEditOptions;
 
 /** Per-run edits of a muscle map: prompt text and library references. */
 export type MuscleMapJobOptions = {
@@ -31,7 +34,7 @@ export type MuscleMapJobOptions = {
   referenceIds?: string[];
   /** Keep the result as an inactive candidate instead of replacing the active map. */
   candidate?: boolean;
-};
+} & ImageEditOptions;
 
 export type GenerationJob = {
   id: string;
@@ -104,16 +107,13 @@ export function frameJobSpecs({
       const run = framePositions.filter((p) => positions.includes(p));
       if (variants > 1) {
         return run.flatMap((position) =>
-          Array.from(
-            { length: variants },
-            (): JobSpec => ({
-              kind: "exercise_frame",
-              exoId,
-              subject,
-              position,
-              options: { ...options?.(position), candidate: true },
-            }),
-          ),
+          Array.from({ length: variants }, (): JobSpec => ({
+            kind: "exercise_frame",
+            exoId,
+            subject,
+            position,
+            options: { ...options?.(position), candidate: true },
+          })),
         );
       }
       const key = `${exoId}:${subject}`;
@@ -134,6 +134,11 @@ export const ACTIVE_JOB_STATUSES: readonly JobStatus[] = ["queued", "running"];
 
 export function isActiveJob(job: Pick<GenerationJob, "status">): boolean {
   return ACTIVE_JOB_STATUSES.includes(job.status);
+}
+
+/** A job that adds a candidate (variant or edit) instead of replacing the active image. */
+export function isCandidateJob(job: Pick<GenerationJob, "options">): boolean {
+  return Boolean(job.options.candidate || job.options.editOf);
 }
 
 export function jobTarget(job: GenerationJob): MuscleMapTargetRef | null {

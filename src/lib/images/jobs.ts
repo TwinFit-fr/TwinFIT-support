@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { jwtSecondsLeft } from "@/lib/nhost/jwt";
 import { staffGql } from "@/lib/staff-gql";
+import { editExerciseFrame, editMuscleMap } from "./edit-image";
 import { generateExerciseFrame } from "./generate-frame";
 import { generateMuscleMap } from "./generate-muscle-map";
 import { errorMessage, isRetryable } from "./generation-error";
@@ -187,6 +188,13 @@ async function resultOf(token: string, jobId: string): Promise<string | undefine
 
 /** Makes the job's image; returns the column and id to record. */
 async function runJob(token: string, job: GenerationJob): Promise<Record<string, string>> {
+  const { editOf, instruction } = job.options;
+  if (editOf && instruction) {
+    const edit = { styleId: job.style_id, sourceId: editOf, instruction };
+    return job.kind === "muscle_map"
+      ? { result_muscle_map_id: (await editMuscleMap(token, edit)).id }
+      : { result_exercise_image_id: (await editExerciseFrame(token, edit)).id };
+  }
   if (job.kind === "muscle_map") {
     const target = jobTarget(job);
     if (!target || !job.view) throw new Error("Muscle map job without a target or view");

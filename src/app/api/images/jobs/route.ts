@@ -10,6 +10,11 @@ export const maxDuration = 300;
 const promptText = z.string().trim().min(1).max(32000);
 const referenceIds = z.array(z.string().uuid()).max(MAX_RUN_REFERENCES).optional();
 
+const edit = {
+  editOf: z.string().uuid().optional(),
+  instruction: z.string().trim().min(1).max(2000).optional(),
+};
+
 const jobSpec = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("exercise_frame"),
@@ -25,6 +30,7 @@ const jobSpec = z.discriminatedUnion("kind", [
         referenceIds,
         skipInputs: z.array(z.enum(["character", "support", "logo"])).optional(),
         candidate: z.boolean().optional(),
+        ...edit,
       })
       .optional(),
   }),
@@ -37,6 +43,7 @@ const jobSpec = z.discriminatedUnion("kind", [
         promptOverride: promptText.optional(),
         referenceIds,
         candidate: z.boolean().optional(),
+        ...edit,
       })
       .optional(),
   }),

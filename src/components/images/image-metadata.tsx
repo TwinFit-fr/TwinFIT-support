@@ -25,6 +25,7 @@ function generationMethod(image: ExerciseImage): string {
   // Strips are no longer generated; older images keep showing how they were made.
   if (p.sequence)
     return `${p.sequence.cuts.length + 1}-pose strip ${p.sequence.strip_size} (cuts at ${p.sequence.cuts.join(" / ")})`;
+  if (p.edit_of) return `Edit: ${p.edit_instruction ?? ""}`;
   if (p.frame_align) return "Frame alignment";
   if (p.manual_overlay) return "Manual overlay";
   if (p.guide_image_id) return "Edit of the Start frame";
@@ -191,7 +192,14 @@ export function MuscleMapMetadataPanel({
 }) {
   const p = image.params ?? {};
   const rows: Row[] = [
-    ["Method", p.base_file_id ? `Edit of the ${image.view} base` : "—"],
+    [
+      "Method",
+      p.edit_of
+        ? `Edit: ${p.edit_instruction ?? ""}`
+        : p.base_file_id
+          ? `Edit of the ${image.view} base`
+          : "—",
+    ],
     ...outputRows(image, Boolean(p.base_file_id)),
     ["Prompt", p.prompt_id ? `Muscle map${p.prompt_edited ? " · edited" : ""}` : "—"],
     ["References", referencesLabel(p.reference_ids, references)],

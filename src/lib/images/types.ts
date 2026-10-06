@@ -79,6 +79,9 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   support_reference_file_id?: string | null;
   /** Automatic inputs the run left out (character, support, logo). */
   skipped_inputs?: string[];
+  /** Made by editing this image with an instruction. */
+  edit_of?: string;
+  edit_instruction?: string;
   /** Library references sent with this frame. */
   reference_ids?: string[];
   guide_image_id?: string | null;
@@ -108,6 +111,9 @@ export type MuscleMapSnapshot = Partial<GenerationParams> & {
   prompt_id?: string | null;
   prompt_edited?: boolean;
   reference_ids?: string[];
+  /** Made by editing this map with an instruction. */
+  edit_of?: string;
+  edit_instruction?: string;
 };
 
 export type MuscleMapImage = {

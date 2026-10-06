@@ -22,6 +22,7 @@ import { useToast } from "@/components/ui/toast";
 import { jobStep, useGenerationJobs } from "@/hooks/use-generation-jobs";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { JobFailures } from "@/components/images/run-status";
+import { EditInstruction } from "@/components/images/edit-instruction";
 import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
@@ -49,7 +50,13 @@ import {
   type RunReferences,
 } from "@/components/images/run-inputs-panel";
 import { selectedPrompts } from "@/lib/images/prompt";
-import { frameJobSpecs, isActiveJob, type SkippableInput } from "@/lib/images/job-types";
+import {
+  frameJobSpecs,
+  isActiveJob,
+  isCandidateJob,
+  type GenerationJob,
+  type SkippableInput,
+} from "@/lib/images/job-types";
 import {
   LabeledControl,
   PositionToggles,
@@ -330,10 +337,13 @@ function HistoryStrip({
   onSubjectChange,
   onSelect,
   onDelete,
+  pending,
 }: {
   images: ExerciseImage[];
   selectedId: string | null;
   busy: boolean;
+  /** Candidates and edits being made, shown first until they land. */
+  pending: GenerationJob[];
   subject: "all" | Subject;
   onSubjectChange: (next: "all" | Subject) => void;
   onSelect: (id: string) => void;
@@ -358,10 +368,23 @@ function HistoryStrip({
           ]}
         />
       </div>
-      {images.length === 0 ? (
+      {images.length === 0 && pending.length === 0 ? (
         <div className="py-6 text-center text-xs text-zinc-400">No images yet</div>
       ) : (
         <div className="flex gap-2 overflow-x-auto pb-1">
+          {pending.map((job) => (
+            <div key={job.id} className="w-20 shrink-0">
+              <div
+                className="relative aspect-square w-full overflow-hidden rounded-lg border border-dashed border-zinc-300"
+                style={CHECKER_STYLE}
+              >
+                <GeneratingOverlay startedAt={jobStep(job).startedAt} />
+              </div>
+              <div className="mt-1 truncate text-[10px] text-zinc-500">
+                {framePositionLabel(job.position)} · {job.options.editOf ? "edit" : "candidate"}
+              </div>
+            </div>
+          ))}
           {images.map((img) => (
             <div key={img.id} className="group relative w-20 shrink-0">
               <button
@@ -429,6 +452,7 @@ function Inspector({
   onAssign,
   onDeactivate,
   onDelete,
+  onEdit,
 }: {
   image: ExerciseImage | null;
   framePositions: number[];
@@ -438,6 +462,7 @@ function Inspector({
   onAssign: (position: number) => void;
   onDeactivate: () => void;
   onDelete: () => void;
+  onEdit: (instruction: string) => void;
 }) {
   if (!image) {
     return (
@@ -529,6 +554,8 @@ function Inspector({
           Deactivate
         </Button>
       </div>
+
+      <EditInstruction disabled={busy} onSubmit={onEdit} />
 
       <ImageMetadataPanel image={image} prompts={prompts} references={references} />
     </div>
@@ -657,11 +684,14 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const generating = useMemo(() => {
     const map = new Map<string, { startedAt?: number }>();
     for (const job of jobs.jobs) {
-      if (isActiveJob(job)) map.set(`${job.subject}-${job.position}`, jobStep(job));
+      if (isActiveJob(job) && !isCandidateJob(job)) {
+        map.set(`${job.subject}-${job.position}`, jobStep(job));
+      }
     }
     return map;
   }, [jobs.jobs]);
   const failedJobs = jobs.jobs.filter((job) => job.status === "error");
+  const pendingCandidates = jobs.jobs.filter((job) => isActiveJob(job) && isCandidateJob(job));
 
   /** Generates the toolbar's subjects and positions, or one empty slot of the matrix. */
   async function runGenerate(slot?: { subject: Subject; position: number }) {
@@ -691,6 +721,27 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           }),
         }),
       );
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
+    }
+  }
+
+  /** Queues an edit of an image; the result lands in History as a candidate of its position. */
+  async function queueEdit(image: ExerciseImage, instruction: string) {
+    const position = image.active ? image.position : targetPosition(image);
+    if (position == null) return;
+    if (!(await confirmGeneration.run(1))) return;
+    try {
+      await jobs.enqueue([
+        {
+          kind: "exercise_frame",
+          exoId,
+          subject: image.subject,
+          position,
+          options: { editOf: image.id, instruction },
+        },
+      ]);
+      success("Edit queued: it will appear in History");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
     }
@@ -1146,6 +1197,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             onSubjectChange={setHistorySubject}
             onSelect={setSelectedId}
             onDelete={(img) => void removeImage(img)}
+            pending={pendingCandidates.filter(
+              (job) => historySubject === "all" || job.subject === historySubject,
+            )}
           />
         </div>
         <aside className="lg:sticky lg:top-28">
@@ -1158,6 +1212,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             onAssign={(position) => selected && void setPosition(selected.id, position, true)}
             onDeactivate={() => selected && void setPosition(selected.id, null, false)}
             onDelete={() => void removeImage(selected)}
+            onEdit={(instruction) => selected && void queueEdit(selected, instruction)}
           />
         </aside>
       </div>
