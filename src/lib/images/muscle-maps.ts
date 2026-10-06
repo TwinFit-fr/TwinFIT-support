@@ -196,6 +196,8 @@ export async function insertMuscleMapImage(
     params: MuscleMapSnapshot;
     usage?: Record<string, unknown> | null;
     created_by?: string | null;
+    /** False for a candidate: kept in history, the active map stays. */
+    active?: boolean;
   },
 ): Promise<MuscleMapImage> {
   const data = await staffGql<{ insert_images_muscle_map_images_one: MuscleMapImage }>(
@@ -216,7 +218,7 @@ export async function insertMuscleMapImage(
         params: input.params,
         usage: input.usage ?? null,
         created_by: input.created_by ?? null,
-        active: true,
+        active: input.active ?? true,
       },
     },
   );

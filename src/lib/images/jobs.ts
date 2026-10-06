@@ -196,6 +196,7 @@ async function runJob(token: string, job: GenerationJob): Promise<Record<string,
       view: job.view,
       promptOverride: job.options.promptOverride,
       referenceIds: job.options.referenceIds,
+      candidate: job.options.candidate,
     });
     return { result_muscle_map_id: image.id };
   }
@@ -213,6 +214,7 @@ async function runJob(token: string, job: GenerationJob): Promise<Record<string,
     positionOverride: job.options.positionOverride,
     referenceIds: job.options.referenceIds,
     skipInputs: job.options.skipInputs,
+    candidate: job.options.candidate,
     guideImageId,
   });
   return { result_exercise_image_id: image.id };

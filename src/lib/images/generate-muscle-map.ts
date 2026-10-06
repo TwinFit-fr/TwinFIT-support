@@ -25,6 +25,8 @@ export type MuscleMapRequest = {
   promptOverride?: string;
   /** Library references for this run; omitted = the ones linked to the target. */
   referenceIds?: string[];
+  /** Keep it as an inactive candidate; the active map stays. */
+  candidate?: boolean;
 };
 
 /**
@@ -33,7 +35,7 @@ export type MuscleMapRequest = {
  */
 export async function generateMuscleMap(
   token: string,
-  { styleId, target: ref, view, promptOverride, referenceIds }: MuscleMapRequest,
+  { styleId, target: ref, view, promptOverride, referenceIds, candidate }: MuscleMapRequest,
 ): Promise<MuscleMapImage> {
   const [style, target] = await Promise.all([
     getStyle(token, styleId),
@@ -104,8 +106,10 @@ export async function generateMuscleMap(
       },
       usage: result.usage,
       created_by: getUserIdFromToken(token),
+      active: !candidate,
     });
 
+  if (candidate) return insert();
   await clearActiveMuscleMap(token, styleId, ref, view);
   let image;
   try {

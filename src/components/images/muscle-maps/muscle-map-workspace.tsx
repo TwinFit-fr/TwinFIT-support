@@ -7,7 +7,11 @@ import { ChevronRight, Loader2 } from "lucide-react";
 import { BOARD_REFRESH_MS, EmptyState, NeighbourLink } from "@/components/images/board-ui";
 import { CHECKER_STYLE } from "@/components/images/checker";
 import { JobFailures } from "@/components/images/run-status";
-import { StyleSelector } from "@/components/images/generation-controls";
+import {
+  LabeledControl,
+  SegmentedControl,
+  StyleSelector,
+} from "@/components/images/generation-controls";
 import { MuscleMapMetadataPanel } from "@/components/images/image-metadata";
 import {
   RunInputsPanel,
@@ -194,13 +198,15 @@ function TargetMaps({
   /** Every reference of the style; the ones linked to this target start on. */
   library: StyleReference[];
   isBusy: (view: MuscleMapView) => boolean;
-  onGenerate: (view: MuscleMapView, run: MuscleMapRun) => void;
+  onGenerate: (view: MuscleMapView, run: MuscleMapRun, variants: number) => void;
   onUpdate: (image: MuscleMapImage, change: "activate" | "deactivate" | "delete") => void;
 }) {
   const [prompt, setPrompt] = useState<string | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
   const edited = prompt != null && prompt !== template;
   const [references, setReferences] = useState<RunReferences>(undefined);
+  // 1 replaces the active map; more add candidates to the view's history to pick from.
+  const [variants, setVariants] = useState(1);
   const baseViews = bases.map((b) => b.view);
   const linked = library.filter((r) =>
     r.links.some((l) => l.kind === target.kind && l.id === target.id),
@@ -228,7 +234,7 @@ function TargetMaps({
             library={library}
             hasBase={baseViews.includes(view)}
             busy={isBusy(view)}
-            onGenerate={() => onGenerate(view, run)}
+            onGenerate={() => onGenerate(view, run, variants)}
             onActivate={(image) => onUpdate(image, "activate")}
             onDeactivate={(image) => onUpdate(image, "deactivate")}
             onDelete={(image) => onUpdate(image, "delete")}
@@ -237,6 +243,24 @@ function TargetMaps({
       </div>
 
       <aside className="space-y-4 lg:sticky lg:top-28">
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
+          <LabeledControl label="Variants">
+            <SegmentedControl
+              label="Candidates per Generate"
+              value={variants}
+              onChange={setVariants}
+              disabled={anyBusy}
+              options={[1, 2, 3, 4].map((n) => ({
+                value: n,
+                label: String(n),
+                title: n === 1 ? "Replace the active map" : `${n} candidates, kept in history`,
+              }))}
+            />
+          </LabeledControl>
+          <span className="text-[11px] text-zinc-500">
+            {variants === 1 ? "Replaces the active map" : "Candidates stay inactive"}
+          </span>
+        </div>
         <RunInputsPanel
           automatic={automatic}
           linked={linked}
@@ -421,7 +445,9 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
           bases={style?.muscle_bases ?? []}
           library={referencesData?.references ?? []}
           isBusy={(view) => actions.isBusy(target, view)}
-          onGenerate={(view, run) => void actions.generateOne(target, view, run)}
+          onGenerate={(view, run, variants) =>
+            void actions.generateOne(target, view, run, variants)
+          }
           onUpdate={(image, change) => void actions.update(target, image, change)}
         />
       )}

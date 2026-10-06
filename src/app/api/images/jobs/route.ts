@@ -24,6 +24,7 @@ const jobSpec = z.discriminatedUnion("kind", [
         positionOverride: promptText.optional(),
         referenceIds,
         skipInputs: z.array(z.enum(["character", "support", "logo"])).optional(),
+        candidate: z.boolean().optional(),
       })
       .optional(),
   }),
@@ -31,7 +32,13 @@ const jobSpec = z.discriminatedUnion("kind", [
     kind: z.literal("muscle_map"),
     target: z.object({ kind: z.enum(["muscle", "muscle_group"]), id: z.string().uuid() }),
     view: z.enum(["front", "back"]),
-    options: z.object({ promptOverride: promptText.optional(), referenceIds }).optional(),
+    options: z
+      .object({
+        promptOverride: promptText.optional(),
+        referenceIds,
+        candidate: z.boolean().optional(),
+      })
+      .optional(),
   }),
 ]);
 

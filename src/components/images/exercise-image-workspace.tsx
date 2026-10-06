@@ -51,6 +51,7 @@ import {
 import { selectedPrompts } from "@/lib/images/prompt";
 import { frameJobSpecs, isActiveJob, type SkippableInput } from "@/lib/images/job-types";
 import {
+  LabeledControl,
   PositionToggles,
   SegmentedControl,
   SequenceLengthControl,
@@ -630,14 +631,19 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     return images.filter((img) => img.subject === historySubject);
   }, [exercise, historySubject]);
 
-  // Mid/End need a Start per selected subject: this run's or that subject's active one.
+  // Candidates per position: 1 replaces the active frames, more land in History to pick from.
+  const [variants, setVariants] = useState(1);
+
+  // Mid/End need a Start per selected subject: this run's, or (when the run has no Start or
+  // makes candidates) that subject's active one.
   const missingStartSubjects = useMemo(() => {
-    if (runPositions.includes(0) || !exercise) return [];
+    const editsActiveStart = !runPositions.includes(0) || variants > 1;
+    if (!editsActiveStart || !exercise || !runPositions.some((p) => p !== 0)) return [];
     return subjects.filter((subject) => {
       const status = exercise.by_subject.find((s) => s.subject === subject);
       return !status?.active_positions.includes(0);
     });
-  }, [exercise, runPositions, subjects]);
+  }, [exercise, runPositions, subjects, variants]);
   const missingStart = missingStartSubjects.length > 0;
 
   const refresh = useCallback(async () => {
@@ -663,7 +669,10 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     if (!slot && missingStart) return;
     const runSubjects = slot ? [slot.subject] : subjects;
     const positionsToRun = slot ? [slot.position] : runPositions;
-    if (!(await confirmGeneration.run(runSubjects.length * positionsToRun.length))) return;
+    // An empty slot is filled directly; the toolbar run makes the chosen number of candidates.
+    const runVariants = slot ? 1 : variants;
+    const count = runSubjects.length * positionsToRun.length * runVariants;
+    if (!(await confirmGeneration.run(count))) return;
     const run = overrides;
     const referenceIds = runReferences;
     const skipped = skipInputs;
@@ -673,6 +682,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           exercises: [{ exoId: exercise.exo_id, framePositions: exercise.frame_positions }],
           positions: positionsToRun,
           subjects: runSubjects,
+          variants: runVariants,
           options: (position) => ({
             systemOverride: run.system,
             positionOverride: run.positions[position],
@@ -935,7 +945,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     );
   }
 
-  const plannedCount = subjects.length * runPositions.length;
+  const plannedCount = subjects.length * runPositions.length * variants;
   // Start is the only frame built from references; Mid/End edit it.
   const startInRun = runPositions.includes(0);
   const support = exercise.support_equipment;
@@ -990,6 +1000,19 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           available={framePositions}
           disabled={running}
         />
+        <LabeledControl label="Variants">
+          <SegmentedControl
+            label="Candidates per position"
+            value={variants}
+            onChange={setVariants}
+            disabled={running}
+            options={[1, 2, 3, 4].map((n) => ({
+              value: n,
+              label: String(n),
+              title: n === 1 ? "Replace the active frames" : `${n} candidates each, kept in History`,
+            }))}
+          />
+        </LabeledControl>
         <div className="ml-auto flex items-center gap-2">
           {missingStart && !running && (
             <span

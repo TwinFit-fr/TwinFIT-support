@@ -41,11 +41,13 @@ export type FrameRequest = {
   referenceIds?: string[];
   /** Automatic inputs left out of this run. */
   skipInputs?: SkippableInput[];
+  /** Keep it as an inactive candidate for its position; the active frame stays. */
+  candidate?: boolean;
 };
 
 /**
  * Generates one frame and stores it as the active image of its position (the previous one stays
- * in history). Throws GenerationError when the request cannot succeed as asked.
+ * in history), or as an inactive candidate for that position. Throws GenerationError when the request cannot succeed as asked.
  */
 export async function generateExerciseFrame(
   token: string,
@@ -214,10 +216,12 @@ export async function generateExerciseFrame(
       params: snapshot,
       usage: result.usage,
       created_by: getUserIdFromToken(token),
-      position,
-      active: true,
+      position: body.candidate ? null : position,
+      active: !body.candidate,
     });
 
+  // A candidate keeps target_position in its snapshot and waits in history to be picked.
+  if (body.candidate) return insert();
   await clearActivePosition(token, styleId, exercise.exo_id, subject, position);
   let image;
   try {

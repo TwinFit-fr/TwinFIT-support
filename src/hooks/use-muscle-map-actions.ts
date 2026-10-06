@@ -44,29 +44,40 @@ export function useMuscleMapActions(styleId: string | null) {
 
   const jobs = useGenerationJobs(styleId, { kind: "muscle_map" }, () => void refresh());
 
-  /** Queues targets × views; returns how many maps were queued. */
+  /**
+   * Queues targets × views; returns how many maps were queued. With `variants` > 1 each gets
+   * that many inactive candidates and the active maps stay.
+   */
   async function enqueue(
     targets: MuscleMapTargetRef[],
     views: MuscleMapView[],
     run?: MuscleMapRun,
+    variants = 1,
   ): Promise<number> {
     const specs: JobSpec[] = targets.flatMap((target) =>
-      views.map((view) => ({
-        kind: "muscle_map" as const,
-        target: { kind: target.kind, id: target.id },
-        view,
-        options: run,
-      })),
+      views.flatMap((view) =>
+        Array.from({ length: variants }, () => ({
+          kind: "muscle_map" as const,
+          target: { kind: target.kind, id: target.id },
+          view,
+          options: variants > 1 ? { ...run, candidate: true } : run,
+        })),
+      ),
     );
     await jobs.enqueue(specs);
     return specs.length;
   }
 
-  /** One map of one view, with this page's prompt edit and references. */
-  async function generateOne(target: MuscleMapTargetRef, view: MuscleMapView, run: MuscleMapRun) {
-    if (!(await confirmGeneration.run(1))) return;
+  /** One view of one target, with this page's prompt edit and references (and candidates). */
+  async function generateOne(
+    target: MuscleMapTargetRef,
+    view: MuscleMapView,
+    run: MuscleMapRun,
+    variants = 1,
+  ) {
+    if (!(await confirmGeneration.run(variants))) return;
     try {
-      await enqueue([target], [view], run);
+      await enqueue([target], [view], run, variants);
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
     }

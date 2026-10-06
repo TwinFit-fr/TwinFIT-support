@@ -20,6 +20,8 @@ export type FrameJobOptions = {
   referenceIds?: string[];
   /** Automatic inputs not sent this time (the style still has them). */
   skipInputs?: SkippableInput[];
+  /** Keep the result as an inactive candidate instead of replacing the active frame. */
+  candidate?: boolean;
 };
 
 /** Per-run edits of a muscle map: prompt text and library references. */
@@ -27,6 +29,8 @@ export type MuscleMapJobOptions = {
   promptOverride?: string;
   /** Omitted = the references linked to the target. */
   referenceIds?: string[];
+  /** Keep the result as an inactive candidate instead of replacing the active map. */
+  candidate?: boolean;
 };
 
 export type GenerationJob = {
@@ -79,22 +83,39 @@ export type JobSpec =
 /**
  * The frame jobs of a run: per exercise and subject, the chosen positions its sequence has.
  * When the run includes Start, Mid / End wait for it and edit it; otherwise they edit the
- * subject's active Start.
+ * subject's active Start. With `variants` > 1 each position gets that many inactive candidates
+ * (nothing is replaced, and Mid / End candidates edit the active Start).
  */
 export function frameJobSpecs({
   exercises,
   positions,
   subjects,
   options,
+  variants = 1,
 }: {
   exercises: { exoId: number; framePositions: number[] }[];
   positions: number[];
   subjects: Subject[];
   options?: (position: number) => FrameJobOptions;
+  variants?: number;
 }): JobSpec[] {
   return exercises.flatMap(({ exoId, framePositions }) =>
     subjects.flatMap((subject) => {
       const run = framePositions.filter((p) => positions.includes(p));
+      if (variants > 1) {
+        return run.flatMap((position) =>
+          Array.from(
+            { length: variants },
+            (): JobSpec => ({
+              kind: "exercise_frame",
+              exoId,
+              subject,
+              position,
+              options: { ...options?.(position), candidate: true },
+            }),
+          ),
+        );
+      }
       const key = `${exoId}:${subject}`;
       const withStart = run.includes(0);
       return run.map((position): JobSpec => ({
