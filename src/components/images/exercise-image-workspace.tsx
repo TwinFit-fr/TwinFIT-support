@@ -1,32 +1,39 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { mutate } from "swr";
 import {
-  ChevronLeft,
   ChevronRight,
   ExternalLink,
   ImageOff,
   Loader2,
   Move,
+  Layers,
   Pencil,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { Button, Skeleton } from "@/components/ui/primitives";
+import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
+import { jobStep, useGenerationJobs } from "@/hooks/use-generation-jobs";
+import { useShortcuts } from "@/hooks/use-shortcuts";
+import { JobFailures } from "@/components/images/run-status";
+import { EditInstruction } from "@/components/images/edit-instruction";
+import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
-  useGenerationQueue,
   usePositionSelection,
   useStyleChoice,
   useSubjectSelection,
-} from "@/hooks/use-generation-queue";
+} from "@/hooks/use-image-preferences";
 import { ExerciseComposeDialog } from "@/components/catalog/exercise-compose-dialog";
 import { useElapsedSeconds } from "@/components/images/generation-progress";
 import { FramePlayer } from "@/components/images/frame-player";
+import { NeighbourLink } from "@/components/images/board-ui";
 import { CHECKER_STYLE } from "@/components/images/checker";
 import { ImageMetadataPanel } from "@/components/images/image-metadata";
 import { FrameAlignEditor } from "@/components/images/frame-align-editor";
@@ -36,19 +43,36 @@ import {
   countOverrides,
   type PromptOverrides,
 } from "@/components/images/prompt-overrides";
-import { selectedPrompts } from "@/lib/images/prompt";
-import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
 import {
-  PositionSelector,
+  RunInputsPanel,
+  effectiveReferenceIds,
+  type AutomaticInput,
+  type RunReferences,
+} from "@/components/images/run-inputs-panel";
+import { selectedPrompts } from "@/lib/images/prompt";
+import {
+  frameJobSpecs,
+  isActiveJob,
+  isCandidateJob,
+  type GenerationJob,
+  type SkippableInput,
+} from "@/lib/images/job-types";
+import {
+  LabeledControl,
+  PositionToggles,
+  SegmentedControl,
+  SequenceLengthControl,
   StyleSelector,
-  SubjectSelector,
+  SubjectToggles,
   runPositionsFor,
-} from "@/components/images/position-selector";
+} from "@/components/images/generation-controls";
 import type {
   ExerciseImage,
+  ExerciseImageBoardItem,
   ExerciseImageDetail,
   ImagePrompt,
   ImageStyle,
+  StyleReference,
   Subject,
 } from "@/lib/images/types";
 import {
@@ -59,6 +83,7 @@ import {
   isDeletableImage,
   targetPosition,
 } from "@/lib/images/types";
+import { boardFiltersQuery, boardNeighbours, readBoardFilters } from "@/lib/images/board-filters";
 import { imageThumbUrl } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 
@@ -77,45 +102,17 @@ const SHORTCUTS: [string, string][] = [
   ["Esc", "Back"],
 ];
 
+/** Where an image sits: inactive images have no position. */
+type Placement = { id: string; position: number | null; active: boolean };
+
+function placementOf(img: ExerciseImage): Placement {
+  return { id: img.id, position: img.active ? img.position : null, active: img.active };
+}
+
 function imageLabel(img: ExerciseImage): string {
   if (img.active) return framePositionLabel(img.position);
   const target = targetPosition(img);
   return target != null ? `${framePositionLabel(target)} · inactive` : "Inactive";
-}
-
-function Segmented<T extends string | number>({
-  value,
-  options,
-  onChange,
-  disabled,
-  size = "sm",
-}: {
-  value: T;
-  options: [T, string][];
-  onChange: (next: T) => void;
-  disabled?: boolean;
-  size?: "xs" | "sm";
-}) {
-  return (
-    <div className="inline-flex rounded-lg bg-zinc-100 p-0.5">
-      {options.map(([id, label]) => (
-        <button
-          key={id}
-          type="button"
-          disabled={disabled}
-          aria-pressed={value === id}
-          onClick={() => value !== id && onChange(id)}
-          className={cn(
-            "rounded-md font-medium transition disabled:opacity-50",
-            size === "xs" ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs",
-            value === id ? "bg-white text-zinc-900 shadow-xs" : "text-zinc-600 hover:text-zinc-900",
-          )}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function GeneratingOverlay({ startedAt }: { startedAt?: number }) {
@@ -128,6 +125,47 @@ function GeneratingOverlay({ startedAt }: { startedAt?: number }) {
   );
 }
 
+/** An empty slot: click to generate just this subject and position. */
+function EmptySlot({
+  alt,
+  blockedReason,
+  disabled,
+  generating,
+  onGenerate,
+}: {
+  alt: string;
+  /** Why this slot cannot be generated yet (Mid/End without a Start). */
+  blockedReason: string | null;
+  disabled: boolean;
+  generating?: { startedAt?: number };
+  onGenerate: () => void;
+}) {
+  const ready = !blockedReason && !disabled && !generating;
+  return (
+    <button
+      type="button"
+      disabled={!ready}
+      onClick={onGenerate}
+      title={blockedReason ?? `Generate ${alt}`}
+      aria-label={blockedReason ? `${alt}: ${blockedReason}` : `Generate ${alt}`}
+      className="group/slot relative aspect-square w-full overflow-hidden rounded-lg border border-dashed border-zinc-300 transition enabled:hover:border-zinc-500 enabled:hover:bg-white/60"
+      style={CHECKER_STYLE}
+    >
+      <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-zinc-300 group-enabled/slot:text-zinc-400 group-enabled/slot:group-hover/slot:text-zinc-700">
+        {ready ? (
+          <>
+            <Sparkles className="h-5 w-5" strokeWidth={1.5} />
+            <span className="text-[10px] font-medium">Generate</span>
+          </>
+        ) : (
+          <ImageOff className="h-5 w-5" strokeWidth={1.5} />
+        )}
+      </span>
+      {generating && <GeneratingOverlay startedAt={generating.startedAt} />}
+    </button>
+  );
+}
+
 function FrameTile({
   image,
   alt,
@@ -135,18 +173,17 @@ function FrameTile({
   generating,
   onSelect,
 }: {
-  image: ExerciseImage | null;
+  image: ExerciseImage;
   alt: string;
   selected: boolean;
   /** Present while this slot is in the queue; startedAt once its request is sent. */
   generating?: { startedAt?: number };
   onSelect: () => void;
 }) {
-  const src = imageThumbUrl(image?.image_url, 400);
+  const src = imageThumbUrl(image.image_url, 400);
   return (
     <button
       type="button"
-      disabled={!image}
       onClick={onSelect}
       className={cn(
         "relative aspect-square w-full overflow-hidden rounded-lg border transition",
@@ -156,13 +193,9 @@ function FrameTile({
       )}
       style={CHECKER_STYLE}
     >
-      {src ? (
+      {src && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={alt} className="absolute inset-0 h-full w-full object-contain" />
-      ) : (
-        <span className="absolute inset-0 flex items-center justify-center text-zinc-300">
-          <ImageOff className="h-5 w-5" strokeWidth={1.5} />
-        </span>
       )}
       {generating && <GeneratingOverlay startedAt={generating.startedAt} />}
     </button>
@@ -175,16 +208,21 @@ function FrameMatrix({
   selectedId,
   generating,
   busy,
+  canGenerate,
   onSelect,
   onAlign,
+  onGenerate,
 }: {
   images: ExerciseImage[];
   framePositions: number[];
   selectedId: string | null;
   generating: Map<string, { startedAt?: number }>;
   busy: boolean;
+  /** Empty slots can start a generation (nothing else is running). */
+  canGenerate: boolean;
   onSelect: (id: string) => void;
   onAlign: (subject: Subject) => void;
+  onGenerate: (subject: Subject, position: number) => void;
 }) {
   const frames = FRAME_POSITIONS.filter((frame) => framePositions.includes(frame.id));
   const columns = { gridTemplateColumns: `3.5rem repeat(${frames.length + 1}, minmax(0, 1fr))` };
@@ -232,14 +270,29 @@ function FrameMatrix({
               {frames.map((frame) => {
                 const img = active.get(frame.id) ?? null;
                 return (
-                  <FrameTile
-                    key={frame.id}
-                    image={img}
-                    alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
-                    selected={img != null && img.id === selectedId}
-                    generating={generating.get(`${subject}-${frame.id}`)}
-                    onSelect={() => img && onSelect(img.id)}
-                  />
+                  img ? (
+                    <FrameTile
+                      key={frame.id}
+                      image={img}
+                      alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
+                      selected={img.id === selectedId}
+                      generating={generating.get(`${subject}-${frame.id}`)}
+                      onSelect={() => onSelect(img.id)}
+                    />
+                  ) : (
+                    <EmptySlot
+                      key={frame.id}
+                      alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
+                      blockedReason={
+                        frame.id !== 0 && !active.has(0)
+                          ? "Generate Start first: Mid and End edit it"
+                          : null
+                      }
+                      disabled={!canGenerate}
+                      generating={generating.get(`${subject}-${frame.id}`)}
+                      onGenerate={() => onGenerate(subject, frame.id)}
+                    />
+                  )
                 );
               })}
               <div
@@ -284,10 +337,13 @@ function HistoryStrip({
   onSubjectChange,
   onSelect,
   onDelete,
+  pending,
 }: {
   images: ExerciseImage[];
   selectedId: string | null;
   busy: boolean;
+  /** Candidates and edits being made, shown first until they land. */
+  pending: GenerationJob[];
   subject: "all" | Subject;
   onSubjectChange: (next: "all" | Subject) => void;
   onSelect: (id: string) => void;
@@ -300,21 +356,35 @@ function HistoryStrip({
           <span className="text-sm font-medium text-zinc-900">History</span>
           <span className="text-xs tabular-nums text-zinc-400">{images.length}</span>
         </div>
-        <Segmented
+        <SegmentedControl
+          label="History subject"
           size="xs"
           value={subject}
           onChange={onSubjectChange}
           options={[
-            ["all", "All"],
-            ["man", "Man"],
-            ["woman", "Woman"],
+            { value: "all", label: "All" },
+            { value: "man", label: "Man" },
+            { value: "woman", label: "Woman" },
           ]}
         />
       </div>
-      {images.length === 0 ? (
+      {images.length === 0 && pending.length === 0 ? (
         <div className="py-6 text-center text-xs text-zinc-400">No images yet</div>
       ) : (
         <div className="flex gap-2 overflow-x-auto pb-1">
+          {pending.map((job) => (
+            <div key={job.id} className="w-20 shrink-0">
+              <div
+                className="relative aspect-square w-full overflow-hidden rounded-lg border border-dashed border-zinc-300"
+                style={CHECKER_STYLE}
+              >
+                <GeneratingOverlay startedAt={jobStep(job).startedAt} />
+              </div>
+              <div className="mt-1 truncate text-[10px] text-zinc-500">
+                {framePositionLabel(job.position)} · {job.options.editOf ? "edit" : "candidate"}
+              </div>
+            </div>
+          ))}
           {images.map((img) => (
             <div key={img.id} className="group relative w-20 shrink-0">
               <button
@@ -360,7 +430,7 @@ function HistoryStrip({
                   onClick={() => onDelete(img)}
                   aria-label={`Delete ${imageLabel(img)} image`}
                   title="Delete"
-                  className="absolute right-1 top-1 rounded bg-white/90 p-0.5 text-zinc-500 opacity-0 shadow-xs transition hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-40"
+                  className="absolute right-1 top-1 rounded bg-white/90 p-0.5 text-zinc-500 opacity-0 shadow-xs transition hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 disabled:opacity-40"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>
@@ -377,18 +447,22 @@ function Inspector({
   image,
   framePositions,
   prompts,
+  references,
   busy,
   onAssign,
   onDeactivate,
   onDelete,
+  onEdit,
 }: {
   image: ExerciseImage | null;
   framePositions: number[];
   prompts: ImagePrompt[] | undefined;
+  references: StyleReference[];
   busy: boolean;
   onAssign: (position: number) => void;
   onDeactivate: () => void;
   onDelete: () => void;
+  onEdit: (instruction: string) => void;
 }) {
   if (!image) {
     return (
@@ -481,7 +555,9 @@ function Inspector({
         </Button>
       </div>
 
-      <ImageMetadataPanel image={image} prompts={prompts} />
+      <EditInstruction disabled={busy} onSubmit={onEdit} />
+
+      <ImageMetadataPanel image={image} prompts={prompts} references={references} />
     </div>
   );
 }
@@ -490,33 +566,26 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const router = useRouter();
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
+  const confirm = useConfirm();
+  const confirmGeneration = useGenerationConfirm();
   const [positions, setPositions] = usePositionSelection();
   const [subjects, setSubjects] = useSubjectSelection();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
-  const defaultStyleId = styles.find((s) => s.is_default)?.id ?? null;
-  const [styleId, setStyleId] = useStyleChoice(defaultStyleId);
+  const [styleId, setStyleId] = useStyleChoice(styles);
   const detailKey = styleId ? `/api/images/exercises/${exoId}?style=${styleId}` : null;
   const listKey = styleId ? `/api/images/exercises?style=${styleId}` : null;
+  // Previous / next browse the board list with the filters the board was left with.
+  const boardFilters = readBoardFilters(useSearchParams());
+  const filtersQuery = boardFiltersQuery(boardFilters);
+  const { data: boardData } = useStaffSWR<{ exercises: ExerciseImageBoardItem[] }>(listKey);
+  const neighbours = boardNeighbours(boardData?.exercises ?? [], boardFilters, exoId);
+  const exerciseHref = (id: number | null) => (id == null ? null : `/images/${id}${filtersQuery}`);
+  const previousHref = exerciseHref(neighbours.previous);
+  const nextHref = exerciseHref(neighbours.next);
+  const boardHref = `/images${filtersQuery}`;
   const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(
     styleId ? `/api/images/prompts?styleId=${styleId}` : null,
-  );
-  const queue = useGenerationQueue();
-  const generating = useMemo(() => {
-    const map = new Map<string, { startedAt?: number }>();
-    for (const item of queue.items) {
-      for (const step of item.steps) {
-        if (step.status === "processing" || (queue.running && step.status === "waiting")) {
-          map.set(`${item.subject}-${step.position}`, { startedAt: step.startedAt });
-        }
-      }
-    }
-    return map;
-  }, [queue.items, queue.running]);
-  const failedSteps = queue.items.flatMap((item) =>
-    item.steps
-      .filter((s) => s.status === "error")
-      .map((s) => ({ subject: item.subject, position: s.position, error: s.error })),
   );
   const { data, isLoading, error } = useStaffSWR<{
     exercise: ExerciseImageDetail;
@@ -540,25 +609,40 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   });
   const overrides = overridesFor.exoId === exoId ? overridesFor.value : NO_OVERRIDES;
   const setOverrides = (value: PromptOverrides) => setOverridesFor({ exoId, value });
+  const [showInputs, setShowInputs] = useState(false);
+  // Like prompt edits, a run's reference choice belongs to one exercise.
+  const [referencesFor, setReferencesFor] = useState<{ exoId: number; value: RunReferences }>({
+    exoId,
+    value: undefined,
+  });
+  const runReferences = referencesFor.exoId === exoId ? referencesFor.value : undefined;
+  // And so do the automatic inputs it leaves out.
+  const [skipFor, setSkipFor] = useState<{ exoId: number; value: SkippableInput[] }>({
+    exoId,
+    value: [],
+  });
+  const skipInputs = skipFor.exoId === exoId ? skipFor.value : [];
+  const style = styles.find((s) => s.id === styleId) ?? null;
+  const { data: referencesData } = useStaffSWR<{ references: StyleReference[] }>(
+    styleId ? `/api/images/styles/${styleId}/references` : null,
+  );
+  const library = useMemo(() => referencesData?.references ?? [], [referencesData]);
+  const linkedReferences = useMemo(
+    () => library.filter((r) => r.links.some((l) => l.kind === "exercise" && l.id === exoId)),
+    [library, exoId],
+  );
+  const referenceCount = effectiveReferenceIds(runReferences, linkedReferences).length;
 
   const templates = useMemo(() => {
     const prompts = promptsData?.prompts ?? [];
     const byPosition = FRAME_POSITIONS.map((f) => selectedPrompts(prompts, f.id));
     return {
-      system:
-        prompts.find((p) => p.id === overrides.systemPromptId && p.kind === "system")?.content ??
-        byPosition[0].system?.content ??
-        "",
+      system: byPosition[0].system?.content ?? "",
       positions: Object.fromEntries(
         byPosition.map((chosen, i) => [FRAME_POSITIONS[i].id, chosen.position?.content ?? ""]),
       ) as Record<number, string>,
     };
-  }, [promptsData, overrides.systemPromptId]);
-  const systemPrompts = useMemo(
-    () => (promptsData?.system ? [promptsData.system] : []),
-    [promptsData],
-  );
-  const styleSystemPromptId = promptsData?.system?.id;
+  }, [promptsData]);
   const framePositions = exercise?.frame_positions ?? FRAME_POSITIONS.map((f) => f.id as number);
   const runPositions = runPositionsFor(positions, framePositions);
   const editedCount = countOverrides(overrides, runPositions);
@@ -574,14 +658,19 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     return images.filter((img) => img.subject === historySubject);
   }, [exercise, historySubject]);
 
-  // Mid/End need a Start per selected subject: this run's or that subject's active one.
+  // Candidates per position: 1 replaces the active frames, more land in History to pick from.
+  const [variants, setVariants] = useState(1);
+
+  // Mid/End need a Start per selected subject: this run's, or (when the run has no Start or
+  // makes candidates) that subject's active one.
   const missingStartSubjects = useMemo(() => {
-    if (runPositions.includes(0) || !exercise) return [];
+    const editsActiveStart = !runPositions.includes(0) || variants > 1;
+    if (!editsActiveStart || !exercise || !runPositions.some((p) => p !== 0)) return [];
     return subjects.filter((subject) => {
       const status = exercise.by_subject.find((s) => s.subject === subject);
       return !status?.active_positions.includes(0);
     });
-  }, [exercise, runPositions, subjects]);
+  }, [exercise, runPositions, subjects, variants]);
   const missingStart = missingStartSubjects.length > 0;
 
   const refresh = useCallback(async () => {
@@ -589,38 +678,104 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     if (listKey) await mutate(listKey);
   }, [detailKey, listKey]);
 
-  async function runGenerate() {
-    if (!exercise || !styleId || queue.running || missingStart) return;
+  // Runs are processed on the server; each finished frame refreshes this exercise.
+  const jobs = useGenerationJobs(styleId, { kind: "exercise_frame", exoId }, () => void refresh());
+  const running = jobs.progress.active;
+  const generating = useMemo(() => {
+    const map = new Map<string, { startedAt?: number }>();
+    for (const job of jobs.jobs) {
+      if (isActiveJob(job) && !isCandidateJob(job)) {
+        map.set(`${job.subject}-${job.position}`, jobStep(job));
+      }
+    }
+    return map;
+  }, [jobs.jobs]);
+  const failedJobs = jobs.jobs.filter((job) => job.status === "error");
+  const pendingCandidates = jobs.jobs.filter((job) => isActiveJob(job) && isCandidateJob(job));
+
+  /** Generates the toolbar's subjects and positions, or one empty slot of the matrix. */
+  async function runGenerate(slot?: { subject: Subject; position: number }) {
+    if (!exercise || !styleId || running) return;
+    if (!slot && missingStart) return;
+    const runSubjects = slot ? [slot.subject] : subjects;
+    const positionsToRun = slot ? [slot.position] : runPositions;
+    // An empty slot is filled directly; the toolbar run makes the chosen number of candidates.
+    const runVariants = slot ? 1 : variants;
+    const count = runSubjects.length * positionsToRun.length * runVariants;
+    if (!(await confirmGeneration.run(count))) return;
     const run = overrides;
-    await queue.start({
-      exercises: [
-        {
-          exoId: exercise.exo_id,
-          name: exercise.display_name,
-          framePositions: exercise.frame_positions,
-        },
-      ],
-      positions: runPositions,
-      subjects,
-      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
-      generateStep: async (stepExoId, position, stepSubject, guideImageId) => {
-        const { image } = (await staffFetch("/api/images/generate", {
-          method: "POST",
-          body: JSON.stringify({
-            exoId: stepExoId,
-            styleId,
-            position,
-            subject: stepSubject,
+    const referenceIds = runReferences;
+    const skipped = skipInputs;
+    try {
+      await jobs.enqueue(
+        frameJobSpecs({
+          exercises: [{ exoId: exercise.exo_id, framePositions: exercise.frame_positions }],
+          positions: positionsToRun,
+          subjects: runSubjects,
+          variants: runVariants,
+          options: (position) => ({
             systemOverride: run.system,
-            systemPromptId: run.systemPromptId,
             positionOverride: run.positions[position],
-            guideImageId,
+            referenceIds,
+            skipInputs: skipped.length ? skipped : undefined,
           }),
-        })) as { image: ExerciseImage };
-        await refresh();
-        return image.id;
-      },
+        }),
+      );
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
+    }
+  }
+
+  /** Makes a run's prompt edit the style's prompt of that slot (the old text stays in history). */
+  async function saveOverrideToStyle(slot: "system" | number, text: string) {
+    const chosen = selectedPrompts(promptsData?.prompts ?? [], slot === "system" ? 0 : slot);
+    const prompt = slot === "system" ? chosen.system : chosen.position;
+    if (!prompt || !styleId) return;
+    const name = slot === "system" ? "System" : framePositionLabel(slot);
+    const ok = await confirm({
+      title: `Save as the style's ${name} prompt?`,
+      description:
+        "Every future generation of this style uses it. The current text stays in the prompt's history on Styles → Prompts.",
+      confirmLabel: "Save to style",
     });
+    if (!ok) return;
+    try {
+      await staffFetch(`/api/images/prompts/${prompt.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ content: text }),
+      });
+      await mutate(`/api/images/prompts?styleId=${styleId}`);
+      // The run text is now the template, so it is no longer an edit.
+      setOverrides(
+        slot === "system"
+          ? { ...overrides, system: undefined }
+          : { ...overrides, positions: { ...overrides.positions, [slot]: undefined } },
+      );
+      success(`Saved as the style's ${name} prompt`);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Save failed");
+    }
+  }
+
+  /** Queues an edit of an image; the result lands in History as a candidate of its position. */
+  async function queueEdit(image: ExerciseImage, instruction: string) {
+    const position = image.active ? image.position : targetPosition(image);
+    if (position == null) return;
+    if (!(await confirmGeneration.run(1))) return;
+    try {
+      await jobs.enqueue([
+        {
+          kind: "exercise_frame",
+          exoId,
+          subject: image.subject,
+          position,
+          options: { editOf: image.id, instruction },
+        },
+      ]);
+      success("Edit queued: it will appear in History");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
+    }
   }
 
   async function toggleTwoFrames(next: boolean) {
@@ -631,7 +786,11 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     if (
       next &&
       hasActiveMid &&
-      !window.confirm("Use only Start and End? Active Mid frames will be deactivated.")
+      !(await confirm({
+        title: "Use only Start and End?",
+        description: "Active Mid frames will be deactivated.",
+        confirmLabel: "Use 2 frames",
+      }))
     ) {
       return;
     }
@@ -650,14 +809,36 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
-  async function setPosition(imageId: string, position: number | null, active: boolean) {
-    setBusy(true);
-    try {
-      await staffFetch(`/api/images/items/${imageId}`, {
+  /** Applies placements in order; the server deactivates whoever held a position taken. */
+  async function place(placements: Placement[]) {
+    for (const { id, position, active } of placements) {
+      await staffFetch(`/api/images/items/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ position, active }),
       });
-      success(active ? `Set as ${framePositionLabel(position)}` : "Deactivated");
+    }
+  }
+
+  async function setPosition(imageId: string, position: number | null, active: boolean) {
+    const image = exercise?.images.find((img) => img.id === imageId);
+    if (!image) return;
+    // The way back: first the image this one displaces, then this image where it was.
+    const displaced = exercise?.images.find(
+      (img) =>
+        img.id !== imageId &&
+        img.subject === image.subject &&
+        img.active &&
+        active &&
+        img.position === position,
+    );
+    const undo = [...(displaced ? [placementOf(displaced)] : []), placementOf(image)];
+    setBusy(true);
+    try {
+      await place([{ id: imageId, position, active }]);
+      success(active ? `Set as ${framePositionLabel(position)}` : "Deactivated", undefined, {
+        label: "Undo",
+        onClick: () => void restore(undo),
+      });
       await refresh();
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Update failed");
@@ -666,9 +847,28 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
+  async function restore(undo: Placement[]) {
+    setBusy(true);
+    try {
+      await place(undo);
+      success("Change undone");
+      await refresh();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Undo failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function removeImage(image: ExerciseImage | null) {
     if (!image || !isDeletableImage(image) || busy) return;
-    if (!window.confirm(`Delete this ${imageLabel(image)} image permanently?`)) return;
+    const remove = await confirm({
+      title: `Delete this ${imageLabel(image)} image?`,
+      description: "It is deleted permanently.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!remove) return;
     setBusy(true);
     try {
       await staffFetch(`/api/images/items/${image.id}`, { method: "DELETE" });
@@ -709,64 +909,46 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
-  useEffect(() => {
-    if (editOpen || alignSubject) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-      if (event.key === "r" || event.key === "R") {
-        event.preventDefault();
-        void runGenerate();
-      } else if (event.key === "Delete" || event.key === "Backspace") {
-        if (!selected || !isDeletableImage(selected)) return;
-        event.preventDefault();
-        void removeImage(selected);
-      } else if (event.key === "0" || event.key === "1" || event.key === "2") {
-        // Activates the position on the selected image (its subject lane).
-        if (!selected || !framePositions.includes(Number(event.key))) return;
-        event.preventDefault();
-        void setPosition(selected.id, Number(event.key), true);
-      } else if (event.key === "x" || event.key === "X") {
-        if (!selected) return;
-        event.preventDefault();
-        void setPosition(selected.id, null, false);
-      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        if (!historyImages.length) return;
-        const index = historyImages.findIndex((img) => img.id === selectedId);
-        const next =
-          event.key === "ArrowLeft"
-            ? Math.max(0, index - 1)
-            : Math.min(historyImages.length - 1, index + 1);
-        setSelectedId(historyImages[next]?.id ?? null);
-      } else if (event.key === "[") {
-        router.push(`/images/${Math.max(1, exoId - 1)}`);
-      } else if (event.key === "]") {
-        router.push(`/images/${exoId + 1}`);
-      } else if (event.key === "Escape") {
-        router.push("/images");
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    exercise,
-    selectedId,
-    selected,
-    exoId,
-    busy,
-    editOpen,
-    alignSubject,
-    historyImages,
-    framePositions,
-  ]);
+  function assignSelected(position: number) {
+    // Activates the position on the selected image (its subject lane).
+    if (!selected || !framePositions.includes(position)) return;
+    void setPosition(selected.id, position, true);
+  }
+
+  function browseHistory(step: -1 | 1) {
+    if (!historyImages.length) return;
+    const index = historyImages.findIndex((img) => img.id === selectedId);
+    const next = Math.min(historyImages.length - 1, Math.max(0, index + step));
+    setSelectedId(historyImages[next]?.id ?? null);
+  }
+
+  function deleteSelected() {
+    if (selected && isDeletableImage(selected)) void removeImage(selected);
+  }
+
+  useShortcuts(
+    {
+      r: () => void runGenerate(),
+      Delete: deleteSelected,
+      Backspace: deleteSelected,
+      "0": () => assignSelected(0),
+      "1": () => assignSelected(1),
+      "2": () => assignSelected(2),
+      x: () => selected && void setPosition(selected.id, null, false),
+      ArrowLeft: () => browseHistory(-1),
+      ArrowRight: () => browseHistory(1),
+      "[": () => previousHref && router.push(previousHref),
+      "]": () => nextHref && router.push(nextHref),
+      Escape: () => router.push(boardHref),
+    },
+    !editOpen && !alignSubject,
+  );
 
   const header = (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <nav className="mb-1 flex items-center gap-1 text-xs text-zinc-500">
-          <Link href="/images" className="hover:text-zinc-900">
+          <Link href={boardHref} className="hover:text-zinc-900">
             Images
           </Link>
           <ChevronRight className="h-3 w-3 text-zinc-400" />
@@ -801,25 +983,11 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           styles={styles}
           value={styleId}
           onChange={setStyleId}
-          disabled={queue.running}
+          disabled={running}
         />
         <div className="flex">
-          <Link
-            href={`/images/${Math.max(1, exoId - 1)}`}
-            aria-label="Previous exercise"
-            title="Previous exercise ([)"
-            className="rounded-l-md border border-zinc-300 bg-white p-1.5 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Link>
-          <Link
-            href={`/images/${exoId + 1}`}
-            aria-label="Next exercise"
-            title="Next exercise (])"
-            className="-ml-px rounded-r-md border border-zinc-300 bg-white p-1.5 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Link>
+          <NeighbourLink direction="previous" href={previousHref} noun="exercise" />
+          <NeighbourLink direction="next" href={nextHref} noun="exercise" />
         </div>
       </div>
     </div>
@@ -859,7 +1027,35 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     );
   }
 
-  const plannedCount = subjects.length * runPositions.length;
+  const plannedCount = subjects.length * runPositions.length * variants;
+  // Start is the only frame built from references; Mid/End edit it.
+  const startInRun = runPositions.includes(0);
+  const support = exercise.support_equipment;
+  const automaticInputs: AutomaticInput[] = startInRun
+    ? [
+        ...subjects.map((subject) => ({
+          label: `Character · ${SUBJECT_LABEL[subject]}`,
+          skip: "character" as const,
+          fileId: style?.characters.find((c) => c.subject === subject)?.file_id ?? null,
+        })),
+        ...(support
+          ? [
+              {
+                label: "Support",
+                skip: "support" as const,
+                detail: support.name,
+                fileId:
+                  style?.supports.find((s) => s.support_equipment_id === support.id)?.file_id ??
+                  null,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const logoInputs: AutomaticInput[] =
+    style?.logo_in_exercises && style.logo_file_id
+      ? [{ label: "Logo", fileId: style.logo_file_id, skip: "logo" as const }]
+      : [];
   const startThumb =
     exercise.by_subject.find((s) => s.subject === subjects[0])?.active_frames.find(
       (f) => f.position === 0,
@@ -873,25 +1069,34 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       {header}
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
-        <Segmented
+        <SequenceLengthControl
           value={exercise.two_frames ? 2 : 3}
-          disabled={busy || queue.running}
+          disabled={busy || running}
           onChange={(next) => void toggleTwoFrames(next === 2)}
-          options={[
-            [2, "2 frames"],
-            [3, "3 frames"],
-          ]}
         />
         <span className="hidden h-5 w-px bg-zinc-200 sm:block" />
-        <SubjectSelector value={subjects} onChange={setSubjects} disabled={queue.running} />
-        <PositionSelector
+        <SubjectToggles value={subjects} onChange={setSubjects} disabled={running} />
+        <PositionToggles
           value={positions}
           onChange={setPositions}
           available={framePositions}
-          disabled={queue.running}
+          disabled={running}
         />
+        <LabeledControl label="Variants">
+          <SegmentedControl
+            label="Candidates per position"
+            value={variants}
+            onChange={setVariants}
+            disabled={running}
+            options={[1, 2, 3, 4].map((n) => ({
+              value: n,
+              label: String(n),
+              title: n === 1 ? "Replace the active frames" : `${n} candidates each, kept in History`,
+            }))}
+          />
+        </LabeledControl>
         <div className="ml-auto flex items-center gap-2">
-          {missingStart && !queue.running && (
+          {missingStart && !running && (
             <span
               className="text-xs text-amber-700"
               title="Mid/End are edits of the Start: generate Start first"
@@ -899,10 +1104,10 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
               No active Start · {missingStartSubjects.map((s) => SUBJECT_LABEL[s]).join(", ")}
             </span>
           )}
-          {queue.running && (
+          {running && (
             <span className="flex items-center gap-1.5 text-xs tabular-nums text-zinc-500">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {queue.imagesDone}/{queue.imagesTotal}
+              {jobs.progress.done}/{jobs.progress.total}
             </span>
           )}
           <Button
@@ -920,8 +1125,31 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
               </span>
             )}
           </Button>
-          {queue.running ? (
-            <Button type="button" variant="secondary" className="h-8 py-0" onClick={queue.cancel}>
+          <Button
+            type="button"
+            variant="ghost"
+            className={cn("h-8 py-0 text-xs", showInputs && "bg-zinc-100 text-zinc-900")}
+            aria-expanded={showInputs}
+            onClick={() => setShowInputs((v) => !v)}
+          >
+            <Layers className="h-3.5 w-3.5" />
+            Inputs
+            {referenceCount > 0 && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 text-[10px] font-semibold",
+                  runReferences === undefined
+                    ? "bg-zinc-200 text-zinc-700"
+                    : "bg-amber-100 text-amber-800",
+                )}
+                title="Library references sent with Start"
+              >
+                {referenceCount}
+              </span>
+            )}
+          </Button>
+          {running ? (
+            <Button type="button" variant="secondary" className="h-8 py-0" onClick={() => void jobs.cancelActive()}>
               Cancel
             </Button>
           ) : (
@@ -938,30 +1166,45 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         </div>
       </div>
 
-      {failedSteps.length > 0 && (
-        <div className="space-y-0.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {failedSteps.map((step) => (
-            <p key={`${step.subject}-${step.position}`}>
-              <span className="font-medium">
-                {SUBJECT_LABEL[step.subject]} · {framePositionLabel(step.position)}:
-              </span>{" "}
-              {step.error}
-            </p>
-          ))}
-        </div>
-      )}
+      <JobFailures
+        jobs={failedJobs}
+        labelOf={(job) =>
+          `${job.subject ? SUBJECT_LABEL[job.subject] : ""} · ${framePositionLabel(job.position)}`
+        }
+        canAct={!running}
+        onRetry={() => void jobs.retryFailed()}
+        onDismiss={() => void jobs.dismissFinished()}
+      />
 
       {showOverrides && (
         <PromptOverridesPanel
           positions={runPositions}
           startThumbUrl={imageThumbUrl(startThumb, 160)}
-          systemPrompts={systemPrompts}
-          settingsSystemPromptId={styleSystemPromptId}
           systemTemplate={templates.system}
           positionTemplates={templates.positions}
           value={overrides}
           onChange={setOverrides}
-          disabled={queue.running}
+          onSaveToStyle={(slot, text) => void saveOverrideToStyle(slot, text)}
+          disabled={running}
+        />
+      )}
+
+      {showInputs && (
+        <RunInputsPanel
+          automatic={automaticInputs}
+          automaticLast={logoInputs}
+          linked={linkedReferences}
+          library={library}
+          value={runReferences}
+          onChange={(value) => setReferencesFor({ exoId, value })}
+          skipped={skipInputs}
+          onSkippedChange={(value) => setSkipFor({ exoId, value })}
+          note={
+            startInRun
+              ? "Sent with Start. Mid and End edit that Start, so they only add the logo."
+              : "This run has no Start: Mid and End edit the active Start, so library references are not sent."
+          }
+          disabled={running || !startInRun}
         />
       )}
 
@@ -973,8 +1216,10 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             selectedId={selectedId}
             generating={generating}
             busy={busy}
+            canGenerate={!busy && !running}
             onSelect={setSelectedId}
             onAlign={setAlignSubject}
+            onGenerate={(subject, position) => void runGenerate({ subject, position })}
           />
           <HistoryStrip
             images={historyImages}
@@ -984,6 +1229,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             onSubjectChange={setHistorySubject}
             onSelect={setSelectedId}
             onDelete={(img) => void removeImage(img)}
+            pending={pendingCandidates.filter(
+              (job) => historySubject === "all" || job.subject === historySubject,
+            )}
           />
         </div>
         <aside className="lg:sticky lg:top-28">
@@ -991,10 +1239,12 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             image={selected}
             framePositions={framePositions}
             prompts={promptsData?.prompts}
+            references={library}
             busy={busy}
             onAssign={(position) => selected && void setPosition(selected.id, position, true)}
             onDeactivate={() => selected && void setPosition(selected.id, null, false)}
             onDelete={() => void removeImage(selected)}
+            onEdit={(instruction) => selected && void queueEdit(selected, instruction)}
           />
         </aside>
       </div>

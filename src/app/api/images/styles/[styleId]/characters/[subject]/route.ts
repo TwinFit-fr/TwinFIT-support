@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { assetBodySchema, assetErrorResponse, decodeAssetUpload } from "@/lib/images/asset-request";
 import { loadLogoInput } from "@/lib/images/logo";
 import { editImage, generateImage } from "@/lib/images/openai";
 import { fillPromptTemplate } from "@/lib/images/prompt";
@@ -21,18 +21,7 @@ import type { Subject } from "@/lib/images/types";
 
 export const maxDuration = 300;
 
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
-
 type Ctx = { params: Promise<{ styleId: string; subject: string }> };
-
-const bodySchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("generate") }),
-  z.object({
-    action: z.literal("upload"),
-    mimeType: z.enum(["image/png", "image/webp", "image/jpeg"]),
-    data: z.string().min(1),
-  }),
-]);
 
 function parseSubject(raw: string): Subject {
   if (raw !== "man" && raw !== "woman") throw new Error("subject must be man or woman");
@@ -47,18 +36,16 @@ export async function POST(request: Request, context: Ctx) {
     const style = await getStyle(token, styleId);
     if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
 
-    const body = bodySchema.parse(await request.json());
+    const body = assetBodySchema.parse(await request.json());
     const previous = style.characters.find((c) => c.subject === subject)?.file_id ?? null;
 
     let bytes: Buffer;
     let mimeType: string;
 
     if (body.action === "upload") {
-      bytes = Buffer.from(body.data, "base64");
-      if (bytes.length > MAX_UPLOAD_BYTES) {
-        return NextResponse.json({ error: "Reference image must be under 20 MB" }, { status: 400 });
-      }
-      mimeType = body.mimeType;
+      const decoded = decodeAssetUpload(body);
+      if (decoded instanceof NextResponse) return decoded;
+      ({ bytes, mimeType } = decoded);
     } else {
       let system;
       try {
@@ -96,14 +83,7 @@ export async function POST(request: Request, context: Ctx) {
     const updated = await getStyle(token, styleId);
     return NextResponse.json({ style: updated });
   } catch (error) {
-    if (error instanceof Response) return error;
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.flatten() }, { status: 400 });
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Character update failed" },
-      { status: 502 },
-    );
+    return assetErrorResponse(error, "Character update failed");
   }
 }
 
@@ -116,10 +96,6 @@ export async function DELETE(request: Request, context: Ctx) {
     if (previous) await deleteImageFile(token, previous);
     return NextResponse.json({ style: await getStyle(token, styleId) });
   } catch (error) {
-    if (error instanceof Response) return error;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Character removal failed" },
-      { status: 500 },
-    );
+    return assetErrorResponse(error, "Character removal failed", 500);
   }
 }

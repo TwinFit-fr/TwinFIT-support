@@ -1,5 +1,6 @@
 import { staffGql } from "@/lib/staff-gql";
 import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
+import { countStyleMuscleMaps } from "./muscle-maps";
 import { exerciseDetails, type ExerciseTaxonomy } from "./prompt";
 import { MID_POSITION, SUBJECTS, framePositionsFor, resolveTwoFrames } from "./types";
 import type {
@@ -56,6 +57,7 @@ const STYLE_FIELDS = `
   updated_at
   updated_by
   characters { subject file_id }
+  muscle_bases { view file_id }
   supports {
     support_equipment_id
     file_id
@@ -161,6 +163,9 @@ function toBoardItem(
     active: exercise.active,
     primary_muscle_group: exercise.primary_muscle_group,
     equipment: exercise.equipment,
+    support_equipment: exercise.support_equipment
+      ? { id: exercise.support_equipment.id, name: exercise.support_equipment.name }
+      : null,
     description: englishDescription(exercise.localizations) || null,
     image_count: images.length,
     active_count: active.length,
@@ -183,6 +188,7 @@ function normalizeStyle(row: ImageStyle): ImageStyle {
     ...row,
     params: { ...DEFAULT_GENERATION_PARAMS, ...(row.params ?? {}) },
     characters: row.characters ?? [],
+    muscle_bases: row.muscle_bases ?? [],
     supports: row.supports ?? [],
   };
 }
@@ -229,17 +235,19 @@ async function getDefaultStyle(token: string): Promise<ImageStyle | null> {
   return row ? normalizeStyle(row) : null;
 }
 
-/** Build the five required slots from a style's prompt rows. */
+/** Build the required slots from a style's prompt rows. */
 export function getStylePrompts(prompts: ImagePrompt[]): StylePrompts {
   const system = prompts.find((p) => p.kind === "system");
   const start = prompts.find((p) => p.kind === "position" && p.position === 0);
   const mid = prompts.find((p) => p.kind === "position" && p.position === 1);
   const end = prompts.find((p) => p.kind === "position" && p.position === 2);
   const support = prompts.find((p) => p.kind === "support");
-  if (!system || !start || !mid || !end || !support) {
+  const muscleBase = prompts.find((p) => p.kind === "muscle_base");
+  const muscleMap = prompts.find((p) => p.kind === "muscle_map");
+  if (!system || !start || !mid || !end || !support || !muscleBase || !muscleMap) {
     throw new Error("Style is missing one or more required prompt slots");
   }
-  return { system, start, mid, end, support };
+  return { system, start, mid, end, support, muscleBase, muscleMap };
 }
 
 export async function createStyle(
@@ -287,7 +295,7 @@ export async function createStyle(
   );
   const created = normalizeStyle(data.insert_images_styles_one);
 
-  const clones = [slots.system, slots.start, slots.mid, slots.end, slots.support].map((p) => ({
+  const clones = Object.values(slots).map((p) => ({
     style_id: created.id,
     kind: p.kind,
     position: p.position,
@@ -380,6 +388,9 @@ export async function deleteStyle(token: string, styleId: string): Promise<void>
   );
   if ((data.images_exercise_images_aggregate.aggregate?.count ?? 0) > 0) {
     throw new Error("Cannot delete a style that still has frames");
+  }
+  if ((await countStyleMuscleMaps(token, styleId)) > 0) {
+    throw new Error("Cannot delete a style that still has muscle maps");
   }
   await staffGql(token, `mutation($id: uuid!) { delete_images_styles_by_pk(id: $id) { id } }`, {
     id: styleId,

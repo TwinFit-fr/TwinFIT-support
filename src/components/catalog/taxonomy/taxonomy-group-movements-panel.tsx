@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
+import { useConfirm } from "@/components/ui/confirm";
 import {
   CATALOG_LOCALES,
   emptyLocaleLabels,
@@ -58,6 +59,7 @@ export function TaxonomyGroupMovementsPanel({
   onSaveLabels,
 }: Props) {
   const [filter, setFilter] = useState("");
+  const confirm = useConfirm();
   const [groupFilter, setGroupFilter] = useState("");
   const [drafts, setDrafts] = useState<Record<string, Record<CatalogLocale, string>>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -152,13 +154,13 @@ export function TaxonomyGroupMovementsPanel({
   }
 
   async function unlinkRow(row: PairRow) {
-    if (
-      !window.confirm(
-        `Unlink ${row.groupCode} + ${row.movementCode}? Custom names for this pair will be removed.`,
-      )
-    ) {
-      return;
-    }
+    const unlink = await confirm({
+      title: `Unlink ${row.groupCode} + ${row.movementCode}?`,
+      description: "Custom names for this pair will be removed.",
+      confirmLabel: "Unlink",
+      variant: "danger",
+    });
+    if (!unlink) return;
     setBusyKey(row.key);
     try {
       await onUnlink(row.groupCode, row.movementCode);

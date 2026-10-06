@@ -59,6 +59,12 @@ export function resolveSupportHasuraRole(accessToken: string): "admin" | "staff"
   throw new Error("JWT has no staff or admin Hasura role");
 }
 
+/** Seconds before the token expires (0 when expired or unreadable). */
+export function jwtSecondsLeft(accessToken: string): number {
+  const exp = decodeJwtPayload(accessToken)?.exp;
+  return typeof exp === "number" ? Math.max(0, exp - Math.floor(Date.now() / 1000)) : 0;
+}
+
 export function parseJwtUserId(accessToken: string): string | null {
   const payload = decodeJwtPayload(accessToken);
   if (!payload) return null;

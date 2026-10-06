@@ -1,52 +1,48 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { mutate } from "swr";
 import { Search } from "lucide-react";
 import { Input, Skeleton } from "@/components/ui/primitives";
+import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
-import { ExerciseImageCard, STATUS_DOT } from "@/components/images/exercise-image-card";
+import {
+  BOARD_GRID,
+  BOARD_REFRESH_MS,
+  EmptyState,
+  StatusTabs,
+  statusCounts,
+} from "@/components/images/board-ui";
+import { ExerciseImageCard } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
-import { StyleSelector, runPositionsFor } from "@/components/images/position-selector";
+import { StyleSelector, runPositionsFor } from "@/components/images/generation-controls";
+import { useBoardSelection } from "@/hooks/use-board-selection";
+import { frameQueueItems, useGenerationJobs } from "@/hooks/use-generation-jobs";
+import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   useFrameCountChoice,
-  useGenerationQueue,
   usePositionSelection,
   useStyleChoice,
   useSubjectSelection,
-} from "@/hooks/use-generation-queue";
-import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
+} from "@/hooks/use-image-preferences";
+import {
+  type BoardFilters,
+  boardFiltersQuery,
+  matchesBoardFilters,
+  readBoardFilters,
+} from "@/lib/images/board-filters";
+import { frameJobSpecs } from "@/lib/images/job-types";
 import { MID_POSITION, framePositionsFor } from "@/lib/images/types";
 import type {
-  ExerciseImage,
   ExerciseImageBoardItem,
-  ImagePrompt,
   ImageStyle,
   Subject,
 } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 
 type ListResponse = { exercises: ExerciseImageBoardItem[]; count: number };
-type StatusFilter = "all" | ExerciseImageBoardItem["status"];
-
-const STATUS_FILTERS: [StatusFilter, string][] = [
-  ["all", "All"],
-  ["empty", "Empty"],
-  ["partial", "Partial"],
-  ["complete", "Complete"],
-  ["inactive_only", "Inactive"],
-];
-
-const BOARD_GRID = "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6";
-
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-12 text-center text-sm text-zinc-500">
-      {children}
-    </div>
-  );
-}
 
 function FilterSelect({
   value,
@@ -87,30 +83,29 @@ function subjectHasStart(exercise: ExerciseImageBoardItem, subject: Subject): bo
 export function ImageBoard() {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
+  const confirm = useConfirm();
+  const confirmGeneration = useGenerationConfirm();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
-  const defaultStyleId = styles.find((s) => s.is_default)?.id ?? null;
-  const [styleId, setStyleId] = useStyleChoice(defaultStyleId);
+  const [styleId, setStyleId] = useStyleChoice(styles);
   const listKey = styleId ? `/api/images/exercises?style=${styleId}` : null;
   const { data, isLoading, error } = useStaffSWR<ListResponse>(listKey, {
-    refreshInterval: 8000,
+    refreshInterval: BOARD_REFRESH_MS,
   });
   const [positions, setPositions] = usePositionSelection();
   const [subjects, setSubjects] = useSubjectSelection();
   const [frameCount, setFrameCount] = useFrameCountChoice();
   const [preparing, setPreparing] = useState(false);
-  const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(
-    styleId ? `/api/images/prompts?styleId=${styleId}` : null,
-  );
-  const styleSystemPromptId = promptsData?.system?.id;
-  // Ephemeral: applies to the next queue runs on this page only.
-  const [systemPromptId, setSystemPromptId] = useState<string | undefined>(undefined);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("all");
-  const [muscle, setMuscle] = useState("all");
-  const [equipment, setEquipment] = useState("all");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const queue = useGenerationQueue();
+  const searchParams = useSearchParams();
+  const filters = useMemo(() => readBoardFilters(searchParams), [searchParams]);
+  const filtersQuery = boardFiltersQuery(filters);
+  // Replaced in place: typing a search adds no history entries.
+  const setFilters = (patch: Partial<BoardFilters>) =>
+    window.history.replaceState(null, "", `/images${boardFiltersQuery({ ...filters, ...patch })}`);
+  // Runs are processed on the server; finished frames refresh the board.
+  const jobs = useGenerationJobs(styleId, { kind: "exercise_frame" }, () => {
+    if (listKey) void mutate(listKey);
+  });
 
   const exercises = useMemo(() => data?.exercises ?? [], [data]);
 
@@ -131,35 +126,20 @@ export function ImageBoard() {
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [exercises]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return exercises.filter((ex) => {
-      if (status !== "all" && ex.status !== status) return false;
-      if (muscle !== "all" && ex.primary_muscle_group?.id !== muscle) return false;
-      if (equipment !== "all" && ex.equipment?.id !== equipment) return false;
-      if (!q) return true;
-      return ex.display_name.toLowerCase().includes(q) || String(ex.exo_id).includes(q);
-    });
-  }, [exercises, search, status, muscle, equipment]);
+  const filtered = useMemo(
+    () => exercises.filter((ex) => matchesBoardFilters(ex, filters)),
+    [exercises, filters],
+  );
 
-  const counts = useMemo(() => {
-    const c = {
-      all: exercises.length,
-      empty: 0,
-      partial: 0,
-      complete: 0,
-      inactive_only: 0,
-    };
-    for (const ex of exercises) {
-      if (ex.status in c) c[ex.status as keyof typeof c] += 1;
-    }
-    return c;
-  }, [exercises]);
+  const visibleIds = useMemo(() => filtered.map((ex) => ex.exo_id), [filtered]);
+  const selection = useBoardSelection(visibleIds);
+
+  const counts = useMemo(() => statusCounts(exercises.map((ex) => ex.status)), [exercises]);
 
   // With a batch frame count, positions it lacks (Mid for 2 frames) are not offered.
   const batchPositions = frameCount === "exercise" ? undefined : framePositionsFor(frameCount === 2);
   const runPositions = batchPositions ? runPositionsFor(positions, batchPositions) : positions;
-  const selectedExercises = filtered.filter((ex) => selected.has(ex.exo_id));
+  const selectedExercises = filtered.filter((ex) => selection.has(ex.exo_id));
   // Mid/End are edits of a Start: without Start in the run, every selected subject needs one.
   const runnableExercises = runPositions.includes(0)
     ? selectedExercises
@@ -173,41 +153,6 @@ export function ImageBoard() {
     0,
   );
 
-  function toggle(exoId: number) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(exoId)) next.delete(exoId);
-      else next.add(exoId);
-      return next;
-    });
-  }
-
-  function selectFiltered() {
-    setSelected(new Set(filtered.map((ex) => ex.exo_id)));
-  }
-
-  async function generateStep(
-    exoId: number,
-    position: number,
-    stepSubject: Subject,
-    guideImageId?: string,
-  ): Promise<string> {
-    if (!styleId) throw new Error("Select a style first");
-    const { image } = (await staffFetch("/api/images/generate", {
-      method: "POST",
-      body: JSON.stringify({
-        exoId,
-        styleId,
-        position,
-        subject: stepSubject,
-        systemPromptId,
-        guideImageId,
-      }),
-    })) as { image: ExerciseImage };
-    if (listKey) await mutate(listKey);
-    return image.id;
-  }
-
   /** Saves the batch frame count on the exercises that differ; false if the user backs out. */
   async function applyFrameCount(exercises: ExerciseImageBoardItem[]): Promise<boolean> {
     if (frameCount === "exercise" || !styleId) return true;
@@ -219,9 +164,11 @@ export function ImageBoard() {
     );
     if (
       losingMid.length &&
-      !window.confirm(
-        `${losingMid.length} exercise(s) have an active Mid frame. Switching them to 2 frames deactivates it. Continue?`,
-      )
+      !(await confirm({
+        title: "Switch to 2 frames?",
+        description: `${losingMid.length} exercise(s) have an active Mid frame. Switching them to 2 frames deactivates it.`,
+        confirmLabel: "Use 2 frames",
+      }))
     ) {
       return false;
     }
@@ -246,79 +193,66 @@ export function ImageBoard() {
 
   async function startQueue() {
     if (!runnableExercises.length || preparing || !styleId) return;
+    if (!(await confirmGeneration.run(plannedImages))) return;
     try {
       if (!(await applyFrameCount(runnableExercises))) return;
-      await queue.start({
-        exercises: runnableExercises.map((ex) => ({
-          exoId: ex.exo_id,
-          name: ex.display_name,
-          framePositions: framePositionsOf(ex),
-        })),
-        positions: runPositions,
-        subjects,
-        maxConcurrency: DEFAULT_MAX_CONCURRENCY,
-        generateStep,
-      });
-      success(`${runnableExercises.length} exercise(s) processed`, "Queue finished");
-      if (listKey) await mutate(listKey);
+      await jobs.enqueue(
+        frameJobSpecs({
+          exercises: runnableExercises.map((ex) => ({
+            exoId: ex.exo_id,
+            framePositions: framePositionsOf(ex),
+          })),
+          positions: runPositions,
+          subjects,
+        }),
+      );
+      success(`${plannedImages} image(s) queued`, "Generating on the server");
+      selection.clear();
     } catch (err) {
-      toastError(err instanceof Error ? err.message : "Failed", "Queue error");
+      toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
     }
   }
-
-  const allFilteredSelected =
-    filtered.length > 0 && filtered.every((ex) => selected.has(ex.exo_id));
 
   return (
     <div className="space-y-4 pb-28">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Images</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Exercises</h1>
         <StyleSelector
           styles={styles}
           value={styleId}
           onChange={setStyleId}
-          disabled={queue.running || preparing}
+          disabled={preparing}
         />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg bg-zinc-100 p-0.5" role="tablist">
-          {STATUS_FILTERS.map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={status === id}
-              onClick={() => setStatus(id)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
-                status === id
-                  ? "bg-white text-zinc-900 shadow-xs"
-                  : "text-zinc-600 hover:text-zinc-900",
-              )}
-            >
-              {id !== "all" && (
-                <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[id])} />
-              )}
-              {label}
-              <span className="tabular-nums text-zinc-400">{counts[id]}</span>
-            </button>
-          ))}
-        </div>
+        <StatusTabs
+          value={filters.status}
+          onChange={(status) => setFilters({ status })}
+          counts={counts}
+        />
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
             <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={filters.q}
+              onChange={(e) => setFilters({ q: e.target.value })}
               placeholder="Search name or #id"
               className="h-8 w-56 py-1 pl-8 text-xs"
             />
           </div>
-          <FilterSelect value={muscle} onChange={setMuscle} allLabel="All muscles">
+          <FilterSelect
+            value={filters.muscle}
+            onChange={(muscle) => setFilters({ muscle })}
+            allLabel="All muscles"
+          >
             {muscleOptions}
           </FilterSelect>
-          <FilterSelect value={equipment} onChange={setEquipment} allLabel="All equipment">
+          <FilterSelect
+            value={filters.equipment}
+            onChange={(equipment) => setFilters({ equipment })}
+            allLabel="All equipment"
+          >
             {equipmentOptions}
           </FilterSelect>
         </div>
@@ -338,10 +272,10 @@ export function ImageBoard() {
           {filtered.length > 0 && (
             <button
               type="button"
-              onClick={allFilteredSelected ? () => setSelected(new Set()) : selectFiltered}
+              onClick={selection.allSelected ? selection.clear : selection.selectAll}
               className="font-medium text-zinc-600 hover:text-zinc-900"
             >
-              {allFilteredSelected ? "Deselect all" : "Select all"}
+              {selection.allSelected ? "Deselect all" : "Select all"}
             </button>
           )}
         </div>
@@ -363,17 +297,18 @@ export function ImageBoard() {
             <ExerciseImageCard
               key={ex.id}
               exercise={ex}
-              selected={selected.has(ex.exo_id)}
-              selecting={selected.size > 0}
-              onToggle={() => toggle(ex.exo_id)}
+              href={`/images/${ex.exo_id}${filtersQuery}`}
+              selected={selection.has(ex.exo_id)}
+              selecting={selection.count > 0}
+              onToggle={(range) => selection.toggle(ex.exo_id, range)}
             />
           ))}
         </div>
       )}
 
       <GenerationQueueBar
-        selectedCount={selected.size}
-        onClearSelection={() => setSelected(new Set())}
+        selectedCount={selection.count}
+        onClearSelection={selection.clear}
         plannedImages={plannedImages}
         withoutStart={withoutStart}
         frameCount={frameCount}
@@ -383,19 +318,14 @@ export function ImageBoard() {
         onPositionsChange={setPositions}
         subjects={subjects}
         onSubjectsChange={setSubjects}
-        systemPrompts={promptsData?.system ? [promptsData.system] : []}
-        settingsSystemPromptId={styleSystemPromptId}
-        systemPromptId={systemPromptId}
-        onSystemPromptChange={setSystemPromptId}
-        running={queue.running}
         preparing={preparing}
-        items={queue.items}
-        exercisesDone={queue.exercisesDone}
-        imagesDone={queue.imagesDone}
-        imagesTotal={queue.imagesTotal}
-        errors={queue.errors}
+        items={frameQueueItems(jobs.jobs)}
+        progress={jobs.progress}
+        nameOf={(exoId) => exercises.find((ex) => ex.exo_id === exoId)?.display_name ?? ""}
         onGenerate={() => void startQueue()}
-        onCancel={queue.cancel}
+        onCancel={() => void jobs.cancelActive()}
+        onRetry={() => void jobs.retryFailed()}
+        onDismiss={() => void jobs.dismissFinished()}
       />
     </div>
   );

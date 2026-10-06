@@ -6,18 +6,31 @@ import { cn } from "@/lib/utils";
 
 type ToastType = "success" | "error" | "info";
 
+/** A button on the toast, such as Undo; clicking it also dismisses the toast. */
+export type ToastAction = { label: string; onClick: () => void };
+
 export type Toast = {
   id: string;
   title?: string;
   message: string;
   type: ToastType;
   duration?: number;
+  action?: ToastAction;
 };
+
+/** Toasts with an action stay longer, so there is time to use it. */
+const ACTION_DURATION = 8000;
 
 type ToastContextType = {
   toasts: Toast[];
-  showToast: (message: string, type?: ToastType, title?: string, duration?: number) => void;
-  success: (message: string, title?: string) => void;
+  showToast: (
+    message: string,
+    type?: ToastType,
+    title?: string,
+    duration?: number,
+    action?: ToastAction,
+  ) => void;
+  success: (message: string, title?: string, action?: ToastAction) => void;
   error: (message: string, title?: string) => void;
   info: (message: string, title?: string) => void;
   removeToast: (id: string) => void;
@@ -33,9 +46,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, type: ToastType = "info", title?: string, duration = 4000) => {
+    (
+      message: string,
+      type: ToastType = "info",
+      title?: string,
+      duration = 4000,
+      action?: ToastAction,
+    ) => {
       const id = Math.random().toString(36).substring(2, 9);
-      const newToast: Toast = { id, message, type, title, duration };
+      const newToast: Toast = { id, message, type, title, duration, action };
       setToasts((prev) => [...prev, newToast]);
 
       if (duration > 0) {
@@ -48,7 +67,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 
   const success = useCallback(
-    (message: string, title?: string) => showToast(message, "success", title),
+    (message: string, title?: string, action?: ToastAction) =>
+      showToast(message, "success", title, action ? ACTION_DURATION : undefined, action),
     [showToast],
   );
 
@@ -65,7 +85,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toasts, showToast, success, error, info, removeToast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none px-4 sm:px-0">
+      <div
+        role="status"
+        aria-live="polite"
+        className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none px-4 sm:px-0"
+      >
         {toasts.map((toast) => (
           <div
             key={toast.id}
@@ -91,9 +115,22 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               )}
               <p className="text-sm text-zinc-600">{toast.message}</p>
             </div>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  removeToast(toast.id);
+                  toast.action?.onClick();
+                }}
+                className="shrink-0 rounded-md px-2 py-0.5 text-sm font-medium text-zinc-900 underline-offset-2 hover:bg-zinc-100 hover:underline"
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => removeToast(toast.id)}
+              aria-label="Dismiss"
               className="text-zinc-400 hover:text-zinc-600 transition-colors p-0.5 rounded-md"
             >
               <X className="h-4 w-4" />

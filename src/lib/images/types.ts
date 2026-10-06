@@ -1,4 +1,4 @@
-export type ImagePromptKind = "system" | "position" | "support";
+export type ImagePromptKind = "system" | "position" | "support" | "muscle_base" | "muscle_map";
 
 /** OpenAI generation params stored on a style (no logo / concurrency). */
 export type GenerationParams = {
@@ -17,6 +17,12 @@ export type GenerationParams = {
 export type Subject = "man" | "woman";
 export const SUBJECTS: readonly Subject[] = ["man", "woman"];
 
+/** Muscle maps are drawn on a front and a back body, each its own image. */
+export type MuscleMapView = "front" | "back";
+export const MUSCLE_MAP_VIEWS: readonly MuscleMapView[] = ["front", "back"];
+
+export type MuscleMapTargetKind = "muscle" | "muscle_group";
+
 /** Frames per sequence chosen for a batch; "exercise" keeps each exercise's own setting. */
 export type FrameCountChoice = "exercise" | 2 | 3;
 
@@ -33,6 +39,8 @@ export type ImageStyle = {
   updated_at: string;
   updated_by: string | null;
   characters: { subject: Subject; file_id: string }[];
+  /** Blank body per view: the input image of every muscle map of that view. */
+  muscle_bases: { view: MuscleMapView; file_id: string }[];
   supports: {
     support_equipment_id: string;
     file_id: string;
@@ -53,13 +61,15 @@ export type ImageSettings = {
   updated_by: string | null;
 };
 
-/** The five prompt slots owned by a style. */
+/** The prompt slots owned by a style. */
 export type StylePrompts = {
   system: ImagePrompt;
   start: ImagePrompt;
   mid: ImagePrompt;
   end: ImagePrompt;
   support: ImagePrompt;
+  muscleBase: ImagePrompt;
+  muscleMap: ImagePrompt;
 };
 
 /** Snapshot stored on each generated image (subject lives on the row column). */
@@ -67,6 +77,13 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   target_position?: number;
   reference_file_id?: string | null;
   support_reference_file_id?: string | null;
+  /** Automatic inputs the run left out (character, support, logo). */
+  skipped_inputs?: string[];
+  /** Made by editing this image with an instruction. */
+  edit_of?: string;
+  edit_instruction?: string;
+  /** Library references sent with this frame. */
+  reference_ids?: string[];
   guide_image_id?: string | null;
   logo_sent?: boolean;
   feet_shift_px?: number;
@@ -76,6 +93,9 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   position_prompt_id?: string | null;
   system_prompt_edited?: boolean;
   position_prompt_edited?: boolean;
+  /** When the slot texts used were saved (their versions in images.prompt_versions). */
+  system_prompt_saved_at?: string | null;
+  position_prompt_saved_at?: string | null;
   /** Legacy: baked two-image composite (replaced by frame_align). */
   manual_overlay?: boolean;
   /** Active frame was geometrically nudged to align the GIF. */
@@ -87,6 +107,91 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   /** Legacy rows may still carry subject in params until backfilled. */
   subject?: Subject;
 };
+
+/** Snapshot stored on each generated muscle map. */
+export type MuscleMapSnapshot = Partial<GenerationParams> & {
+  base_file_id?: string | null;
+  prompt_id?: string | null;
+  prompt_edited?: boolean;
+  /** When the slot text used was saved (its version in images.prompt_versions). */
+  prompt_saved_at?: string | null;
+  reference_ids?: string[];
+  /** Made by editing this map with an instruction. */
+  edit_of?: string;
+  edit_instruction?: string;
+};
+
+export type MuscleMapImage = {
+  id: string;
+  style_id: string;
+  muscle_id: string | null;
+  muscle_group_id: string | null;
+  view: MuscleMapView;
+  file_id: string;
+  image_url: string;
+  active: boolean;
+  model: string;
+  prompt: string;
+  params: MuscleMapSnapshot | null;
+  usage: Record<string, unknown> | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MuscleMapTargetRef = { kind: MuscleMapTargetKind; id: string };
+
+/** A muscle or a muscle group on the muscle map board, with its maps for one style. */
+export type MuscleMapBoardTarget = MuscleMapTargetRef & {
+  code: string;
+  name: string;
+  description: string | null;
+  /** Newest first. */
+  images: MuscleMapImage[];
+  active: Partial<Record<MuscleMapView, MuscleMapImage>>;
+  /** Complete when both views have an active map. */
+  status: "complete" | "partial" | "inactive_only" | "empty";
+};
+
+/** A group and the muscles whose home it is; group is null for muscles without one. */
+export type MuscleMapBoardRow = {
+  group: MuscleMapBoardTarget | null;
+  muscles: MuscleMapBoardTarget[];
+};
+
+export function muscleMapTargetKey(ref: MuscleMapTargetRef): string {
+  return `${ref.kind}:${ref.id}`;
+}
+
+/** What a library reference is used for: one exercise, muscle or muscle group. */
+export type ReferenceTarget =
+  | { kind: "exercise"; id: number }
+  | { kind: "muscle"; id: string }
+  | { kind: "muscle_group"; id: string };
+
+export type ReferenceLink = ReferenceTarget & { name: string };
+
+/** A free reference image of a style, sent when generating its linked targets. */
+export type StyleReference = {
+  id: string;
+  style_id: string;
+  name: string;
+  /** Appended to the prompt when the image is sent: how the model should use it. */
+  instruction: string;
+  /** Text used by Generate; null when the image is only uploaded. */
+  prompt: string | null;
+  file_id: string | null;
+  inserted_at: string;
+  updated_at: string;
+  links: ReferenceLink[];
+};
+
+/** Library images one generation may send, on top of the style's automatic inputs. */
+export const MAX_RUN_REFERENCES = 6;
+
+export function referenceTargetKey(target: ReferenceTarget): string {
+  return `${target.kind}:${target.id}`;
+}
 
 export type ImagePrompt = {
   id: string;
@@ -132,6 +237,8 @@ export type ExerciseImageBoardItem = {
   active: boolean;
   primary_muscle_group: { id: string; name: string } | null;
   equipment: { id: string; name: string } | null;
+  /** Its reference image (style supports) is sent with Start frames. */
+  support_equipment: { id: string; name: string } | null;
   description: string | null;
   image_count: number;
   active_count: number;

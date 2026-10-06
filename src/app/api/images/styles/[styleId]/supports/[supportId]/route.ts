@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { assetBodySchema, assetErrorResponse, decodeAssetUpload } from "@/lib/images/asset-request";
 import { generateImage } from "@/lib/images/openai";
 import { fillPromptTemplate } from "@/lib/images/prompt";
 import {
@@ -19,18 +19,7 @@ import {
 
 export const maxDuration = 300;
 
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
-
 type Ctx = { params: Promise<{ styleId: string; supportId: string }> };
-
-const bodySchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("generate") }),
-  z.object({
-    action: z.literal("upload"),
-    mimeType: z.enum(["image/png", "image/webp", "image/jpeg"]),
-    data: z.string().min(1),
-  }),
-]);
 
 export async function POST(request: Request, context: Ctx) {
   try {
@@ -45,7 +34,7 @@ export async function POST(request: Request, context: Ctx) {
       return NextResponse.json({ error: "Support equipment not found" }, { status: 404 });
     }
 
-    const body = bodySchema.parse(await request.json());
+    const body = assetBodySchema.parse(await request.json());
     const previous =
       style.supports.find((s) => s.support_equipment_id === supportId)?.file_id ?? null;
 
@@ -53,11 +42,9 @@ export async function POST(request: Request, context: Ctx) {
     let mimeType: string;
 
     if (body.action === "upload") {
-      bytes = Buffer.from(body.data, "base64");
-      if (bytes.length > MAX_UPLOAD_BYTES) {
-        return NextResponse.json({ error: "Reference image must be under 20 MB" }, { status: 400 });
-      }
-      mimeType = body.mimeType;
+      const decoded = decodeAssetUpload(body);
+      if (decoded instanceof NextResponse) return decoded;
+      ({ bytes, mimeType } = decoded);
     } else {
       let template;
       try {
@@ -88,14 +75,7 @@ export async function POST(request: Request, context: Ctx) {
     await upsertStyleSupport(token, styleId, supportId, uploaded.id);
     return NextResponse.json({ style: await getStyle(token, styleId) });
   } catch (error) {
-    if (error instanceof Response) return error;
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.flatten() }, { status: 400 });
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Support reference update failed" },
-      { status: 502 },
-    );
+    return assetErrorResponse(error, "Support reference update failed");
   }
 }
 
@@ -107,10 +87,6 @@ export async function DELETE(request: Request, context: Ctx) {
     if (previous) await deleteImageFile(token, previous);
     return NextResponse.json({ style: await getStyle(token, styleId) });
   } catch (error) {
-    if (error instanceof Response) return error;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Support reference removal failed" },
-      { status: 500 },
-    );
+    return assetErrorResponse(error, "Support reference removal failed", 500);
   }
 }

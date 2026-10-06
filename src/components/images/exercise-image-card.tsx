@@ -49,15 +49,19 @@ export function FrameDots({
 
 export function ExerciseImageCard({
   exercise,
+  href,
   selected,
   selecting,
   onToggle,
 }: {
   exercise: ExerciseImageBoardItem;
+  /** The exercise workspace, carrying the board filters. */
+  href: string;
   selected: boolean;
   /** Something on the board is selected: checkboxes stay visible. */
   selecting: boolean;
-  onToggle: () => void;
+  /** `range`: Shift was held, extend from the last toggled card. */
+  onToggle: (range: boolean) => void;
 }) {
   const meta = [exercise.primary_muscle_group?.name, exercise.equipment?.name]
     .filter(Boolean)
@@ -77,18 +81,19 @@ export function ExerciseImageCard({
         role="checkbox"
         aria-checked={selected}
         aria-label={`Select ${exercise.display_name}`}
-        onClick={onToggle}
+        title="Select · Shift-click for a range"
+        onClick={(event) => onToggle(event.shiftKey)}
         className={cn(
           "absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-md border shadow-xs transition",
           selected
             ? "border-zinc-900 bg-zinc-900 text-white"
             : "border-zinc-300 bg-white/90 text-transparent hover:border-zinc-500",
-          !selected && !selecting && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+          !selected && !selecting && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
         )}
       >
         <Check className="h-3.5 w-3.5" strokeWidth={3} />
       </button>
-      <Link href={`/images/${exercise.exo_id}`} className="block focus-visible:outline-none">
+      <Link href={href} className="block focus-visible:outline-none">
         <div className="grid grid-cols-2 gap-px bg-zinc-200">
           {SUBJECTS.map((subject) => {
             const status = exercise.by_subject.find((s) => s.subject === subject);

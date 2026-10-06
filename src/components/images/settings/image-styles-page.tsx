@@ -1,22 +1,32 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { mutate } from "swr";
 import { Button, Skeleton } from "@/components/ui/primitives";
+import { useConfirm } from "@/components/ui/confirm";
+import { TabList, TabPanel, type TabItem } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
+import { useStyleChoice } from "@/hooks/use-image-preferences";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { validateGenerationParams } from "@/lib/images/capabilities";
-import type { GenerationParams, ImageStyle, Subject } from "@/lib/images/types";
+import type { GenerationParams, ImageStyle, MuscleMapView, Subject } from "@/lib/images/types";
+import { MUSCLE_MAP_VIEWS, SUBJECTS } from "@/lib/images/types";
+import { StylePromptsEditor } from "@/components/images/prompt-editor";
 import { CharactersSection } from "./characters-section";
-import { CollapsibleSection, Section, readAsBase64, selectClass } from "./form-ui";
+import { Section, readAsBase64, selectClass } from "./form-ui";
 import { ModelSection } from "./model-section";
+import { MuscleBasesSection } from "./muscle-bases-section";
+import { ReferencesLibrary } from "./references-library";
 import { StyleBar } from "./style-bar";
 import { SupportsSection } from "./supports-section";
 
 type ModelsResponse = { models: { id: string }[] };
 type StylesResponse = { styles: ImageStyle[] };
 type StyleResponse = { style: ImageStyle };
+
+const STYLE_TABS = ["prompts", "model", "assets", "library"] as const;
+type StyleTab = (typeof STYLE_TABS)[number];
 
 type StyleDraft = {
   name: string;
@@ -51,15 +61,19 @@ function normalizeCode(raw: string): string {
 export function ImageStylesPage() {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
+  const confirm = useConfirm();
+  const tabParam = useSearchParams().get("tab");
+  const tab: StyleTab = STYLE_TABS.find((t) => t === tabParam) ?? "prompts";
+  // Replaced in place, like the board filters: switching tabs adds no history entries.
+  const setTab = (next: StyleTab) =>
+    window.history.replaceState(null, "", `/images/styles?tab=${next}`);
 
   const { data: stylesData, isLoading: stylesLoading } =
     useStaffSWR<StylesResponse>("/api/images/styles");
   const { data: modelsData } = useStaffSWR<ModelsResponse>("/api/images/models");
 
   const styles = useMemo(() => stylesData?.styles ?? [], [stylesData]);
-  const fallbackStyleId = styles.find((s) => s.is_default)?.id ?? styles[0]?.id ?? null;
-  const [selectedStyleIdOverride, setSelectedStyleIdOverride] = useState<string | null>(null);
-  const selectedStyleId = selectedStyleIdOverride ?? fallbackStyleId;
+  const [selectedStyleId, setSelectedStyleId] = useStyleChoice(styles);
   const defaultStyleId = styles.find((s) => s.is_default)?.id ?? null;
 
   const styleKey = selectedStyleId ? `/api/images/styles/${selectedStyleId}` : null;
@@ -77,6 +91,7 @@ export function ImageStylesPage() {
   const [savingStyle, setSavingStyle] = useState(false);
   const [characterBusy, setCharacterBusy] = useState<Subject | null>(null);
   const [supportBusy, setSupportBusy] = useState<string | null>(null);
+  const [muscleBaseBusy, setMuscleBaseBusy] = useState<MuscleMapView | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -93,6 +108,19 @@ export function ImageStylesPage() {
     return toStyleDraft(style);
   }, [style, styleEdits]);
 
+  const styleDirty =
+    style != null &&
+    styleDraft != null &&
+    JSON.stringify(styleDraft) !== JSON.stringify(toStyleDraft(style));
+
+  // Leaving the page (reload, close, another site) with unsaved style edits asks first.
+  useEffect(() => {
+    if (!styleDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [styleDirty]);
+
   function editStyle(next: StyleDraft) {
     if (!style) return;
     setStyleEdits({ styleId: style.id, draft: next });
@@ -103,7 +131,7 @@ export function ImageStylesPage() {
   }
 
   function selectStyle(id: string) {
-    setSelectedStyleIdOverride(id);
+    setSelectedStyleId(id);
     clearStyleEdits();
   }
 
@@ -127,12 +155,20 @@ export function ImageStylesPage() {
   }
 
   const issues = validateGenerationParams(styleDraft.params);
-  const styleDirty = JSON.stringify(styleDraft) !== JSON.stringify(toStyleDraft(style));
 
-  function openCreate() {
-    if (styleDirty && !window.confirm("Discard unsaved style changes and create a new style?")) {
-      return;
-    }
+  /** True when there is nothing unsaved, or the user agrees to drop it. */
+  async function discardEdits(next: string): Promise<boolean> {
+    if (!styleDirty) return true;
+    return confirm({
+      title: "Discard unsaved style changes?",
+      description: `Your edits to ${style?.name ?? "this style"} are lost if you ${next}.`,
+      confirmLabel: "Discard",
+      variant: "danger",
+    });
+  }
+
+  async function openCreate() {
+    if (!(await discardEdits("create a new style"))) return;
     setCreateDraft({
       code: "",
       name: "",
@@ -218,53 +254,50 @@ export function ImageStylesPage() {
       toastError("Cannot delete the default style");
       return;
     }
-    if (!window.confirm(`Delete style "${style.code}"? This cannot be undone.`)) return;
+    const remove = await confirm({
+      title: `Delete style "${style.code}"?`,
+      description: "Its prompts and reference images are deleted with it. This cannot be undone.",
+      confirmLabel: "Delete style",
+      variant: "danger",
+    });
+    if (!remove) return;
     try {
       await staffFetch(`/api/images/styles/${selectedStyleId}`, { method: "DELETE" });
       await mutate("/api/images/styles");
       if (defaultStyleId) selectStyle(defaultStyleId);
-      else {
-        setSelectedStyleIdOverride(null);
-        clearStyleEdits();
-      }
+      else clearStyleEdits();
       success("Style deleted");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Could not delete style");
     }
   }
 
+  /** POST generate / upload or DELETE one style asset; every asset route returns the style. */
+  async function assetRequest(
+    path: string,
+    action: "generate" | "remove" | File,
+  ): Promise<StyleResponse> {
+    if (action === "remove") {
+      return (await staffFetch(path, { method: "DELETE" })) as StyleResponse;
+    }
+    const body =
+      action === "generate"
+        ? { action: "generate" }
+        : { action: "upload", mimeType: action.type, data: await readAsBase64(action) };
+    return (await staffFetch(path, {
+      method: "POST",
+      body: JSON.stringify(body),
+    })) as StyleResponse;
+  }
+
   async function characterAction(subject: Subject, action: "generate" | "remove" | File) {
     if (!selectedStyleId) return;
-    if (action === "generate" && !styleDirty) {
-      if (!window.confirm(`Generate a new ${subject} reference with OpenAI?`)) return;
-    }
-    if (action === "remove" && !window.confirm(`Remove the ${subject} reference?`)) return;
     setCharacterBusy(subject);
     try {
-      let result: StyleResponse;
-      if (action === "remove") {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/characters/${subject}`,
-          { method: "DELETE" },
-        )) as StyleResponse;
-      } else if (action === "generate") {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/characters/${subject}`,
-          { method: "POST", body: JSON.stringify({ action: "generate" }) },
-        )) as StyleResponse;
-      } else {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/characters/${subject}`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              action: "upload",
-              mimeType: action.type,
-              data: await readAsBase64(action),
-            }),
-          },
-        )) as StyleResponse;
-      }
+      const result = await assetRequest(
+        `/api/images/styles/${selectedStyleId}/characters/${subject}`,
+        action,
+      );
       await refreshStyle(result.style);
       success(action === "remove" ? "Reference removed" : "Reference updated");
     } catch (err) {
@@ -278,36 +311,33 @@ export function ImageStylesPage() {
     if (!selectedStyleId) return;
     setSupportBusy(supportId);
     try {
-      let result: StyleResponse;
-      if (action === "remove") {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/supports/${supportId}`,
-          { method: "DELETE" },
-        )) as StyleResponse;
-      } else if (action === "generate") {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/supports/${supportId}`,
-          { method: "POST", body: JSON.stringify({ action: "generate" }) },
-        )) as StyleResponse;
-      } else {
-        result = (await staffFetch(
-          `/api/images/styles/${selectedStyleId}/supports/${supportId}`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              action: "upload",
-              mimeType: action.type,
-              data: await readAsBase64(action),
-            }),
-          },
-        )) as StyleResponse;
-      }
+      const result = await assetRequest(
+        `/api/images/styles/${selectedStyleId}/supports/${supportId}`,
+        action,
+      );
       await refreshStyle(result.style);
       success(action === "remove" ? "Support reference removed" : "Support reference updated");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Support update failed");
     } finally {
       setSupportBusy(null);
+    }
+  }
+
+  async function muscleBaseAction(view: MuscleMapView, action: "generate" | "remove" | File) {
+    if (!selectedStyleId) return;
+    setMuscleBaseBusy(view);
+    try {
+      const result = await assetRequest(
+        `/api/images/styles/${selectedStyleId}/muscle-bases/${view}`,
+        action,
+      );
+      await refreshStyle(result.style);
+      success(action === "remove" ? "Muscle map base removed" : "Muscle map base updated");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Muscle map base update failed");
+    } finally {
+      setMuscleBaseBusy(null);
     }
   }
 
@@ -334,7 +364,6 @@ export function ImageStylesPage() {
 
   async function removeLogo() {
     if (!selectedStyleId) return;
-    if (!window.confirm("Remove the brand logo from this style?")) return;
     setLogoBusy(true);
     try {
       const result = (await staffFetch(`/api/images/styles/${selectedStyleId}/logo`, {
@@ -349,44 +378,33 @@ export function ImageStylesPage() {
     }
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-zinc-900">Styles</h1>
-          <p className="text-sm text-zinc-500">
-            Model, prompts, logo and reference sheets per style.
-            {style.updated_at
-              ? ` Last saved ${new Date(style.updated_at).toLocaleString()}.`
-              : ""}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={!styleDirty || savingStyle}
-            onClick={() => clearStyleEdits()}
-          >
-            Discard
-          </Button>
-          <Button
-            type="button"
-            disabled={!styleDirty || savingStyle || issues.length > 0}
-            onClick={() => void saveStyle()}
-          >
-            {savingStyle ? "Saving…" : "Save style"}
-          </Button>
-        </div>
-      </div>
+  const missingAssets =
+    SUBJECTS.filter((s) => !style.characters.some((c) => c.subject === s)).length +
+    MUSCLE_MAP_VIEWS.filter((v) => !style.muscle_bases.some((b) => b.view === v)).length;
+  const tabs: TabItem<StyleTab>[] = [
+    { id: "prompts", label: "Prompts" },
+    {
+      id: "model",
+      label: "Model & output",
+      badge: issues.length > 0 && <TabBadge>{issues.length}</TabBadge>,
+    },
+    {
+      id: "assets",
+      label: "Assets",
+      badge: missingAssets > 0 && <TabBadge>{missingAssets} missing</TabBadge>,
+    },
+    { id: "library", label: "Library" },
+  ];
 
-      {issues.length > 0 && (
-        <ul className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          {issues.map((issue) => (
-            <li key={issue}>{issue}</li>
-          ))}
-        </ul>
-      )}
+  return (
+    <div className="space-y-4 pb-24">
+      <div>
+        <h1 className="text-xl font-semibold text-zinc-900">Styles</h1>
+        <p className="text-sm text-zinc-500">
+          Prompts, model, assets and reference library of each style.
+          {style.updated_at ? ` Last saved ${new Date(style.updated_at).toLocaleString()}.` : ""}
+        </p>
+      </div>
 
       <StyleBar
         styles={styles}
@@ -394,9 +412,8 @@ export function ImageStylesPage() {
         published={styleDraft.published}
         isDefault={styleDraft.is_default}
         busy={savingStyle || creating}
-        onSelect={(id) => {
-          if (styleDirty && !window.confirm("Discard unsaved style changes?")) return;
-          selectStyle(id);
+        onSelect={async (id) => {
+          if (await discardEdits("switch styles")) selectStyle(id);
         }}
         onPublishedChange={(published) =>
           editStyle({
@@ -412,7 +429,7 @@ export function ImageStylesPage() {
             published: is_default || styleDraft.published,
           })
         }
-        onNew={openCreate}
+        onNew={() => void openCreate()}
         onDelete={() => void deleteStyle()}
       />
 
@@ -461,7 +478,7 @@ export function ImageStylesPage() {
               Copy params, prompts and flags from{" "}
               <span className="font-medium">{style.code}</span>
               <span className="block text-[11px] text-zinc-500">
-                Character/support reference files are not copied.
+                Reference images (characters, supports, muscle bases) are not copied.
               </span>
             </span>
           </label>
@@ -498,60 +515,123 @@ export function ImageStylesPage() {
         </span>
       </label>
 
-      <Section title="Prompts" description="Prompt texts are owned by each style.">
-        <p className="text-sm text-zinc-600">
-          Edit system / start / mid / end / support prompts on the{" "}
-          <Link href="/images/prompts" className="underline">
-            Prompts
-          </Link>{" "}
-          page (select this style there).
-        </p>
-      </Section>
+      <div>
+        <TabList label="Style settings" tabs={tabs} value={tab} onChange={setTab} />
 
-      <CollapsibleSection
-        title="Model & output"
-        description="OpenAI model, size, background, format and quality for this style."
-        defaultOpen={false}
-      >
-        <ModelSection
-          params={styleDraft.params}
-          models={models}
-          onChange={(params) => editStyle({ ...styleDraft, params })}
-        />
-      </CollapsibleSection>
+        <TabPanel id="prompts" selected={tab === "prompts"}>
+          <p className="text-xs text-zinc-500">
+            Each slot saves on its own. Placeholders are filled per exercise, muscle or group.
+          </p>
+          <StylePromptsEditor style={style} />
+        </TabPanel>
 
-      <CollapsibleSection
-        title="References"
-        description="Character sheets, brand logo and support-equipment references."
-        defaultOpen={false}
-      >
-        <CharactersSection
-          style={style}
-          params={styleDraft.params}
-          logoInExercises={styleDraft.logo_in_exercises}
-          dirty={styleDirty}
-          characterBusy={characterBusy}
-          logoBusy={logoBusy}
-          onLogoInExercisesChange={(logo_in_exercises) =>
-            editStyle({ ...styleDraft, logo_in_exercises })
-          }
-          onInputFidelityChange={(input_fidelity) =>
-            editStyle({
-              ...styleDraft,
-              params: { ...styleDraft.params, input_fidelity },
-            })
-          }
-          onCharacterAction={(subject, action) => void characterAction(subject, action)}
-          onLogoUpload={(file) => void uploadLogo(file)}
-          onLogoRemove={() => void removeLogo()}
-        />
-        <SupportsSection
-          style={style}
-          dirty={styleDirty}
-          busyId={supportBusy}
-          onAction={(supportId, action) => void supportAction(supportId, action)}
-        />
-      </CollapsibleSection>
+        <TabPanel id="model" selected={tab === "model"}>
+          {issues.length > 0 && (
+            <ul className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          )}
+          <ModelSection
+            params={styleDraft.params}
+            models={models}
+            onChange={(params) => editStyle({ ...styleDraft, params })}
+          />
+        </TabPanel>
+
+        <TabPanel id="assets" selected={tab === "assets"}>
+          <p className="text-xs text-zinc-500">
+            Character sheets, brand logo, support equipment and muscle map bases, each sent
+            automatically by its rule. Images save at once; the logo and fidelity settings save with
+            the style.
+          </p>
+          <CharactersSection
+            style={style}
+            params={styleDraft.params}
+            logoInExercises={styleDraft.logo_in_exercises}
+            dirty={styleDirty}
+            characterBusy={characterBusy}
+            logoBusy={logoBusy}
+            onLogoInExercisesChange={(logo_in_exercises) =>
+              editStyle({ ...styleDraft, logo_in_exercises })
+            }
+            onInputFidelityChange={(input_fidelity) =>
+              editStyle({
+                ...styleDraft,
+                params: { ...styleDraft.params, input_fidelity },
+              })
+            }
+            onCharacterAction={(subject, action) => void characterAction(subject, action)}
+            onLogoUpload={(file) => void uploadLogo(file)}
+            onLogoRemove={() => void removeLogo()}
+          />
+          <SupportsSection
+            style={style}
+            dirty={styleDirty}
+            busyId={supportBusy}
+            onAction={(supportId, action) => void supportAction(supportId, action)}
+          />
+          <MuscleBasesSection
+            style={style}
+            dirty={styleDirty}
+            busyView={muscleBaseBusy}
+            onAction={(view, action) => void muscleBaseAction(view, action)}
+          />
+        </TabPanel>
+
+        <TabPanel id="library" selected={tab === "library"}>
+          <p className="text-xs text-zinc-500">
+            Your own images (a bar, a machine, a detail), sent only when generating the exercises,
+            muscles or groups they are linked to.
+          </p>
+          <ReferencesLibrary style={style} />
+        </TabPanel>
+      </div>
+
+      {styleDirty && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 shadow-[0_-4px_16px_-8px_rgba(0,0,0,0.12)] backdrop-blur-sm">
+          <div
+            className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5"
+            role="status"
+          >
+            <span className="text-sm text-zinc-700">
+              <span className="font-medium text-zinc-900">Unsaved changes</span> to{" "}
+              {styleDraft.name || style.code}
+              {issues.length > 0 && (
+                <span className="text-amber-700"> · fix the model settings to save</span>
+              )}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-8 py-0"
+                disabled={savingStyle}
+                onClick={() => clearStyleEdits()}
+              >
+                Discard
+              </Button>
+              <Button
+                type="button"
+                className="h-8 py-0"
+                disabled={savingStyle || issues.length > 0}
+                onClick={() => void saveStyle()}
+              >
+                {savingStyle ? "Saving…" : "Save style"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function TabBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800">
+      {children}
+    </span>
   );
 }

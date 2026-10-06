@@ -1,5 +1,6 @@
 "use client";
 
+import { styleLabel } from "@/components/images/generation-controls";
 import { Button } from "@/components/ui/primitives";
 import type { ImageStyle } from "@/lib/images/types";
 import { selectClass } from "./form-ui";
@@ -39,9 +40,7 @@ export function StyleBar({
         >
           {styles.map((style) => (
             <option key={style.id} value={style.id}>
-              {style.code} — {style.name}
-              {style.is_default ? " (default)" : ""}
-              {style.published ? "" : " (draft)"}
+              {styleLabel(style)}
             </option>
           ))}
         </select>

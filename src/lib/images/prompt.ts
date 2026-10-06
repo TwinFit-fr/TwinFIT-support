@@ -1,3 +1,5 @@
+import type { MuscleMapTargetKind, MuscleMapView } from "./types";
+
 type TemplateValues = {
   name: string;
   description: string;
@@ -50,15 +52,20 @@ export function exerciseDetails(exercise: ExerciseTaxonomy): string {
     : "";
 }
 
-export const PROMPT_PLACEHOLDERS = [
-  "{name}",
-  "{description}",
-  "{exo_id}",
-  "{subject}",
-  "{background_color}",
-  "{support}",
-  "{support_description}",
-] as const;
+/** Placeholders each group of prompt slots understands. */
+export const PROMPT_PLACEHOLDERS = {
+  exercise: ["{name}", "{description}", "{exo_id}", "{subject}", "{background_color}"],
+  support: ["{support}", "{support_description}", "{background_color}"],
+  muscleBase: ["{view}", "{background_color}"],
+  muscleMap: [
+    "{target}",
+    "{target_kind}",
+    "{target_description}",
+    "{muscles}",
+    "{view}",
+    "{background_color}",
+  ],
+} as const;
 
 export function fillPromptTemplate(
   template: string,
@@ -86,6 +93,61 @@ export function assembleImagePrompt(
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+export type MuscleMapTarget = {
+  kind: MuscleMapTargetKind;
+  name: string;
+  description: string | null;
+  /** Muscles to highlight: the muscle itself, or the group's target muscles. */
+  muscles: { name: string; description: string | null }[];
+};
+
+const TARGET_KIND_LABEL: Record<MuscleMapTargetKind, string> = {
+  muscle: "muscle",
+  muscle_group: "muscle group",
+};
+
+type DescribedRow = { name: string; description?: string | null; active?: boolean };
+
+export function muscleTarget(muscle: DescribedRow): MuscleMapTarget {
+  const self = { name: muscle.name, description: muscle.description ?? null };
+  return { kind: "muscle", ...self, muscles: [self] };
+}
+
+/** A group highlights its target muscles (their canonical home), not the secondary options. */
+export function muscleGroupTarget(
+  group: DescribedRow & { group_muscles: { role: string; muscle: DescribedRow }[] },
+): MuscleMapTarget {
+  return {
+    kind: "muscle_group",
+    name: group.name,
+    description: group.description ?? null,
+    muscles: group.group_muscles
+      .filter((link) => link.role === "target" && link.muscle.active !== false)
+      .map((link) => ({ name: link.muscle.name, description: link.muscle.description ?? null })),
+  };
+}
+
+function describedLine(item: { name: string; description: string | null }): string {
+  const description = item.description?.trim();
+  return description ? `- ${item.name} — ${description}` : `- ${item.name}`;
+}
+
+/** Fill a muscle_base (no target) or muscle_map template. */
+export function fillMuscleMapTemplate(
+  template: string,
+  values: { view: MuscleMapView; background_color?: string; target?: MuscleMapTarget },
+): string {
+  const target = values.target;
+  return template
+    .replaceAll("{view}", values.view)
+    .replaceAll("{background_color}", values.background_color ?? "")
+    .replaceAll("{target}", target?.name ?? "")
+    .replaceAll("{target_kind}", target ? TARGET_KIND_LABEL[target.kind] : "")
+    .replaceAll("{target_description}", target?.description?.trim() ?? "")
+    .replaceAll("{muscles}", target ? target.muscles.map(describedLine).join("\n") : "")
+    .trim();
 }
 
 /** Pick system + position prompts from a style's prompt list. */

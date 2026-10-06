@@ -1,6 +1,6 @@
 import { deleteImageFile, uploadImageFile } from "./storage";
 import { staffGql } from "@/lib/staff-gql";
-import type { Subject } from "./types";
+import type { MuscleMapView, Subject } from "./types";
 
 const EXTENSION_BY_MIME: Record<string, string> = {
   "image/png": "png",
@@ -128,4 +128,49 @@ export async function deleteStyleSupport(
     { styleId, supportId: supportEquipmentId },
   );
   return data.delete_images_style_supports_by_pk?.file_id ?? null;
+}
+
+export async function upsertStyleMuscleBase(
+  token: string,
+  styleId: string,
+  view: MuscleMapView,
+  fileId: string,
+): Promise<void> {
+  await staffGql(
+    token,
+    `mutation($object: images_style_muscle_bases_insert_input!) {
+      insert_images_style_muscle_bases_one(
+        object: $object
+        on_conflict: {
+          constraint: images_style_muscle_bases_pkey
+          update_columns: [file_id, updated_at]
+        }
+      ) { style_id }
+    }`,
+    {
+      object: {
+        style_id: styleId,
+        view,
+        file_id: fileId,
+        updated_at: new Date().toISOString(),
+      },
+    },
+  );
+}
+
+export async function deleteStyleMuscleBase(
+  token: string,
+  styleId: string,
+  view: MuscleMapView,
+): Promise<string | null> {
+  const data = await staffGql<{
+    delete_images_style_muscle_bases_by_pk: { file_id: string } | null;
+  }>(
+    token,
+    `mutation($styleId: uuid!, $view: String!) {
+      delete_images_style_muscle_bases_by_pk(style_id: $styleId, view: $view) { file_id }
+    }`,
+    { styleId, view },
+  );
+  return data.delete_images_style_muscle_bases_by_pk?.file_id ?? null;
 }

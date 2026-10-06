@@ -6,8 +6,6 @@ import { cn } from "@/lib/utils";
 
 /** Edited texts only; a missing key means "use the template from settings". */
 export type PromptOverrides = {
-  /** System prompt chosen for this run instead of the settings one. */
-  systemPromptId?: string;
   system?: string;
   positions: Partial<Record<number, string>>;
 };
@@ -16,7 +14,6 @@ export const NO_OVERRIDES: PromptOverrides = { positions: {} };
 
 export function countOverrides(overrides: PromptOverrides, positions: number[]): number {
   return (
-    (overrides.systemPromptId != null ? 1 : 0) +
     (overrides.system != null ? 1 : 0) +
     positions.filter((p) => overrides.positions[p] != null).length
   );
@@ -33,70 +30,21 @@ function startContextNote(newStart: boolean, hasActiveStart: boolean) {
   return { title: "No active Start — generate Start first", blocking: true };
 }
 
-/** Ephemeral choice of system prompt; empty value = the one selected in settings. */
-export function SystemPromptSelect({
-  prompts,
-  settingsPromptId,
-  value,
-  onChange,
-  disabled,
-  className,
-  label,
-}: {
-  prompts: { id: string }[];
-  settingsPromptId?: string | null;
-  value: string | undefined;
-  onChange: (next: string | undefined) => void;
-  disabled?: boolean;
-  className?: string;
-  /** Visible label beside the select; without it each option is prefixed "System:". */
-  label?: string;
-}) {
-  void settingsPromptId;
-  const prefix = label ? "" : "System: ";
-  const select = (
-    <select
-      aria-label={label ? undefined : "System prompt for this generation"}
-      value={value ?? ""}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value || undefined)}
-      className={cn(
-        "rounded-md border bg-white px-2 py-1.5 text-xs text-zinc-900 disabled:opacity-50",
-        value ? "border-amber-300 bg-amber-50/40" : "border-zinc-300",
-        className,
-      )}
-    >
-      <option value="">{prefix}Style prompt</option>
-      {prompts.map((p) => (
-        <option key={p.id} value={p.id}>
-          {prefix}Style prompt
-        </option>
-      ))}
-    </select>
-  );
-  if (!label) return select;
-  return (
-    <label className="inline-flex items-center gap-1.5">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-        {label}
-      </span>
-      {select}
-    </label>
-  );
-}
-
 function OverrideField({
   label,
   template,
   value,
   disabled,
   onChange,
+  onSaveToStyle,
 }: {
   label: string;
   template: string;
   value: string | undefined;
   disabled?: boolean;
   onChange: (next: string | undefined) => void;
+  /** Make this run's text the style's prompt for the slot. */
+  onSaveToStyle?: () => void;
 }) {
   const edited = value != null;
   return (
@@ -111,14 +59,26 @@ function OverrideField({
           )}
         </span>
         {edited && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(undefined)}
-            className="text-[11px] font-normal text-zinc-500 underline hover:text-zinc-800"
-          >
-            Reset
-          </button>
+          <span className="flex gap-2">
+            {onSaveToStyle && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={onSaveToStyle}
+                className="text-[11px] font-normal text-zinc-700 underline hover:text-zinc-950"
+              >
+                Save to style
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(undefined)}
+              className="text-[11px] font-normal text-zinc-500 underline hover:text-zinc-800"
+            >
+              Reset
+            </button>
+          </span>
         )}
       </span>
       <textarea
@@ -143,8 +103,7 @@ export function PromptOverridesPanel({
   onChange,
   disabled,
   startThumbUrl,
-  systemPrompts,
-  settingsSystemPromptId,
+  onSaveToStyle,
 }: {
   positions: number[];
   systemTemplate: string;
@@ -154,8 +113,8 @@ export function PromptOverridesPanel({
   disabled?: boolean;
   /** Thumbnail of the exercise's active Start frame, if any. */
   startThumbUrl: string | null;
-  systemPrompts: { id: string }[];
-  settingsSystemPromptId: string | null | undefined;
+  /** Saves a run edit as the style's prompt of that slot. */
+  onSaveToStyle?: (slot: "system" | number, text: string) => void;
 }) {
   const showStartContext = positions.some((p) => p !== 0);
   // When the run also draws Start, Mid/End edit that new Start instead of the active one.
@@ -197,22 +156,17 @@ export function PromptOverridesPanel({
           <span className="font-medium">{note.title}</span>
         </div>
       )}
-      {systemPrompts.length > 1 && (
-        <SystemPromptSelect
-          prompts={systemPrompts}
-          settingsPromptId={settingsSystemPromptId}
-          value={value.systemPromptId}
-          disabled={disabled}
-          // A text edit belongs to the previous prompt, so switching prompts drops it.
-          onChange={(systemPromptId) => onChange({ ...value, systemPromptId, system: undefined })}
-        />
-      )}
       <OverrideField
         label="System"
         template={systemTemplate}
         value={value.system}
         disabled={disabled}
         onChange={(system) => onChange({ ...value, system })}
+        onSaveToStyle={
+          onSaveToStyle && value.system != null
+            ? () => onSaveToStyle("system", value.system as string)
+            : undefined
+        }
       />
       <div className={cn("grid gap-3", positions.length > 1 && "lg:grid-cols-2 xl:grid-cols-3")}>
         {positions.map((position) => (
@@ -225,11 +179,16 @@ export function PromptOverridesPanel({
             onChange={(text) =>
               onChange({ ...value, positions: { ...value.positions, [position]: text } })
             }
+            onSaveToStyle={
+              onSaveToStyle && value.positions[position] != null
+                ? () => onSaveToStyle(position, value.positions[position] as string)
+                : undefined
+            }
           />
         ))}
       </div>
       <p className="text-[11px] text-zinc-400">
-        Placeholders: {PROMPT_PLACEHOLDERS.join(", ")}
+        Placeholders: {PROMPT_PLACEHOLDERS.exercise.join(", ")}
       </p>
     </div>
   );
