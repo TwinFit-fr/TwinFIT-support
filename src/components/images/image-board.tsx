@@ -9,6 +9,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import {
   BOARD_GRID,
+  BOARD_REFRESH_MS,
   EmptyState,
   StatusTabs,
   statusCounts,
@@ -90,7 +91,7 @@ export function ImageBoard() {
   const [styleId, setStyleId] = useStyleChoice(styles);
   const listKey = styleId ? `/api/images/exercises?style=${styleId}` : null;
   const { data, isLoading, error } = useStaffSWR<ListResponse>(listKey, {
-    refreshInterval: 8000,
+    refreshInterval: BOARD_REFRESH_MS,
   });
   const [positions, setPositions] = usePositionSelection();
   const [subjects, setSubjects] = useSubjectSelection();

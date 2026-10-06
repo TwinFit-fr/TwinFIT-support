@@ -6,6 +6,7 @@ import { mutate } from "swr";
 import { Search } from "lucide-react";
 import {
   BOARD_GRID,
+  BOARD_REFRESH_MS,
   EmptyState,
   StatusTabs,
   statusCounts,
@@ -32,7 +33,7 @@ import type {
   StyleReference,
 } from "@/lib/images/types";
 import { MUSCLE_MAP_VIEWS, muscleMapTargetKey } from "@/lib/images/types";
-import { MuscleMapCard } from "./muscle-map-card";
+import { MuscleMapCard, VIEW_LABEL } from "./muscle-map-card";
 import { MuscleMapInspector, type MuscleMapRun } from "./muscle-map-inspector";
 import { MuscleMapQueueBar } from "./muscle-map-queue-bar";
 
@@ -54,7 +55,9 @@ export function MuscleMapBoard() {
   const [styleId, setStyleId] = useStyleChoice(styles);
   const style = styles.find((s) => s.id === styleId) ?? null;
   const boardKey = styleId ? `/api/images/muscle-maps?style=${styleId}` : null;
-  const { data, isLoading, error } = useStaffSWR<BoardResponse>(boardKey);
+  const { data, isLoading, error } = useStaffSWR<BoardResponse>(boardKey, {
+    refreshInterval: BOARD_REFRESH_MS,
+  });
   const { data: prompts } = useStaffSWR<StylePrompts>(
     styleId ? `/api/images/prompts?styleId=${styleId}` : null,
   );
@@ -171,11 +174,14 @@ export function MuscleMapBoard() {
         });
         if (!remove) return;
         await staffFetch(`/api/images/muscle-maps/items/${image.id}`, { method: "DELETE" });
+        success(`${VIEW_LABEL[image.view]} map deleted`);
       } else {
         await staffFetch(`/api/images/muscle-maps/items/${image.id}`, {
           method: "PATCH",
           body: JSON.stringify({ active: change === "activate" }),
         });
+        const done = change === "activate" ? "set as active" : "deactivated";
+        success(`${VIEW_LABEL[image.view]} map ${done}`);
       }
       await refresh();
     } catch (err) {

@@ -16,6 +16,9 @@ const STATUS_FILTERS: [StatusFilter, string][] = [
 
 export const BOARD_GRID = "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6";
 
+/** Boards refetch on this interval, so work done in other tabs or by other staff shows up. */
+export const BOARD_REFRESH_MS = 8000;
+
 export function EmptyState({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-12 text-center text-sm text-zinc-500">
