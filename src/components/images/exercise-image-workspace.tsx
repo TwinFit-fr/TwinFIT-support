@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { mutate } from "swr";
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
+import { useShortcuts } from "@/hooks/use-shortcuts";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   useGenerationQueue,
@@ -729,58 +730,39 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
-  useEffect(() => {
-    if (editOpen || alignSubject) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-      if (event.key === "r" || event.key === "R") {
-        event.preventDefault();
-        void runGenerate();
-      } else if (event.key === "Delete" || event.key === "Backspace") {
-        if (!selected || !isDeletableImage(selected)) return;
-        event.preventDefault();
-        void removeImage(selected);
-      } else if (event.key === "0" || event.key === "1" || event.key === "2") {
-        // Activates the position on the selected image (its subject lane).
-        if (!selected || !framePositions.includes(Number(event.key))) return;
-        event.preventDefault();
-        void setPosition(selected.id, Number(event.key), true);
-      } else if (event.key === "x" || event.key === "X") {
-        if (!selected) return;
-        event.preventDefault();
-        void setPosition(selected.id, null, false);
-      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        if (!historyImages.length) return;
-        const index = historyImages.findIndex((img) => img.id === selectedId);
-        const next =
-          event.key === "ArrowLeft"
-            ? Math.max(0, index - 1)
-            : Math.min(historyImages.length - 1, index + 1);
-        setSelectedId(historyImages[next]?.id ?? null);
-      } else if (event.key === "[") {
-        router.push(`/images/${Math.max(1, exoId - 1)}`);
-      } else if (event.key === "]") {
-        router.push(`/images/${exoId + 1}`);
-      } else if (event.key === "Escape") {
-        router.push("/images");
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    exercise,
-    selectedId,
-    selected,
-    exoId,
-    busy,
-    editOpen,
-    alignSubject,
-    historyImages,
-    framePositions,
-  ]);
+  function assignSelected(position: number) {
+    // Activates the position on the selected image (its subject lane).
+    if (selected && framePositions.includes(position)) void setPosition(selected.id, position, true);
+  }
+
+  function browseHistory(step: -1 | 1) {
+    if (!historyImages.length) return;
+    const index = historyImages.findIndex((img) => img.id === selectedId);
+    const next = Math.min(historyImages.length - 1, Math.max(0, index + step));
+    setSelectedId(historyImages[next]?.id ?? null);
+  }
+
+  function deleteSelected() {
+    if (selected && isDeletableImage(selected)) void removeImage(selected);
+  }
+
+  useShortcuts(
+    {
+      r: () => void runGenerate(),
+      Delete: deleteSelected,
+      Backspace: deleteSelected,
+      "0": () => assignSelected(0),
+      "1": () => assignSelected(1),
+      "2": () => assignSelected(2),
+      x: () => selected && void setPosition(selected.id, null, false),
+      ArrowLeft: () => browseHistory(-1),
+      ArrowRight: () => browseHistory(1),
+      "[": () => router.push(`/images/${Math.max(1, exoId - 1)}`),
+      "]": () => router.push(`/images/${exoId + 1}`),
+      Escape: () => router.push("/images"),
+    },
+    !editOpen && !alignSubject,
+  );
 
   const header = (
     <div className="flex flex-wrap items-start justify-between gap-3">
