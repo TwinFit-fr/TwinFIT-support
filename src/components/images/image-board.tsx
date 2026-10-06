@@ -15,6 +15,7 @@ import {
 import { ExerciseImageCard } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
 import { StyleSelector, runPositionsFor } from "@/components/images/position-selector";
+import { useBoardSelection } from "@/hooks/use-board-selection";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   useFrameCountChoice,
@@ -89,7 +90,6 @@ export function ImageBoard() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [muscle, setMuscle] = useState("all");
   const [equipment, setEquipment] = useState("all");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
   const queue = useGenerationQueue();
 
   const exercises = useMemo(() => data?.exercises ?? [], [data]);
@@ -122,12 +122,15 @@ export function ImageBoard() {
     });
   }, [exercises, search, status, muscle, equipment]);
 
+  const visibleIds = useMemo(() => filtered.map((ex) => ex.exo_id), [filtered]);
+  const selection = useBoardSelection(visibleIds);
+
   const counts = useMemo(() => statusCounts(exercises.map((ex) => ex.status)), [exercises]);
 
   // With a batch frame count, positions it lacks (Mid for 2 frames) are not offered.
   const batchPositions = frameCount === "exercise" ? undefined : framePositionsFor(frameCount === 2);
   const runPositions = batchPositions ? runPositionsFor(positions, batchPositions) : positions;
-  const selectedExercises = filtered.filter((ex) => selected.has(ex.exo_id));
+  const selectedExercises = filtered.filter((ex) => selection.has(ex.exo_id));
   // Mid/End are edits of a Start: without Start in the run, every selected subject needs one.
   const runnableExercises = runPositions.includes(0)
     ? selectedExercises
@@ -140,19 +143,6 @@ export function ImageBoard() {
       subjects.length * framePositionsOf(ex).filter((p) => runPositions.includes(p)).length,
     0,
   );
-
-  function toggle(exoId: number) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(exoId)) next.delete(exoId);
-      else next.add(exoId);
-      return next;
-    });
-  }
-
-  function selectFiltered() {
-    setSelected(new Set(filtered.map((ex) => ex.exo_id)));
-  }
 
   async function generateStep(
     exoId: number,
@@ -233,9 +223,6 @@ export function ImageBoard() {
     }
   }
 
-  const allFilteredSelected =
-    filtered.length > 0 && filtered.every((ex) => selected.has(ex.exo_id));
-
   return (
     <div className="space-y-4 pb-28">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -283,10 +270,10 @@ export function ImageBoard() {
           {filtered.length > 0 && (
             <button
               type="button"
-              onClick={allFilteredSelected ? () => setSelected(new Set()) : selectFiltered}
+              onClick={selection.allSelected ? selection.clear : selection.selectAll}
               className="font-medium text-zinc-600 hover:text-zinc-900"
             >
-              {allFilteredSelected ? "Deselect all" : "Select all"}
+              {selection.allSelected ? "Deselect all" : "Select all"}
             </button>
           )}
         </div>
@@ -308,17 +295,17 @@ export function ImageBoard() {
             <ExerciseImageCard
               key={ex.id}
               exercise={ex}
-              selected={selected.has(ex.exo_id)}
-              selecting={selected.size > 0}
-              onToggle={() => toggle(ex.exo_id)}
+              selected={selection.has(ex.exo_id)}
+              selecting={selection.count > 0}
+              onToggle={() => selection.toggle(ex.exo_id)}
             />
           ))}
         </div>
       )}
 
       <GenerationQueueBar
-        selectedCount={selected.size}
-        onClearSelection={() => setSelected(new Set())}
+        selectedCount={selection.count}
+        onClearSelection={selection.clear}
         plannedImages={plannedImages}
         withoutStart={withoutStart}
         frameCount={frameCount}

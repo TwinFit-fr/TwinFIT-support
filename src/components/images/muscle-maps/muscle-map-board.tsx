@@ -15,6 +15,7 @@ import { StyleSelector } from "@/components/images/position-selector";
 import { Input, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { useStyleChoice, useViewSelection } from "@/hooks/use-generation-queue";
+import { useBoardSelection } from "@/hooks/use-board-selection";
 import { useMuscleMapQueue } from "@/hooks/use-muscle-map-queue";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
@@ -59,7 +60,6 @@ export function MuscleMapBoard() {
   const [views, setViews] = useViewSelection();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const queue = useMuscleMapQueue();
@@ -85,16 +85,22 @@ export function MuscleMapBoard() {
         .filter((row) => row.groupMatches || row.muscles.length > 0),
     [rows, status, query],
   );
-  const visibleTargets = visibleRows.flatMap((row) =>
-    row.group && row.groupMatches ? [row.group, ...row.muscles] : row.muscles,
+  const visibleTargets = useMemo(
+    () =>
+      visibleRows.flatMap((row) =>
+        row.group && row.groupMatches ? [row.group, ...row.muscles] : row.muscles,
+      ),
+    [visibleRows],
   );
+  const visibleKeys = useMemo(() => visibleTargets.map(muscleMapTargetKey), [visibleTargets]);
+  const selection = useBoardSelection(visibleKeys);
 
   const baseViews = MUSCLE_MAP_VIEWS.filter((view) =>
     style?.muscle_bases.some((b) => b.view === view),
   );
   const runViews = views.filter((view) => baseViews.includes(view));
   const missingBases = views.filter((view) => !baseViews.includes(view));
-  const selectedTargets = targets.filter((t) => selected.has(muscleMapTargetKey(t)));
+  const selectedTargets = visibleTargets.filter((t) => selection.has(muscleMapTargetKey(t)));
   const openTarget = targets.find((t) => muscleMapTargetKey(t) === openKey) ?? null;
   const busyViews = (target: MuscleMapBoardTarget) =>
     MUSCLE_MAP_VIEWS.filter(
@@ -106,15 +112,6 @@ export function MuscleMapBoard() {
             item.status === "processing",
         ),
     );
-
-  function toggle(key: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
 
   async function refresh() {
     if (boardKey) await mutate(boardKey);
@@ -174,10 +171,6 @@ export function MuscleMapBoard() {
     }
   }
 
-  const allVisibleSelected =
-    visibleTargets.length > 0 &&
-    visibleTargets.every((t) => selected.has(muscleMapTargetKey(t)));
-
   return (
     <div className="space-y-4 pb-28">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -233,16 +226,10 @@ export function MuscleMapBoard() {
           </span>
           <button
             type="button"
-            onClick={() =>
-              setSelected(
-                allVisibleSelected
-                  ? new Set()
-                  : new Set(visibleTargets.map((t) => muscleMapTargetKey(t))),
-              )
-            }
+            onClick={selection.allSelected ? selection.clear : selection.selectAll}
             className="font-medium text-zinc-600 hover:text-zinc-900"
           >
-            {allVisibleSelected ? "Deselect all" : "Select all"}
+            {selection.allSelected ? "Deselect all" : "Select all"}
           </button>
         </div>
       )}
@@ -273,9 +260,9 @@ export function MuscleMapBoard() {
                       <MuscleMapCard
                         key={key}
                         target={target}
-                        selected={selected.has(key)}
-                        selecting={selected.size > 0}
-                        onToggle={() => toggle(key)}
+                        selected={selection.has(key)}
+                        selecting={selection.count > 0}
+                        onToggle={() => selection.toggle(key)}
                         onOpen={() => setOpenKey(key)}
                       />
                     );
@@ -304,8 +291,8 @@ export function MuscleMapBoard() {
       )}
 
       <MuscleMapQueueBar
-        selectedCount={selected.size}
-        onClearSelection={() => setSelected(new Set())}
+        selectedCount={selection.count}
+        onClearSelection={selection.clear}
         plannedImages={selectedTargets.length * runViews.length}
         missingBases={missingBases}
         views={views}
