@@ -20,6 +20,7 @@ import { Button, Skeleton } from "@/components/ui/primitives";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { useShortcuts } from "@/hooks/use-shortcuts";
+import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   useGenerationQueue,
@@ -543,6 +544,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
   const confirm = useConfirm();
+  const confirmGeneration = useGenerationConfirm();
   const [positions, setPositions] = usePositionSelection();
   const [subjects, setSubjects] = useSubjectSelection();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
@@ -661,6 +663,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
 
   async function runGenerate() {
     if (!exercise || !styleId || queue.running || missingStart) return;
+    if (!(await confirmGeneration.run(subjects.length * runPositions.length))) return;
     const run = overrides;
     const referenceIds = runReferences;
     await queue.start({

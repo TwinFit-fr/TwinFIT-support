@@ -26,20 +26,13 @@ function SupportCard({
       fileId={fileId}
       title={support.name}
       subtitle={support.code}
+      name={`${support.name} reference`}
+      unsavedStyle={dirty}
       emptyLabel="No reference"
       busy={busy}
       onUpload={onAction}
-      onGenerate={() => {
-        const note = dirty ? "\n\nUnsaved changes are ignored: the saved style is used." : "";
-        if (!window.confirm(`Generate a new reference for "${support.name}" with OpenAI?${note}`)) {
-          return;
-        }
-        onAction("generate");
-      }}
-      onRemove={() => {
-        if (!window.confirm(`Remove the "${support.name}" reference?`)) return;
-        onAction("remove");
-      }}
+      onGenerate={() => onAction("generate")}
+      onRemove={() => onAction("remove")}
     >
       <AssetNote>
         {description ?? (

@@ -22,6 +22,7 @@ function LogoCard({
     <AssetCard
       fileId={fileId}
       title="Brand logo"
+      name="brand logo"
       emptyLabel="No logo"
       busy={busy}
       onUpload={onUpload}
@@ -36,11 +37,13 @@ function ReferenceCard({
   subject,
   fileId,
   busy,
+  dirty,
   onAction,
 }: {
   subject: Subject;
   fileId: string | null;
   busy: boolean;
+  dirty: boolean;
   onAction: (subject: Subject, action: "generate" | "remove" | File) => void;
 }) {
   const sheet = referenceSheetDirective(subject);
@@ -48,6 +51,8 @@ function ReferenceCard({
     <AssetCard
       fileId={fileId}
       title={subject === "man" ? "Man" : "Woman"}
+      name={`${subject} character`}
+      unsavedStyle={dirty}
       emptyLabel="No reference"
       busy={busy}
       onUpload={(file) => onAction(subject, file)}
@@ -99,18 +104,8 @@ export function CharactersSection({
             subject={subject}
             fileId={fileFor(subject)}
             busy={characterBusy === subject}
-            onAction={(s, a) => {
-              if (a === "generate" && dirty) {
-                if (
-                  !window.confirm(
-                    `Generate a new ${s} reference with OpenAI?\n\nUnsaved changes are ignored: the saved style is used.`,
-                  )
-                ) {
-                  return;
-                }
-              }
-              onCharacterAction(s, a);
-            }}
+            dirty={dirty}
+            onAction={onCharacterAction}
           />
         ))}
         <LogoCard

@@ -270,10 +270,6 @@ export function ImageStylesPage() {
 
   async function characterAction(subject: Subject, action: "generate" | "remove" | File) {
     if (!selectedStyleId) return;
-    if (action === "generate" && !styleDirty) {
-      if (!window.confirm(`Generate a new ${subject} reference with OpenAI?`)) return;
-    }
-    if (action === "remove" && !window.confirm(`Remove the ${subject} reference?`)) return;
     setCharacterBusy(subject);
     try {
       const result = await assetRequest(
@@ -346,12 +342,6 @@ export function ImageStylesPage() {
 
   async function removeLogo() {
     if (!selectedStyleId) return;
-    const remove = await confirm({
-      title: "Remove the brand logo?",
-      confirmLabel: "Remove",
-      variant: "danger",
-    });
-    if (!remove) return;
     setLogoBusy(true);
     try {
       const result = (await staffFetch(`/api/images/styles/${selectedStyleId}/logo`, {

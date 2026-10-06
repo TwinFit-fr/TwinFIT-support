@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/toast";
 import { useStyleChoice, useViewSelection } from "@/hooks/use-generation-queue";
 import { useBoardSelection } from "@/hooks/use-board-selection";
 import { useMuscleMapQueue } from "@/hooks/use-muscle-map-queue";
+import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
 import type {
@@ -47,6 +48,7 @@ export function MuscleMapBoard() {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
   const confirm = useConfirm();
+  const confirmGeneration = useGenerationConfirm();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
   const [styleId, setStyleId] = useStyleChoice(styles);
@@ -129,6 +131,7 @@ export function MuscleMapBoard() {
   }
 
   async function generateOne(target: MuscleMapBoardTarget, view: MuscleMapView, run: MuscleMapRun) {
+    if (!(await confirmGeneration.run(1))) return;
     const key = `${muscleMapTargetKey(target)}:${view}`;
     setBusy((prev) => new Set(prev).add(key));
     try {
@@ -147,6 +150,7 @@ export function MuscleMapBoard() {
 
   async function startQueue() {
     if (!selectedTargets.length || !runViews.length) return;
+    if (!(await confirmGeneration.run(selectedTargets.length * runViews.length))) return;
     await queue.start({
       targets: selectedTargets.map((t) => ({ target: t, name: t.name })),
       views: runViews,

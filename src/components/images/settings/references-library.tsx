@@ -185,6 +185,7 @@ function ReferenceCard({
     <AssetCard
       fileId={reference.file_id}
       title={reference.name}
+      name={`${reference.name} image`}
       busy={busy}
       onUpload={onUpload}
       onGenerate={reference.prompt ? onGenerate : undefined}
@@ -298,9 +299,6 @@ export function ReferencesLibrary({ style }: { style: ImageStyle }) {
   }
 
   async function imageAction(reference: StyleReference, action: "generate" | File) {
-    if (action === "generate" && !window.confirm(`Generate "${reference.name}" with OpenAI?`)) {
-      return;
-    }
     setBusyId(reference.id);
     try {
       if (action === "generate") {

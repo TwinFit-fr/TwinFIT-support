@@ -40,20 +40,13 @@ export function MuscleBasesSection({
             key={view}
             fileId={fileFor(view)}
             title={view === "front" ? "Front" : "Back"}
+            name={`${view} base`}
+            unsavedStyle={dirty}
             emptyLabel="No base"
             busy={busyView === view}
             onUpload={(file) => onAction(view, file)}
-            onGenerate={() => {
-              const note = dirty
-                ? "\n\nUnsaved changes are ignored: the saved style is used."
-                : "";
-              if (!window.confirm(`Generate a new ${view} base with OpenAI?${note}`)) return;
-              onAction(view, "generate");
-            }}
-            onRemove={() => {
-              if (!window.confirm(`Remove the ${view} base?`)) return;
-              onAction(view, "remove");
-            }}
+            onGenerate={() => onAction(view, "generate")}
+            onRemove={() => onAction(view, "remove")}
           >
             <AssetNote>{VIEW_NOTES[view]}</AssetNote>
             <p className="mt-1 text-[10px] text-zinc-400">Uses this style’s base body prompt.</p>

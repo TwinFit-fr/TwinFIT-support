@@ -17,6 +17,7 @@ import { ExerciseImageCard } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
 import { StyleSelector, runPositionsFor } from "@/components/images/position-selector";
 import { useBoardSelection } from "@/hooks/use-board-selection";
+import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   useFrameCountChoice,
@@ -83,6 +84,7 @@ export function ImageBoard() {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
   const confirm = useConfirm();
+  const confirmGeneration = useGenerationConfirm();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
   const [styleId, setStyleId] = useStyleChoice(styles);
@@ -209,6 +211,7 @@ export function ImageBoard() {
 
   async function startQueue() {
     if (!runnableExercises.length || preparing || !styleId) return;
+    if (!(await confirmGeneration.run(plannedImages))) return;
     try {
       if (!(await applyFrameCount(runnableExercises))) return;
       await queue.start({
