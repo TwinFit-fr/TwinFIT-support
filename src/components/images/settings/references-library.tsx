@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { mutate } from "swr";
 import type { TaxonomyData } from "@/components/catalog/taxonomy/types";
 import { Button, Skeleton } from "@/components/ui/primitives";
+import { Modal } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
@@ -62,106 +63,92 @@ function ReferenceDialog({
 }) {
   const [draft, setDraft] = useState(initial);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onCancel();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel]);
-
   const label = "block text-xs font-medium text-zinc-600";
   const hint = "mt-1 block text-[11px] font-normal text-zinc-500";
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onCancel}
+    <Modal
+      onClose={onCancel}
+      labelledBy="reference-dialog-title"
+      dismissible={!busy}
+      className="flex max-h-[90vh] max-w-xl flex-col"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="reference-dialog-title"
-        className="flex max-h-[90vh] w-full max-w-xl flex-col rounded-xl border border-zinc-200 bg-white shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="border-b border-zinc-200 px-5 py-4">
-          <h2 id="reference-dialog-title" className="text-lg font-semibold">
-            {editing ? "Edit reference" : "New reference"}
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            An extra input image for the exercises, muscles or groups you link it to.
-          </p>
-        </div>
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+      <div className="border-b border-zinc-200 px-5 py-4">
+        <h2 id="reference-dialog-title" className="text-lg font-semibold">
+          {editing ? "Edit reference" : "New reference"}
+        </h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          An extra input image for the exercises, muscles or groups you link it to.
+        </p>
+      </div>
+      <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <label className={label}>
+          Name
+          <input
+            className={selectClass}
+            autoFocus
+            placeholder="Olympic barbell"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          />
+        </label>
+        <label className={label}>
+          How the model should use it
+          <textarea
+            className={`${selectClass} min-h-20`}
+            placeholder="Draw exactly this barbell: same plates, colors and proportions."
+            value={draft.instruction}
+            onChange={(e) => setDraft({ ...draft, instruction: e.target.value })}
+          />
+          <span className={hint}>Added to the prompt every time this image is sent.</span>
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className={label}>
-            Name
+            {editing ? "Replace image" : "Image"}
             <input
-              className={selectClass}
-              autoFocus
-              placeholder="Olympic barbell"
-              value={draft.name}
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              type="file"
+              accept="image/png,image/webp,image/jpeg"
+              className="mt-1 block w-full text-xs"
+              onChange={(e) => setDraft({ ...draft, file: e.target.files?.[0] ?? null })}
             />
+            <span className={hint}>Or leave empty and use Generate on the card.</span>
           </label>
           <label className={label}>
-            How the model should use it
+            Prompt for Generate (optional)
             <textarea
-              className={`${selectClass} min-h-20`}
-              placeholder="Draw exactly this barbell: same plates, colors and proportions."
-              value={draft.instruction}
-              onChange={(e) => setDraft({ ...draft, instruction: e.target.value })}
+              className={`${selectClass} min-h-20 font-mono text-xs`}
+              placeholder="A single olympic barbell, flat illustration, {background_color} background"
+              value={draft.prompt}
+              onChange={(e) => setDraft({ ...draft, prompt: e.target.value })}
             />
-            <span className={hint}>Added to the prompt every time this image is sent.</span>
           </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className={label}>
-              {editing ? "Replace image" : "Image"}
-              <input
-                type="file"
-                accept="image/png,image/webp,image/jpeg"
-                className="mt-1 block w-full text-xs"
-                onChange={(e) => setDraft({ ...draft, file: e.target.files?.[0] ?? null })}
-              />
-              <span className={hint}>Or leave empty and use Generate on the card.</span>
-            </label>
-            <label className={label}>
-              Prompt for Generate (optional)
-              <textarea
-                className={`${selectClass} min-h-20 font-mono text-xs`}
-                placeholder="A single olympic barbell, flat illustration, {background_color} background"
-                value={draft.prompt}
-                onChange={(e) => setDraft({ ...draft, prompt: e.target.value })}
-              />
-            </label>
-          </div>
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-zinc-600">Used for</p>
-            <p className="text-[11px] text-zinc-500">
-              Sent when generating these targets: an exercise’s Start frame, or a muscle or
-              group map. A group link does not include its muscles or exercises.
-            </p>
-            <ReferenceTargetPicker
-              value={draft.links}
-              onChange={(links) => setDraft({ ...draft, links })}
-              options={options}
-            />
-          </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-3">
-          <Button type="button" variant="secondary" disabled={busy} onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            disabled={busy || !draft.name.trim()}
-            onClick={() => onSave(draft)}
-          >
-            {busy ? "Saving…" : editing ? "Save reference" : "Create reference"}
-          </Button>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-zinc-600">Used for</p>
+          <p className="text-[11px] text-zinc-500">
+            Sent when generating these targets: an exercise’s Start frame, or a muscle or
+            group map. A group link does not include its muscles or exercises.
+          </p>
+          <ReferenceTargetPicker
+            value={draft.links}
+            onChange={(links) => setDraft({ ...draft, links })}
+            options={options}
+          />
         </div>
       </div>
-    </div>
+      <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-3">
+        <Button type="button" variant="secondary" disabled={busy} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          disabled={busy || !draft.name.trim()}
+          onClick={() => onSave(draft)}
+        >
+          {busy ? "Saving…" : editing ? "Save reference" : "Create reference"}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

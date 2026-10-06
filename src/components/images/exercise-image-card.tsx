@@ -88,7 +88,7 @@ export function ExerciseImageCard({
           selected
             ? "border-zinc-900 bg-zinc-900 text-white"
             : "border-zinc-300 bg-white/90 text-transparent hover:border-zinc-500",
-          !selected && !selecting && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+          !selected && !selecting && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
         )}
       >
         <Check className="h-3.5 w-3.5" strokeWidth={3} />

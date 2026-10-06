@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useId, useRef, useState } from "react";
+import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/primitives";
 
 export type ConfirmOptions = {
@@ -11,10 +12,7 @@ export type ConfirmOptions = {
   variant?: "default" | "danger";
 };
 
-/**
- * A confirmation shown as a native modal <dialog>: the browser provides the top layer, focus
- * trap, Escape and inert page. Mount it to show it; unmount it to close.
- */
+/** A confirmation in a native modal dialog. Mount it to show it; unmount it to close. */
 export function ConfirmSurface({
   title,
   description,
@@ -29,31 +27,10 @@ export function ConfirmSurface({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
 
-  useEffect(() => {
-    const dialog = ref.current;
-    if (dialog && !dialog.open) dialog.showModal();
-  }, []);
-
   return (
-    <dialog
-      ref={ref}
-      aria-labelledby={titleId}
-      onCancel={(event) => {
-        // Escape: the owner decides, so the dialog only closes by unmounting.
-        event.preventDefault();
-        if (!loading) onCancel();
-      }}
-      // Keys typed in a modal belong to it: page shortcuts and panel Escape handlers stay quiet.
-      onKeyDown={(event) => event.stopPropagation()}
-      onClick={(event) => {
-        // The content fills the dialog box, so a click on the dialog itself is on the backdrop.
-        if (event.target === event.currentTarget && !loading) onCancel();
-      }}
-      className="m-auto w-full max-w-md rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-lg backdrop:bg-black/40"
-    >
+    <Modal onClose={onCancel} labelledBy={titleId} dismissible={!loading} className="max-w-md">
       <div className="p-6">
         <h2 id={titleId} className="text-lg font-semibold">
           {title}
@@ -75,7 +52,7 @@ export function ConfirmSurface({
           </Button>
         </div>
       </div>
-    </dialog>
+    </Modal>
   );
 }
 

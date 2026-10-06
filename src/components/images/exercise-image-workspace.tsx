@@ -443,7 +443,7 @@ function HistoryStrip({
                   onClick={() => onDelete(img)}
                   aria-label={`Delete ${imageLabel(img)} image`}
                   title="Delete"
-                  className="absolute right-1 top-1 rounded bg-white/90 p-0.5 text-zinc-500 opacity-0 shadow-xs transition hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-40"
+                  className="absolute right-1 top-1 rounded bg-white/90 p-0.5 text-zinc-500 opacity-0 shadow-xs transition hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 disabled:opacity-40"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>
