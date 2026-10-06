@@ -5,6 +5,7 @@ import Link from "next/link";
 import { mutate } from "swr";
 import { Button, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
+import { useStyleChoice } from "@/hooks/use-generation-queue";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { validateGenerationParams } from "@/lib/images/capabilities";
 import type { GenerationParams, ImageStyle, MuscleMapView, Subject } from "@/lib/images/types";
@@ -59,9 +60,7 @@ export function ImageStylesPage() {
   const { data: modelsData } = useStaffSWR<ModelsResponse>("/api/images/models");
 
   const styles = useMemo(() => stylesData?.styles ?? [], [stylesData]);
-  const fallbackStyleId = styles.find((s) => s.is_default)?.id ?? styles[0]?.id ?? null;
-  const [selectedStyleIdOverride, setSelectedStyleIdOverride] = useState<string | null>(null);
-  const selectedStyleId = selectedStyleIdOverride ?? fallbackStyleId;
+  const [selectedStyleId, setSelectedStyleId] = useStyleChoice(styles);
   const defaultStyleId = styles.find((s) => s.is_default)?.id ?? null;
 
   const styleKey = selectedStyleId ? `/api/images/styles/${selectedStyleId}` : null;
@@ -106,7 +105,7 @@ export function ImageStylesPage() {
   }
 
   function selectStyle(id: string) {
-    setSelectedStyleIdOverride(id);
+    setSelectedStyleId(id);
     clearStyleEdits();
   }
 
@@ -226,10 +225,7 @@ export function ImageStylesPage() {
       await staffFetch(`/api/images/styles/${selectedStyleId}`, { method: "DELETE" });
       await mutate("/api/images/styles");
       if (defaultStyleId) selectStyle(defaultStyleId);
-      else {
-        setSelectedStyleIdOverride(null);
-        clearStyleEdits();
-      }
+      else clearStyleEdits();
       success("Style deleted");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Could not delete style");

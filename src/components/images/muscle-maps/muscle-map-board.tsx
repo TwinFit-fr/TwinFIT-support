@@ -46,8 +46,7 @@ export function MuscleMapBoard() {
   const { success, error: toastError } = useToast();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
-  const defaultStyleId = styles.find((s) => s.is_default)?.id ?? null;
-  const [styleId, setStyleId] = useStyleChoice(defaultStyleId);
+  const [styleId, setStyleId] = useStyleChoice(styles);
   const style = styles.find((s) => s.id === styleId) ?? null;
   const boardKey = styleId ? `/api/images/muscle-maps?style=${styleId}` : null;
   const { data, isLoading, error } = useStaffSWR<BoardResponse>(boardKey);

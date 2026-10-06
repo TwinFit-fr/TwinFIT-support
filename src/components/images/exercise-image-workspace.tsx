@@ -505,8 +505,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const [subjects, setSubjects] = useSubjectSelection();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
-  const defaultStyleId = styles.find((s) => s.is_default)?.id ?? null;
-  const [styleId, setStyleId] = useStyleChoice(defaultStyleId);
+  const [styleId, setStyleId] = useStyleChoice(styles);
   const detailKey = styleId ? `/api/images/exercises/${exoId}?style=${styleId}` : null;
   const listKey = styleId ? `/api/images/exercises?style=${styleId}` : null;
   const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(

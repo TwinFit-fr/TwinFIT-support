@@ -307,12 +307,21 @@ export function useFrameCountChoice() {
   return useStoredChoice("twinfit.images.frame-count", DEFAULT_FRAME_COUNT, parseFrameCount);
 }
 
-/** Persisted style id; pass the workspace default as fallback. */
-export function useStyleChoice(fallbackStyleId: string | null) {
+/**
+ * The style every Images page works on, shared and persisted across pages and tabs. A stored id
+ * that is no longer in `styles` (deleted) resolves to the default style, then the first one;
+ * null until the styles load.
+ */
+export function useStyleChoice(styles: readonly { id: string; is_default: boolean }[]) {
   const [stored, setStored] = useStoredChoice<string | null>(
     "twinfit.images.styleId",
     null,
     parseStyleId,
   );
-  return [stored ?? fallbackStyleId, setStored] as const;
+  const styleId =
+    styles.find((s) => s.id === stored)?.id ??
+    styles.find((s) => s.is_default)?.id ??
+    styles[0]?.id ??
+    null;
+  return [styleId, setStored] as const;
 }

@@ -5,6 +5,7 @@ import { mutate } from "swr";
 import type { TaxonomyData } from "@/components/catalog/taxonomy/types";
 import { Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
+import { useStyleChoice } from "@/hooks/use-generation-queue";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   PROMPT_PLACEHOLDERS,
@@ -124,9 +125,7 @@ function SlotGroup({
 export function ImagePromptsPage() {
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = useMemo(() => stylesData?.styles ?? [], [stylesData]);
-  const fallbackStyleId = styles.find((s) => s.is_default)?.id ?? styles[0]?.id ?? null;
-  const [styleIdOverride, setStyleIdOverride] = useState<string | null>(null);
-  const styleId = styleIdOverride ?? fallbackStyleId;
+  const [styleId, setStyleId] = useStyleChoice(styles);
   const [previewMode, setPreviewMode] = useState<PreviewMode>("exercise");
   const [previewPosition, setPreviewPosition] = useState(0);
   const [previewSubject, setPreviewSubject] = useState<Subject>("man");
@@ -211,7 +210,7 @@ export function ImagePromptsPage() {
           <select
             className="mt-1 block min-w-[14rem] rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
             value={styleId ?? ""}
-            onChange={(e) => setStyleIdOverride(e.target.value || null)}
+            onChange={(e) => setStyleId(e.target.value)}
           >
             {styles.map((s) => (
               <option key={s.id} value={s.id}>
