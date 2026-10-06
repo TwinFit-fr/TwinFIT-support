@@ -320,7 +320,7 @@ export function ImageBoard() {
               href={`/images/${ex.exo_id}${filtersQuery}`}
               selected={selection.has(ex.exo_id)}
               selecting={selection.count > 0}
-              onToggle={() => selection.toggle(ex.exo_id)}
+              onToggle={(range) => selection.toggle(ex.exo_id, range)}
             />
           ))}
         </div>

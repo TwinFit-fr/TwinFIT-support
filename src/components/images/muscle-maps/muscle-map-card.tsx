@@ -21,7 +21,8 @@ export function MuscleMapCard({
   selected: boolean;
   /** Something on the board is selected: checkboxes stay visible. */
   selecting: boolean;
-  onToggle: () => void;
+  /** `range`: Shift was held, extend from the last toggled card. */
+  onToggle: (range: boolean) => void;
   onOpen: () => void;
 }) {
   return (
@@ -38,7 +39,8 @@ export function MuscleMapCard({
         role="checkbox"
         aria-checked={selected}
         aria-label={`Select ${target.name}`}
-        onClick={onToggle}
+        title="Select · Shift-click for a range"
+        onClick={(event) => onToggle(event.shiftKey)}
         className={cn(
           "absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-md border shadow-xs transition",
           selected

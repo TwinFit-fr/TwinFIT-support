@@ -308,7 +308,7 @@ export function MuscleMapBoard() {
                         target={target}
                         selected={selection.has(key)}
                         selecting={selection.count > 0}
-                        onToggle={() => selection.toggle(key)}
+                        onToggle={(range) => selection.toggle(key, range)}
                         onOpen={() => setOpenKey(key)}
                       />
                     );
