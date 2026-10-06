@@ -6,8 +6,6 @@ import { cn } from "@/lib/utils";
 
 /** Edited texts only; a missing key means "use the template from settings". */
 export type PromptOverrides = {
-  /** System prompt chosen for this run instead of the settings one. */
-  systemPromptId?: string;
   system?: string;
   positions: Partial<Record<number, string>>;
 };
@@ -16,7 +14,6 @@ export const NO_OVERRIDES: PromptOverrides = { positions: {} };
 
 export function countOverrides(overrides: PromptOverrides, positions: number[]): number {
   return (
-    (overrides.systemPromptId != null ? 1 : 0) +
     (overrides.system != null ? 1 : 0) +
     positions.filter((p) => overrides.positions[p] != null).length
   );
@@ -31,58 +28,6 @@ function startContextNote(newStart: boolean, hasActiveStart: boolean) {
     return { title: "Mid/End edit this Start", blocking: false };
   }
   return { title: "No active Start — generate Start first", blocking: true };
-}
-
-/** Ephemeral choice of system prompt; empty value = the one selected in settings. */
-export function SystemPromptSelect({
-  prompts,
-  settingsPromptId,
-  value,
-  onChange,
-  disabled,
-  className,
-  label,
-}: {
-  prompts: { id: string }[];
-  settingsPromptId?: string | null;
-  value: string | undefined;
-  onChange: (next: string | undefined) => void;
-  disabled?: boolean;
-  className?: string;
-  /** Visible label beside the select; without it each option is prefixed "System:". */
-  label?: string;
-}) {
-  void settingsPromptId;
-  const prefix = label ? "" : "System: ";
-  const select = (
-    <select
-      aria-label={label ? undefined : "System prompt for this generation"}
-      value={value ?? ""}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value || undefined)}
-      className={cn(
-        "rounded-md border bg-white px-2 py-1.5 text-xs text-zinc-900 disabled:opacity-50",
-        value ? "border-amber-300 bg-amber-50/40" : "border-zinc-300",
-        className,
-      )}
-    >
-      <option value="">{prefix}Style prompt</option>
-      {prompts.map((p) => (
-        <option key={p.id} value={p.id}>
-          {prefix}Style prompt
-        </option>
-      ))}
-    </select>
-  );
-  if (!label) return select;
-  return (
-    <label className="inline-flex items-center gap-1.5">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-        {label}
-      </span>
-      {select}
-    </label>
-  );
 }
 
 function OverrideField({
@@ -143,8 +88,6 @@ export function PromptOverridesPanel({
   onChange,
   disabled,
   startThumbUrl,
-  systemPrompts,
-  settingsSystemPromptId,
 }: {
   positions: number[];
   systemTemplate: string;
@@ -154,8 +97,6 @@ export function PromptOverridesPanel({
   disabled?: boolean;
   /** Thumbnail of the exercise's active Start frame, if any. */
   startThumbUrl: string | null;
-  systemPrompts: { id: string }[];
-  settingsSystemPromptId: string | null | undefined;
 }) {
   const showStartContext = positions.some((p) => p !== 0);
   // When the run also draws Start, Mid/End edit that new Start instead of the active one.
@@ -196,16 +137,6 @@ export function PromptOverridesPanel({
           )}
           <span className="font-medium">{note.title}</span>
         </div>
-      )}
-      {systemPrompts.length > 1 && (
-        <SystemPromptSelect
-          prompts={systemPrompts}
-          settingsPromptId={settingsSystemPromptId}
-          value={value.systemPromptId}
-          disabled={disabled}
-          // A text edit belongs to the previous prompt, so switching prompts drops it.
-          onChange={(systemPromptId) => onChange({ ...value, systemPromptId, system: undefined })}
-        />
       )}
       <OverrideField
         label="System"

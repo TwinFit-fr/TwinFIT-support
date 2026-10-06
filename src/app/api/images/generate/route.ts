@@ -3,7 +3,6 @@ import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import { editImage, generateImage } from "@/lib/images/openai";
 import { assembleImagePrompt, exerciseDetails, selectedPrompts } from "@/lib/images/prompt";
-import { invalidSystemPrompt } from "@/lib/images/prompt-checks";
 import {
   clearActivePosition,
   ensureTwoFramesDefault,
@@ -44,7 +43,6 @@ const bodySchema = z.object({
   position: z.number().int().min(0).max(2),
   subject: z.enum(["man", "woman"]),
   systemOverride: promptText.optional(),
-  systemPromptId: z.string().uuid().optional(),
   positionOverride: promptText.optional(),
   guideImageId: z.string().uuid().optional(),
   /** Library references for this run; omitted = the ones linked to the exercise. */
@@ -78,8 +76,6 @@ export async function POST(request: Request) {
 
     const prompts = await listImagePrompts(token, styleId);
     const { params } = style;
-    const unknownSystem = invalidSystemPrompt(prompts, body.systemPromptId);
-    if (unknownSystem) return unknownSystem;
     const chosen = selectedPrompts(prompts, position);
     if (!chosen.system || !chosen.position) {
       return NextResponse.json(

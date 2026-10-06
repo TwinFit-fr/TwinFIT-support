@@ -8,7 +8,6 @@ import {
   PositionSelector,
   SubjectSelector,
 } from "@/components/images/position-selector";
-import { SystemPromptSelect } from "@/components/images/prompt-overrides";
 import type { QueueItem } from "@/hooks/use-generation-queue";
 import type { FrameCountChoice, Subject } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
@@ -25,10 +24,6 @@ export function GenerationQueueBar({
   onPositionsChange,
   subjects,
   onSubjectsChange,
-  systemPrompts,
-  settingsSystemPromptId,
-  systemPromptId,
-  onSystemPromptChange,
   running,
   preparing,
   items,
@@ -52,10 +47,6 @@ export function GenerationQueueBar({
   onPositionsChange: (next: number[]) => void;
   subjects: Subject[];
   onSubjectsChange: (next: Subject[]) => void;
-  systemPrompts: { id: string }[];
-  settingsSystemPromptId: string | null | undefined;
-  systemPromptId: string | undefined;
-  onSystemPromptChange: (next: string | undefined) => void;
   running: boolean;
   /** Saving the batch frame count before the queue starts. */
   preparing: boolean;
@@ -127,16 +118,6 @@ export function GenerationQueueBar({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {systemPrompts.length > 1 && (
-            <SystemPromptSelect
-              label="Prompt"
-              prompts={systemPrompts}
-              settingsPromptId={settingsSystemPromptId}
-              value={systemPromptId}
-              onChange={onSystemPromptChange}
-              disabled={locked}
-            />
-          )}
           <SubjectSelector value={subjects} onChange={onSubjectsChange} disabled={locked} />
           <FrameCountSelector value={frameCount} onChange={onFrameCountChange} disabled={locked} />
           <PositionSelector

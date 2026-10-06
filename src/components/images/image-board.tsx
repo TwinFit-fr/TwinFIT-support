@@ -28,7 +28,6 @@ import { MID_POSITION, framePositionsFor } from "@/lib/images/types";
 import type {
   ExerciseImage,
   ExerciseImageBoardItem,
-  ImagePrompt,
   ImageStyle,
   Subject,
 } from "@/lib/images/types";
@@ -87,12 +86,6 @@ export function ImageBoard() {
   const [subjects, setSubjects] = useSubjectSelection();
   const [frameCount, setFrameCount] = useFrameCountChoice();
   const [preparing, setPreparing] = useState(false);
-  const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(
-    styleId ? `/api/images/prompts?styleId=${styleId}` : null,
-  );
-  const styleSystemPromptId = promptsData?.system?.id;
-  // Ephemeral: applies to the next queue runs on this page only.
-  const [systemPromptId, setSystemPromptId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [muscle, setMuscle] = useState("all");
@@ -176,7 +169,6 @@ export function ImageBoard() {
         styleId,
         position,
         subject: stepSubject,
-        systemPromptId,
         guideImageId,
       }),
     })) as { image: ExerciseImage };
@@ -337,10 +329,6 @@ export function ImageBoard() {
         onPositionsChange={setPositions}
         subjects={subjects}
         onSubjectsChange={setSubjects}
-        systemPrompts={promptsData?.system ? [promptsData.system] : []}
-        settingsSystemPromptId={styleSystemPromptId}
-        systemPromptId={systemPromptId}
-        onSystemPromptChange={setSystemPromptId}
         running={queue.running}
         preparing={preparing}
         items={queue.items}

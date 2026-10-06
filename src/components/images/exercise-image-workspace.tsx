@@ -572,20 +572,12 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     const prompts = promptsData?.prompts ?? [];
     const byPosition = FRAME_POSITIONS.map((f) => selectedPrompts(prompts, f.id));
     return {
-      system:
-        prompts.find((p) => p.id === overrides.systemPromptId && p.kind === "system")?.content ??
-        byPosition[0].system?.content ??
-        "",
+      system: byPosition[0].system?.content ?? "",
       positions: Object.fromEntries(
         byPosition.map((chosen, i) => [FRAME_POSITIONS[i].id, chosen.position?.content ?? ""]),
       ) as Record<number, string>,
     };
-  }, [promptsData, overrides.systemPromptId]);
-  const systemPrompts = useMemo(
-    () => (promptsData?.system ? [promptsData.system] : []),
-    [promptsData],
-  );
-  const styleSystemPromptId = promptsData?.system?.id;
+  }, [promptsData]);
   const framePositions = exercise?.frame_positions ?? FRAME_POSITIONS.map((f) => f.id as number);
   const runPositions = runPositionsFor(positions, framePositions);
   const editedCount = countOverrides(overrides, runPositions);
@@ -640,7 +632,6 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             position,
             subject: stepSubject,
             systemOverride: run.system,
-            systemPromptId: run.systemPromptId,
             positionOverride: run.positions[position],
             guideImageId,
             referenceIds,
@@ -1033,8 +1024,6 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         <PromptOverridesPanel
           positions={runPositions}
           startThumbUrl={imageThumbUrl(startThumb, 160)}
-          systemPrompts={systemPrompts}
-          settingsSystemPromptId={styleSystemPromptId}
           systemTemplate={templates.system}
           positionTemplates={templates.positions}
           value={overrides}
