@@ -163,6 +163,24 @@ export function MuscleMapBoard() {
     success(`${selectedTargets.length} target(s) processed`, "Queue finished");
   }
 
+  /** Activating a map deactivates the one active for its target and view (server side). */
+  async function setMapActive(id: string, active: boolean) {
+    await staffFetch(`/api/images/muscle-maps/items/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ active }),
+    });
+  }
+
+  async function restore(id: string, active: boolean) {
+    try {
+      await setMapActive(id, active);
+      success("Change undone");
+      await refresh();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Undo failed");
+    }
+  }
+
   async function updateImage(image: MuscleMapImage, change: "activate" | "deactivate" | "delete") {
     try {
       if (change === "delete") {
@@ -176,12 +194,22 @@ export function MuscleMapBoard() {
         await staffFetch(`/api/images/muscle-maps/items/${image.id}`, { method: "DELETE" });
         success(`${VIEW_LABEL[image.view]} map deleted`);
       } else {
-        await staffFetch(`/api/images/muscle-maps/items/${image.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ active: change === "activate" }),
+        const activate = change === "activate";
+        // The way back: reactivate the map this one displaces, or flip this one back.
+        const displaced = activate
+          ? targets
+              .find((t) => t.images.some((img) => img.id === image.id))
+              ?.images.find((img) => img.view === image.view && img.active && img.id !== image.id)
+          : undefined;
+        const undo = displaced
+          ? { id: displaced.id, active: true }
+          : { id: image.id, active: !activate };
+        await setMapActive(image.id, activate);
+        const done = activate ? "set as active" : "deactivated";
+        success(`${VIEW_LABEL[image.view]} map ${done}`, undefined, {
+          label: "Undo",
+          onClick: () => void restore(undo.id, undo.active),
         });
-        const done = change === "activate" ? "set as active" : "deactivated";
-        success(`${VIEW_LABEL[image.view]} map ${done}`);
       }
       await refresh();
     } catch (err) {

@@ -93,6 +93,13 @@ const SHORTCUTS: [string, string][] = [
   ["Esc", "Back"],
 ];
 
+/** Where an image sits: inactive images have no position. */
+type Placement = { id: string; position: number | null; active: boolean };
+
+function placementOf(img: ExerciseImage): Placement {
+  return { id: img.id, position: img.active ? img.position : null, active: img.active };
+}
+
 function imageLabel(img: ExerciseImage): string {
   if (img.active) return framePositionLabel(img.position);
   const target = targetPosition(img);
@@ -757,17 +764,52 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
-  async function setPosition(imageId: string, position: number | null, active: boolean) {
-    setBusy(true);
-    try {
-      await staffFetch(`/api/images/items/${imageId}`, {
+  /** Applies placements in order; the server deactivates whoever held a position taken. */
+  async function place(placements: Placement[]) {
+    for (const { id, position, active } of placements) {
+      await staffFetch(`/api/images/items/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ position, active }),
       });
-      success(active ? `Set as ${framePositionLabel(position)}` : "Deactivated");
+    }
+  }
+
+  async function setPosition(imageId: string, position: number | null, active: boolean) {
+    const image = exercise?.images.find((img) => img.id === imageId);
+    if (!image) return;
+    // The way back: first the image this one displaces, then this image where it was.
+    const displaced = exercise?.images.find(
+      (img) =>
+        img.id !== imageId &&
+        img.subject === image.subject &&
+        img.active &&
+        active &&
+        img.position === position,
+    );
+    const undo = [...(displaced ? [placementOf(displaced)] : []), placementOf(image)];
+    setBusy(true);
+    try {
+      await place([{ id: imageId, position, active }]);
+      success(active ? `Set as ${framePositionLabel(position)}` : "Deactivated", undefined, {
+        label: "Undo",
+        onClick: () => void restore(undo),
+      });
       await refresh();
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restore(undo: Placement[]) {
+    setBusy(true);
+    try {
+      await place(undo);
+      success("Change undone");
+      await refresh();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Undo failed");
     } finally {
       setBusy(false);
     }
