@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2, X } from "lucide-react";
 import { CHECKER_STYLE } from "@/components/images/checker";
+import { MuscleMapMetadataPanel } from "@/components/images/image-metadata";
 import { Button } from "@/components/ui/primitives";
 import {
   RunInputsPanel,
@@ -27,6 +28,7 @@ export type MuscleMapRun = { promptOverride?: string; referenceIds?: string[] };
 function ViewColumn({
   view,
   images,
+  library,
   hasBase,
   busy,
   onGenerate,
@@ -36,6 +38,7 @@ function ViewColumn({
 }: {
   view: MuscleMapView;
   images: MuscleMapImage[];
+  library: StyleReference[];
   hasBase: boolean;
   busy: boolean;
   onGenerate: () => void;
@@ -149,6 +152,7 @@ function ViewColumn({
           ))}
         </div>
       )}
+      {shown && <MuscleMapMetadataPanel image={shown} references={library} />}
     </div>
   );
 }
@@ -242,6 +246,7 @@ export function MuscleMapInspector({
                 key={view}
                 view={view}
                 images={target.images.filter((img) => img.view === view)}
+                library={library}
                 hasBase={baseViews.includes(view)}
                 busy={busyViews.includes(view)}
                 onGenerate={() => onGenerate(view, run)}
