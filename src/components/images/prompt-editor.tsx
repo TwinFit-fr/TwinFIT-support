@@ -24,6 +24,7 @@ import type {
 } from "@/lib/images/types";
 import { FRAME_POSITIONS, MUSCLE_MAP_VIEWS, SUBJECTS } from "@/lib/images/types";
 import { SegmentedControl } from "@/components/images/generation-controls";
+import type { PromptVersion } from "@/lib/images/prompt-versions";
 import { cn } from "@/lib/utils";
 
 type StylePromptsResponse = StylePrompts & {
@@ -57,6 +58,10 @@ function PromptSlotEditor({
   const editing = draft && prompt && draft.promptId === prompt.id ? draft : null;
   const content = editing?.content ?? prompt?.content ?? "";
   const [busy, setBusy] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const versionsKey = historyOpen && prompt ? `/api/images/prompts/${prompt.id}/versions` : null;
+  const { data: versionsData } = useStaffSWR<{ versions: PromptVersion[] }>(versionsKey);
+  const versions = versionsData?.versions ?? [];
 
   function setContent(next: string) {
     if (!prompt) return;
@@ -73,6 +78,7 @@ function PromptSlotEditor({
       });
       success("Prompt saved");
       await mutate(`/api/images/prompts?styleId=${styleId}`);
+      await mutate(`/api/images/prompts/${prompt.id}/versions`);
       setDraft(null);
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Request failed");
@@ -111,7 +117,43 @@ function PromptSlotEditor({
             Discard
           </Button>
         )}
+        <button
+          type="button"
+          onClick={() => setHistoryOpen((v) => !v)}
+          aria-expanded={historyOpen}
+          disabled={!prompt}
+          className="ml-auto text-xs text-zinc-500 underline hover:text-zinc-800"
+        >
+          {historyOpen ? "Hide history" : "History"}
+        </button>
       </div>
+      {historyOpen && (
+        <ol className="max-h-72 space-y-1.5 overflow-auto rounded-md border border-zinc-100 bg-zinc-50 p-2">
+          {versions.length === 0 && <li className="text-[11px] text-zinc-400">Loading…</li>}
+          {versions.map((version, i) => (
+            <li key={version.id} className="rounded border border-zinc-200 bg-white p-2 text-[11px]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-600">
+                  {new Date(version.saved_at).toLocaleString()}
+                  {i === 0 && <span className="text-zinc-400"> · current</span>}
+                </span>
+                {version.content !== content && (
+                  <button
+                    type="button"
+                    onClick={() => setContent(version.content)}
+                    className="font-medium text-zinc-700 underline hover:text-zinc-950"
+                  >
+                    Use this text
+                  </button>
+                )}
+              </div>
+              <pre className="mt-1 line-clamp-3 whitespace-pre-wrap font-mono text-[10.5px] text-zinc-500">
+                {version.content}
+              </pre>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }

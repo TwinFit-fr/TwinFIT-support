@@ -190,6 +190,7 @@ function ViewColumn({
 function TargetMaps({
   target,
   template,
+  onSaveTemplate,
   bases,
   library,
   isBusy,
@@ -200,6 +201,8 @@ function TargetMaps({
   target: MuscleMapBoardTarget;
   /** The style's muscle map prompt, the starting point of a one-off edit. */
   template: string;
+  /** Saves a one-off text as the style's prompt; resolves true when saved. */
+  onSaveTemplate: (text: string) => Promise<boolean>;
   /** The style's base file per view. */
   bases: { view: MuscleMapView; file_id: string }[];
   /** Every reference of the style; the ones linked to this target start on. */
@@ -310,13 +313,24 @@ function TargetMaps({
               <div className="flex items-center justify-between text-[11px] text-zinc-400">
                 <span>Placeholders: {PROMPT_PLACEHOLDERS.muscleMap.join(", ")}</span>
                 {edited && (
-                  <button
-                    type="button"
-                    className="text-zinc-600 underline"
-                    onClick={() => setPrompt(null)}
-                  >
-                    Reset
-                  </button>
+                  <span className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-zinc-700 underline hover:text-zinc-950"
+                      onClick={async () => {
+                        if (prompt != null && (await onSaveTemplate(prompt))) setPrompt(null);
+                      }}
+                    >
+                      Save to style
+                    </button>
+                    <button
+                      type="button"
+                      className="text-zinc-600 underline"
+                      onClick={() => setPrompt(null)}
+                    >
+                      Reset
+                    </button>
+                  </span>
                 )}
               </div>
               <p className="text-[11px] text-zinc-500">
@@ -451,6 +465,11 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
           key={muscleMapTargetKey(target)}
           target={target}
           template={prompts?.muscleMap?.content ?? ""}
+          onSaveTemplate={(text) =>
+            prompts?.muscleMap
+              ? actions.saveMapPrompt(prompts.muscleMap.id, text)
+              : Promise.resolve(false)
+          }
           bases={style?.muscle_bases ?? []}
           library={referencesData?.references ?? []}
           isBusy={(view) => actions.isBusy(target, view)}

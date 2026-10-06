@@ -26,6 +26,7 @@ import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { MID_POSITION, targetPosition } from "@/lib/images/types";
 import type { ExerciseImage, Subject } from "@/lib/images/types";
 import { GenerationError } from "./generation-error";
+import { currentPromptVersions } from "./prompt-versions";
 import type { SkippableInput } from "./job-types";
 
 /** One exercise frame to generate; Mid/End edit `guideImageId` or the subject's active Start. */
@@ -80,6 +81,8 @@ export async function generateExerciseFrame(
   if (!chosen.system || !chosen.position) {
     throw new GenerationError(`Prompt templates missing (system or position ${position})`, 400);
   }
+  // The saved text of each slot this frame uses, stamped on the image.
+  const versions = await currentPromptVersions(token, [chosen.system.id, chosen.position.id]);
 
   let usableGuide: ExerciseImage | null = null;
   if (position !== 0) {
@@ -203,6 +206,8 @@ export async function generateExerciseFrame(
     position_prompt_id: chosen.position.id,
     system_prompt_edited: systemOverride != null,
     position_prompt_edited: positionOverride != null,
+    system_prompt_saved_at: versions.get(chosen.system.id)?.saved_at ?? null,
+    position_prompt_saved_at: versions.get(chosen.position.id)?.saved_at ?? null,
   };
   const insert = () =>
     insertExerciseImage(token, {

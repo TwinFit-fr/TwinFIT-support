@@ -36,12 +36,15 @@ function OverrideField({
   value,
   disabled,
   onChange,
+  onSaveToStyle,
 }: {
   label: string;
   template: string;
   value: string | undefined;
   disabled?: boolean;
   onChange: (next: string | undefined) => void;
+  /** Make this run's text the style's prompt for the slot. */
+  onSaveToStyle?: () => void;
 }) {
   const edited = value != null;
   return (
@@ -56,14 +59,26 @@ function OverrideField({
           )}
         </span>
         {edited && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(undefined)}
-            className="text-[11px] font-normal text-zinc-500 underline hover:text-zinc-800"
-          >
-            Reset
-          </button>
+          <span className="flex gap-2">
+            {onSaveToStyle && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={onSaveToStyle}
+                className="text-[11px] font-normal text-zinc-700 underline hover:text-zinc-950"
+              >
+                Save to style
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(undefined)}
+              className="text-[11px] font-normal text-zinc-500 underline hover:text-zinc-800"
+            >
+              Reset
+            </button>
+          </span>
         )}
       </span>
       <textarea
@@ -88,6 +103,7 @@ export function PromptOverridesPanel({
   onChange,
   disabled,
   startThumbUrl,
+  onSaveToStyle,
 }: {
   positions: number[];
   systemTemplate: string;
@@ -97,6 +113,8 @@ export function PromptOverridesPanel({
   disabled?: boolean;
   /** Thumbnail of the exercise's active Start frame, if any. */
   startThumbUrl: string | null;
+  /** Saves a run edit as the style's prompt of that slot. */
+  onSaveToStyle?: (slot: "system" | number, text: string) => void;
 }) {
   const showStartContext = positions.some((p) => p !== 0);
   // When the run also draws Start, Mid/End edit that new Start instead of the active one.
@@ -144,6 +162,11 @@ export function PromptOverridesPanel({
         value={value.system}
         disabled={disabled}
         onChange={(system) => onChange({ ...value, system })}
+        onSaveToStyle={
+          onSaveToStyle && value.system != null
+            ? () => onSaveToStyle("system", value.system as string)
+            : undefined
+        }
       />
       <div className={cn("grid gap-3", positions.length > 1 && "lg:grid-cols-2 xl:grid-cols-3")}>
         {positions.map((position) => (
@@ -155,6 +178,11 @@ export function PromptOverridesPanel({
             disabled={disabled}
             onChange={(text) =>
               onChange({ ...value, positions: { ...value.positions, [position]: text } })
+            }
+            onSaveToStyle={
+              onSaveToStyle && value.positions[position] != null
+                ? () => onSaveToStyle(position, value.positions[position] as string)
+                : undefined
             }
           />
         ))}

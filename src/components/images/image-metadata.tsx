@@ -69,6 +69,13 @@ function promptSlotLabel(
   return "Prompt";
 }
 
+/** "Start · version of 6 Oct 10:32", or "· edited" when the run changed the text. */
+function promptUse(slot: string, edited?: boolean, savedAt?: string | null): string {
+  if (slot === "—") return slot;
+  if (edited) return `${slot} · edited for the run`;
+  return savedAt ? `${slot} · version of ${new Date(savedAt).toLocaleString()}` : slot;
+}
+
 /** Names of the library references sent with the image. */
 function referencesLabel(ids: string[] | undefined, library: StyleReference[] | undefined): string {
   if (!ids?.length) return "—";
@@ -166,11 +173,19 @@ export function ImageMetadataPanel({
     ...outputRows(image, Boolean(p.reference_file_id || p.guide_image_id)),
     [
       "System prompt",
-      `${promptSlotLabel(prompts, p.system_prompt_id)}${p.system_prompt_edited ? " · edited" : ""}`,
+      promptUse(
+        promptSlotLabel(prompts, p.system_prompt_id),
+        p.system_prompt_edited,
+        p.system_prompt_saved_at,
+      ),
     ],
     [
       "Position prompt",
-      `${promptSlotLabel(prompts, p.position_prompt_id)}${p.position_prompt_edited ? " · edited" : ""}`,
+      promptUse(
+        promptSlotLabel(prompts, p.position_prompt_id),
+        p.position_prompt_edited,
+        p.position_prompt_saved_at,
+      ),
     ],
     ["References", referencesLabel(p.reference_ids, references)],
     ["Logo", p.logo_sent == null ? "—" : p.logo_sent ? "Yes" : "No"],
@@ -201,7 +216,7 @@ export function MuscleMapMetadataPanel({
           : "—",
     ],
     ...outputRows(image, Boolean(p.base_file_id)),
-    ["Prompt", p.prompt_id ? `Muscle map${p.prompt_edited ? " · edited" : ""}` : "—"],
+    ["Prompt", p.prompt_id ? promptUse("Muscle map", p.prompt_edited, p.prompt_saved_at) : "—"],
     ["References", referencesLabel(p.reference_ids, references)],
     ["Tokens", usageLabel(image.usage)],
     ["Created", new Date(image.created_at).toLocaleString()],

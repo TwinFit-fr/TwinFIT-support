@@ -726,6 +726,37 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
+  /** Makes a run's prompt edit the style's prompt of that slot (the old text stays in history). */
+  async function saveOverrideToStyle(slot: "system" | number, text: string) {
+    const chosen = selectedPrompts(promptsData?.prompts ?? [], slot === "system" ? 0 : slot);
+    const prompt = slot === "system" ? chosen.system : chosen.position;
+    if (!prompt || !styleId) return;
+    const name = slot === "system" ? "System" : framePositionLabel(slot);
+    const ok = await confirm({
+      title: `Save as the style's ${name} prompt?`,
+      description:
+        "Every future generation of this style uses it. The current text stays in the prompt's history on Styles → Prompts.",
+      confirmLabel: "Save to style",
+    });
+    if (!ok) return;
+    try {
+      await staffFetch(`/api/images/prompts/${prompt.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ content: text }),
+      });
+      await mutate(`/api/images/prompts?styleId=${styleId}`);
+      // The run text is now the template, so it is no longer an edit.
+      setOverrides(
+        slot === "system"
+          ? { ...overrides, system: undefined }
+          : { ...overrides, positions: { ...overrides.positions, [slot]: undefined } },
+      );
+      success(`Saved as the style's ${name} prompt`);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Save failed");
+    }
+  }
+
   /** Queues an edit of an image; the result lands in History as a candidate of its position. */
   async function queueEdit(image: ExerciseImage, instruction: string) {
     const position = image.active ? image.position : targetPosition(image);
@@ -1153,6 +1184,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           positionTemplates={templates.positions}
           value={overrides}
           onChange={setOverrides}
+          onSaveToStyle={(slot, text) => void saveOverrideToStyle(slot, text)}
           disabled={running}
         />
       )}

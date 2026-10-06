@@ -93,6 +93,9 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   position_prompt_id?: string | null;
   system_prompt_edited?: boolean;
   position_prompt_edited?: boolean;
+  /** When the slot texts used were saved (their versions in images.prompt_versions). */
+  system_prompt_saved_at?: string | null;
+  position_prompt_saved_at?: string | null;
   /** Legacy: baked two-image composite (replaced by frame_align). */
   manual_overlay?: boolean;
   /** Active frame was geometrically nudged to align the GIF. */
@@ -110,6 +113,8 @@ export type MuscleMapSnapshot = Partial<GenerationParams> & {
   base_file_id?: string | null;
   prompt_id?: string | null;
   prompt_edited?: boolean;
+  /** When the slot text used was saved (its version in images.prompt_versions). */
+  prompt_saved_at?: string | null;
   reference_ids?: string[];
   /** Made by editing this map with an instruction. */
   edit_of?: string;

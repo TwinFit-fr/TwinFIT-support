@@ -101,6 +101,29 @@ export function useMuscleMapActions(styleId: string | null) {
     }
   }
 
+  /** Makes a one-off prompt text the style's muscle map prompt; true when saved. */
+  async function saveMapPrompt(promptId: string, text: string): Promise<boolean> {
+    const ok = await confirm({
+      title: "Save as the style's muscle map prompt?",
+      description:
+        "Every future map of this style uses it. The current text stays in the prompt's history on Styles → Prompts.",
+      confirmLabel: "Save to style",
+    });
+    if (!ok || !styleId) return false;
+    try {
+      await staffFetch(`/api/images/prompts/${promptId}`, {
+        method: "PUT",
+        body: JSON.stringify({ content: text }),
+      });
+      await mutate(`/api/images/prompts?styleId=${styleId}`);
+      success("Saved as the style's muscle map prompt");
+      return true;
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Save failed");
+      return false;
+    }
+  }
+
   const matches = (job: GenerationJob, target: MuscleMapTargetRef, view?: MuscleMapView) => {
     const ref = jobTarget(job);
     return ref?.kind === target.kind && ref.id === target.id && (!view || job.view === view);
@@ -169,6 +192,7 @@ export function useMuscleMapActions(styleId: string | null) {
     enqueue,
     generateOne,
     editMap,
+    saveMapPrompt,
     update,
     /** A map of this target and view is queued or being made. */
     isBusy: (target: MuscleMapTargetRef, view: MuscleMapView) =>

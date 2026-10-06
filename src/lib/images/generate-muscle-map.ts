@@ -16,6 +16,7 @@ import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { extensionForMime } from "@/lib/images/style-assets";
 import type { MuscleMapImage, MuscleMapTargetRef, MuscleMapView } from "./types";
 import { GenerationError } from "./generation-error";
+import { currentPromptVersions } from "./prompt-versions";
 
 /** One muscle map to generate: it edits the style's base of its view. */
 export type MuscleMapRequest = {
@@ -55,6 +56,7 @@ export async function generateMuscleMap(
     listImagePromptsForStyle(token, styleId).then((slots) => slots.muscleMap),
     resolveRunReferences(token, styleId, ref, referenceIds),
   ]);
+  const versions = await currentPromptVersions(token, [template.id]);
   // Input 1 is the base; library references follow from input 2.
   const prompt = [
     fillMuscleMapTemplate(promptOverride ?? template.content, {
@@ -102,6 +104,7 @@ export async function generateMuscleMap(
         base_file_id: baseFileId,
         prompt_id: template.id,
         prompt_edited: promptOverride != null,
+        prompt_saved_at: versions.get(template.id)?.saved_at ?? null,
         reference_ids: references.map((r) => r.id),
       },
       usage: result.usage,
