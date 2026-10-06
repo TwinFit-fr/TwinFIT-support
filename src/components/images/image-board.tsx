@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { mutate } from "swr";
 import { Search } from "lucide-react";
 import { Input, Skeleton } from "@/components/ui/primitives";
@@ -10,7 +11,6 @@ import {
   EmptyState,
   StatusTabs,
   statusCounts,
-  type StatusFilter,
 } from "@/components/images/board-ui";
 import { ExerciseImageCard } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
@@ -24,6 +24,12 @@ import {
   useStyleChoice,
   useSubjectSelection,
 } from "@/hooks/use-generation-queue";
+import {
+  type BoardFilters,
+  boardFiltersQuery,
+  matchesBoardFilters,
+  readBoardFilters,
+} from "@/lib/images/board-filters";
 import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
 import { MID_POSITION, framePositionsFor } from "@/lib/images/types";
 import type {
@@ -86,10 +92,12 @@ export function ImageBoard() {
   const [subjects, setSubjects] = useSubjectSelection();
   const [frameCount, setFrameCount] = useFrameCountChoice();
   const [preparing, setPreparing] = useState(false);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("all");
-  const [muscle, setMuscle] = useState("all");
-  const [equipment, setEquipment] = useState("all");
+  const searchParams = useSearchParams();
+  const filters = useMemo(() => readBoardFilters(searchParams), [searchParams]);
+  const filtersQuery = boardFiltersQuery(filters);
+  // Replaced in place: typing a search adds no history entries.
+  const setFilters = (patch: Partial<BoardFilters>) =>
+    window.history.replaceState(null, "", `/images${boardFiltersQuery({ ...filters, ...patch })}`);
   const queue = useGenerationQueue();
 
   const exercises = useMemo(() => data?.exercises ?? [], [data]);
@@ -111,16 +119,10 @@ export function ImageBoard() {
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [exercises]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return exercises.filter((ex) => {
-      if (status !== "all" && ex.status !== status) return false;
-      if (muscle !== "all" && ex.primary_muscle_group?.id !== muscle) return false;
-      if (equipment !== "all" && ex.equipment?.id !== equipment) return false;
-      if (!q) return true;
-      return ex.display_name.toLowerCase().includes(q) || String(ex.exo_id).includes(q);
-    });
-  }, [exercises, search, status, muscle, equipment]);
+  const filtered = useMemo(
+    () => exercises.filter((ex) => matchesBoardFilters(ex, filters)),
+    [exercises, filters],
+  );
 
   const visibleIds = useMemo(() => filtered.map((ex) => ex.exo_id), [filtered]);
   const selection = useBoardSelection(visibleIds);
@@ -236,21 +238,33 @@ export function ImageBoard() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <StatusTabs value={status} onChange={setStatus} counts={counts} />
+        <StatusTabs
+          value={filters.status}
+          onChange={(status) => setFilters({ status })}
+          counts={counts}
+        />
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
             <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={filters.q}
+              onChange={(e) => setFilters({ q: e.target.value })}
               placeholder="Search name or #id"
               className="h-8 w-56 py-1 pl-8 text-xs"
             />
           </div>
-          <FilterSelect value={muscle} onChange={setMuscle} allLabel="All muscles">
+          <FilterSelect
+            value={filters.muscle}
+            onChange={(muscle) => setFilters({ muscle })}
+            allLabel="All muscles"
+          >
             {muscleOptions}
           </FilterSelect>
-          <FilterSelect value={equipment} onChange={setEquipment} allLabel="All equipment">
+          <FilterSelect
+            value={filters.equipment}
+            onChange={(equipment) => setFilters({ equipment })}
+            allLabel="All equipment"
+          >
             {equipmentOptions}
           </FilterSelect>
         </div>
@@ -295,6 +309,7 @@ export function ImageBoard() {
             <ExerciseImageCard
               key={ex.id}
               exercise={ex}
+              href={`/images/${ex.exo_id}${filtersQuery}`}
               selected={selection.has(ex.exo_id)}
               selecting={selection.count > 0}
               onToggle={() => selection.toggle(ex.exo_id)}

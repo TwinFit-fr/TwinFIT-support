@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { mutate } from "swr";
 import {
   ChevronLeft,
@@ -54,6 +54,7 @@ import {
 } from "@/components/images/position-selector";
 import type {
   ExerciseImage,
+  ExerciseImageBoardItem,
   ExerciseImageDetail,
   ImagePrompt,
   ImageStyle,
@@ -68,6 +69,7 @@ import {
   isDeletableImage,
   targetPosition,
 } from "@/lib/images/types";
+import { boardFiltersQuery, boardNeighbours, readBoardFilters } from "@/lib/images/board-filters";
 import { imageThumbUrl } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 
@@ -90,6 +92,44 @@ function imageLabel(img: ExerciseImage): string {
   if (img.active) return framePositionLabel(img.position);
   const target = targetPosition(img);
   return target != null ? `${framePositionLabel(target)} · inactive` : "Inactive";
+}
+
+/** Previous / next exercise of the board list; inert at either end. */
+function NeighbourLink({
+  direction,
+  href,
+}: {
+  direction: "previous" | "next";
+  href: string | null;
+}) {
+  const Icon = direction === "previous" ? ChevronLeft : ChevronRight;
+  const label = direction === "previous" ? "Previous exercise ([)" : "Next exercise (])";
+  const className = cn(
+    "border border-zinc-300 bg-white p-1.5",
+    direction === "previous" ? "rounded-l-md" : "-ml-px rounded-r-md",
+  );
+  if (!href) {
+    return (
+      <span
+        role="link"
+        aria-disabled="true"
+        aria-label={label}
+        className={cn(className, "text-zinc-300")}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      title={label}
+      className={cn(className, "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900")}
+    >
+      <Icon className="h-4 w-4" />
+    </Link>
+  );
 }
 
 function Segmented<T extends string | number>({
@@ -508,6 +548,15 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const [styleId, setStyleId] = useStyleChoice(styles);
   const detailKey = styleId ? `/api/images/exercises/${exoId}?style=${styleId}` : null;
   const listKey = styleId ? `/api/images/exercises?style=${styleId}` : null;
+  // Previous / next browse the board list with the filters the board was left with.
+  const boardFilters = readBoardFilters(useSearchParams());
+  const filtersQuery = boardFiltersQuery(boardFilters);
+  const { data: boardData } = useStaffSWR<{ exercises: ExerciseImageBoardItem[] }>(listKey);
+  const neighbours = boardNeighbours(boardData?.exercises ?? [], boardFilters, exoId);
+  const exerciseHref = (id: number | null) => (id == null ? null : `/images/${id}${filtersQuery}`);
+  const previousHref = exerciseHref(neighbours.previous);
+  const nextHref = exerciseHref(neighbours.next);
+  const boardHref = `/images${filtersQuery}`;
   const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(
     styleId ? `/api/images/prompts?styleId=${styleId}` : null,
   );
@@ -731,7 +780,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
 
   function assignSelected(position: number) {
     // Activates the position on the selected image (its subject lane).
-    if (selected && framePositions.includes(position)) void setPosition(selected.id, position, true);
+    if (!selected || !framePositions.includes(position)) return;
+    void setPosition(selected.id, position, true);
   }
 
   function browseHistory(step: -1 | 1) {
@@ -756,9 +806,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       x: () => selected && void setPosition(selected.id, null, false),
       ArrowLeft: () => browseHistory(-1),
       ArrowRight: () => browseHistory(1),
-      "[": () => router.push(`/images/${Math.max(1, exoId - 1)}`),
-      "]": () => router.push(`/images/${exoId + 1}`),
-      Escape: () => router.push("/images"),
+      "[": () => previousHref && router.push(previousHref),
+      "]": () => nextHref && router.push(nextHref),
+      Escape: () => router.push(boardHref),
     },
     !editOpen && !alignSubject,
   );
@@ -767,7 +817,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <nav className="mb-1 flex items-center gap-1 text-xs text-zinc-500">
-          <Link href="/images" className="hover:text-zinc-900">
+          <Link href={boardHref} className="hover:text-zinc-900">
             Images
           </Link>
           <ChevronRight className="h-3 w-3 text-zinc-400" />
@@ -805,22 +855,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           disabled={queue.running}
         />
         <div className="flex">
-          <Link
-            href={`/images/${Math.max(1, exoId - 1)}`}
-            aria-label="Previous exercise"
-            title="Previous exercise ([)"
-            className="rounded-l-md border border-zinc-300 bg-white p-1.5 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Link>
-          <Link
-            href={`/images/${exoId + 1}`}
-            aria-label="Next exercise"
-            title="Next exercise (])"
-            className="-ml-px rounded-r-md border border-zinc-300 bg-white p-1.5 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Link>
+          <NeighbourLink direction="previous" href={previousHref} />
+          <NeighbourLink direction="next" href={nextHref} />
         </div>
       </div>
     </div>

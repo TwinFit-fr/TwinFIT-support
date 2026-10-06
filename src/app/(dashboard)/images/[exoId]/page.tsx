@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { ExerciseImageWorkspace } from "@/components/images/exercise-image-workspace";
 
 export default async function ExerciseImagePage({
@@ -10,5 +11,9 @@ export default async function ExerciseImagePage({
   if (!Number.isFinite(exoId)) {
     return <div className="text-sm text-red-600">Invalid exercise id</div>;
   }
-  return <ExerciseImageWorkspace exoId={exoId} />;
+  return (
+    <Suspense>
+      <ExerciseImageWorkspace exoId={exoId} />
+    </Suspense>
+  );
 }

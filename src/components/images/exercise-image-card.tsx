@@ -49,11 +49,14 @@ export function FrameDots({
 
 export function ExerciseImageCard({
   exercise,
+  href,
   selected,
   selecting,
   onToggle,
 }: {
   exercise: ExerciseImageBoardItem;
+  /** The exercise workspace, carrying the board filters. */
+  href: string;
   selected: boolean;
   /** Something on the board is selected: checkboxes stay visible. */
   selecting: boolean;
@@ -88,7 +91,7 @@ export function ExerciseImageCard({
       >
         <Check className="h-3.5 w-3.5" strokeWidth={3} />
       </button>
-      <Link href={`/images/${exercise.exo_id}`} className="block focus-visible:outline-none">
+      <Link href={href} className="block focus-visible:outline-none">
         <div className="grid grid-cols-2 gap-px bg-zinc-200">
           {SUBJECTS.map((subject) => {
             const status = exercise.by_subject.find((s) => s.subject === subject);

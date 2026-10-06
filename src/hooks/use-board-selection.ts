@@ -8,10 +8,10 @@ import { useCallback, useMemo, useState } from "react";
  */
 export function useBoardSelection<K>(visible: readonly K[]) {
   const [picked, setPicked] = useState<ReadonlySet<K>>(() => new Set());
-  const selected = useMemo(() => new Set(visible.filter((key) => picked.has(key))), [
-    visible,
-    picked,
-  ]);
+  const selected = useMemo(
+    () => new Set(visible.filter((key) => picked.has(key))),
+    [visible, picked],
+  );
 
   const toggle = useCallback(
     (key: K) => {
