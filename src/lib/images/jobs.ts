@@ -212,6 +212,7 @@ async function runJob(token: string, job: GenerationJob): Promise<Record<string,
     systemOverride: job.options.systemOverride,
     positionOverride: job.options.positionOverride,
     referenceIds: job.options.referenceIds,
+    skipInputs: job.options.skipInputs,
     guideImageId,
   });
   return { result_exercise_image_id: image.id };

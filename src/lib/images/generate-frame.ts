@@ -26,6 +26,7 @@ import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { MID_POSITION, targetPosition } from "@/lib/images/types";
 import type { ExerciseImage, Subject } from "@/lib/images/types";
 import { GenerationError } from "./generation-error";
+import type { SkippableInput } from "./job-types";
 
 /** One exercise frame to generate; Mid/End edit `guideImageId` or the subject's active Start. */
 export type FrameRequest = {
@@ -38,6 +39,8 @@ export type FrameRequest = {
   guideImageId?: string;
   /** Library references for this run; omitted = the ones linked to the exercise. */
   referenceIds?: string[];
+  /** Automatic inputs left out of this run. */
+  skipInputs?: SkippableInput[];
 };
 
 /**
@@ -97,12 +100,14 @@ export async function generateExerciseFrame(
   }
 
   const subject: Subject = usableGuide?.subject ?? body.subject;
-  const characterFileId = usableGuide
-    ? null
-    : (style.characters.find((c) => c.subject === subject)?.file_id ?? null);
+  const skip = new Set(body.skipInputs ?? []);
+  const characterFileId =
+    usableGuide || skip.has("character")
+      ? null
+      : (style.characters.find((c) => c.subject === subject)?.file_id ?? null);
   const supportId = exercise.support_equipment?.id ?? null;
   const supportFileId =
-    !usableGuide && supportId
+    !usableGuide && supportId && !skip.has("support")
       ? (style.supports.find((s) => s.support_equipment_id === supportId)?.file_id ?? null)
       : null;
 
@@ -130,7 +135,8 @@ export async function generateExerciseFrame(
         { kind: "exercise", id: exercise.exo_id },
         body.referenceIds,
       );
-  const logo = style.logo_in_exercises ? await loadLogoInput(token, style) : null;
+  const logo =
+    style.logo_in_exercises && !skip.has("logo") ? await loadLogoInput(token, style) : null;
 
   // Input order: guide or character, support, library references, logo.
   const inputs = [];
@@ -185,6 +191,7 @@ export async function generateExerciseFrame(
     ...params,
     target_position: position,
     reference_file_id: characterFileId,
+    skipped_inputs: [...skip],
     support_reference_file_id: supportSent ? supportFileId : null,
     reference_ids: references.map((r) => r.id),
     guide_image_id: usableGuide?.id ?? null,

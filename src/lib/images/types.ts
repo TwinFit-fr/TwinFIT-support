@@ -77,6 +77,8 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   target_position?: number;
   reference_file_id?: string | null;
   support_reference_file_id?: string | null;
+  /** Automatic inputs the run left out (character, support, logo). */
+  skipped_inputs?: string[];
   /** Library references sent with this frame. */
   reference_ids?: string[];
   guide_image_id?: string | null;

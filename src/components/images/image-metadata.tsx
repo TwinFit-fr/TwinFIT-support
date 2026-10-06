@@ -173,6 +173,7 @@ export function ImageMetadataPanel({
     ],
     ["References", referencesLabel(p.reference_ids, references)],
     ["Logo", p.logo_sent == null ? "—" : p.logo_sent ? "Yes" : "No"],
+    ["Left out", p.skipped_inputs?.length ? p.skipped_inputs.join(", ") : "—"],
     ["Feet shift", p.feet_shift_px != null ? `${p.feet_shift_px}px` : "—"],
     ["Tokens", usageLabel(image.usage)],
     ["Created", new Date(image.created_at).toLocaleString()],

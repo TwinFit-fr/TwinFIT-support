@@ -23,6 +23,7 @@ const jobSpec = z.discriminatedUnion("kind", [
         systemOverride: promptText.optional(),
         positionOverride: promptText.optional(),
         referenceIds,
+        skipInputs: z.array(z.enum(["character", "support", "logo"])).optional(),
       })
       .optional(),
   }),

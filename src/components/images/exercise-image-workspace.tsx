@@ -49,7 +49,7 @@ import {
   type RunReferences,
 } from "@/components/images/run-inputs-panel";
 import { selectedPrompts } from "@/lib/images/prompt";
-import { frameJobSpecs, isActiveJob } from "@/lib/images/job-types";
+import { frameJobSpecs, isActiveJob, type SkippableInput } from "@/lib/images/job-types";
 import {
   PositionToggles,
   SegmentedControl,
@@ -588,6 +588,12 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     value: undefined,
   });
   const runReferences = referencesFor.exoId === exoId ? referencesFor.value : undefined;
+  // And so do the automatic inputs it leaves out.
+  const [skipFor, setSkipFor] = useState<{ exoId: number; value: SkippableInput[] }>({
+    exoId,
+    value: [],
+  });
+  const skipInputs = skipFor.exoId === exoId ? skipFor.value : [];
   const style = styles.find((s) => s.id === styleId) ?? null;
   const { data: referencesData } = useStaffSWR<{ references: StyleReference[] }>(
     styleId ? `/api/images/styles/${styleId}/references` : null,
@@ -660,6 +666,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     if (!(await confirmGeneration.run(runSubjects.length * positionsToRun.length))) return;
     const run = overrides;
     const referenceIds = runReferences;
+    const skipped = skipInputs;
     try {
       await jobs.enqueue(
         frameJobSpecs({
@@ -670,6 +677,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             systemOverride: run.system,
             positionOverride: run.positions[position],
             referenceIds,
+            skipInputs: skipped.length ? skipped : undefined,
           }),
         }),
       );
@@ -935,12 +943,14 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     ? [
         ...subjects.map((subject) => ({
           label: `Character · ${SUBJECT_LABEL[subject]}`,
+          skip: "character" as const,
           fileId: style?.characters.find((c) => c.subject === subject)?.file_id ?? null,
         })),
         ...(support
           ? [
               {
                 label: "Support",
+                skip: "support" as const,
                 detail: support.name,
                 fileId:
                   style?.supports.find((s) => s.support_equipment_id === support.id)?.file_id ??
@@ -952,7 +962,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     : [];
   const logoInputs: AutomaticInput[] =
     style?.logo_in_exercises && style.logo_file_id
-      ? [{ label: "Logo", fileId: style.logo_file_id }]
+      ? [{ label: "Logo", fileId: style.logo_file_id, skip: "logo" as const }]
       : [];
   const startThumb =
     exercise.by_subject.find((s) => s.subject === subjects[0])?.active_frames.find(
@@ -1081,6 +1091,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           library={library}
           value={runReferences}
           onChange={(value) => setReferencesFor({ exoId, value })}
+          skipped={skipInputs}
+          onSkippedChange={(value) => setSkipFor({ exoId, value })}
           note={
             startInRun
               ? "Sent with Start. Mid and End edit that Start, so they only add the logo."

@@ -7,12 +7,19 @@ import type { MuscleMapTargetRef, MuscleMapView, Subject } from "./types";
 
 export type JobStatus = "queued" | "running" | "done" | "error" | "cancelled";
 
-/** Per-run edits of an exercise frame: prompt texts and library references. */
+/** Automatic inputs of an exercise frame a run can leave out. */
+export type SkippableInput = "character" | "support" | "logo";
+
+export const SKIPPABLE_INPUTS: readonly SkippableInput[] = ["character", "support", "logo"];
+
+/** Per-run edits of an exercise frame: prompt texts, library references and inputs left out. */
 export type FrameJobOptions = {
   systemOverride?: string;
   positionOverride?: string;
   /** Omitted = the references linked to the exercise. */
   referenceIds?: string[];
+  /** Automatic inputs not sent this time (the style still has them). */
+  skipInputs?: SkippableInput[];
 };
 
 /** Per-run edits of a muscle map: prompt text and library references. */
