@@ -122,9 +122,17 @@ export function CommandMenu({
         perform: () => router.push("/images"),
       },
       {
+        id: "nav-images-muscle-maps",
+        title: "Muscle Maps",
+        subtitle: "Generate front and back maps per muscle and muscle group",
+        category: "Navigation",
+        icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
+        perform: () => router.push("/images/muscle-maps"),
+      },
+      {
         id: "nav-images-prompts",
         title: "Image Prompts",
-        subtitle: "Edit system and per-position prompt templates",
+        subtitle: "Edit exercise, support and muscle map prompts per style",
         category: "Navigation",
         icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
         perform: () => router.push("/images/prompts"),
