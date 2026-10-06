@@ -14,6 +14,7 @@ import {
   Layers,
   Pencil,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { Button, Skeleton } from "@/components/ui/primitives";
@@ -146,6 +147,47 @@ function GeneratingOverlay({ startedAt }: { startedAt?: number }) {
   );
 }
 
+/** An empty slot: click to generate just this subject and position. */
+function EmptySlot({
+  alt,
+  blockedReason,
+  disabled,
+  generating,
+  onGenerate,
+}: {
+  alt: string;
+  /** Why this slot cannot be generated yet (Mid/End without a Start). */
+  blockedReason: string | null;
+  disabled: boolean;
+  generating?: { startedAt?: number };
+  onGenerate: () => void;
+}) {
+  const ready = !blockedReason && !disabled && !generating;
+  return (
+    <button
+      type="button"
+      disabled={!ready}
+      onClick={onGenerate}
+      title={blockedReason ?? `Generate ${alt}`}
+      aria-label={blockedReason ? `${alt}: ${blockedReason}` : `Generate ${alt}`}
+      className="group/slot relative aspect-square w-full overflow-hidden rounded-lg border border-dashed border-zinc-300 transition enabled:hover:border-zinc-500 enabled:hover:bg-white/60"
+      style={CHECKER_STYLE}
+    >
+      <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-zinc-300 group-enabled/slot:text-zinc-400 group-enabled/slot:group-hover/slot:text-zinc-700">
+        {ready ? (
+          <>
+            <Sparkles className="h-5 w-5" strokeWidth={1.5} />
+            <span className="text-[10px] font-medium">Generate</span>
+          </>
+        ) : (
+          <ImageOff className="h-5 w-5" strokeWidth={1.5} />
+        )}
+      </span>
+      {generating && <GeneratingOverlay startedAt={generating.startedAt} />}
+    </button>
+  );
+}
+
 function FrameTile({
   image,
   alt,
@@ -153,18 +195,17 @@ function FrameTile({
   generating,
   onSelect,
 }: {
-  image: ExerciseImage | null;
+  image: ExerciseImage;
   alt: string;
   selected: boolean;
   /** Present while this slot is in the queue; startedAt once its request is sent. */
   generating?: { startedAt?: number };
   onSelect: () => void;
 }) {
-  const src = imageThumbUrl(image?.image_url, 400);
+  const src = imageThumbUrl(image.image_url, 400);
   return (
     <button
       type="button"
-      disabled={!image}
       onClick={onSelect}
       className={cn(
         "relative aspect-square w-full overflow-hidden rounded-lg border transition",
@@ -174,13 +215,9 @@ function FrameTile({
       )}
       style={CHECKER_STYLE}
     >
-      {src ? (
+      {src && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={alt} className="absolute inset-0 h-full w-full object-contain" />
-      ) : (
-        <span className="absolute inset-0 flex items-center justify-center text-zinc-300">
-          <ImageOff className="h-5 w-5" strokeWidth={1.5} />
-        </span>
       )}
       {generating && <GeneratingOverlay startedAt={generating.startedAt} />}
     </button>
@@ -193,16 +230,21 @@ function FrameMatrix({
   selectedId,
   generating,
   busy,
+  canGenerate,
   onSelect,
   onAlign,
+  onGenerate,
 }: {
   images: ExerciseImage[];
   framePositions: number[];
   selectedId: string | null;
   generating: Map<string, { startedAt?: number }>;
   busy: boolean;
+  /** Empty slots can start a generation (nothing else is running). */
+  canGenerate: boolean;
   onSelect: (id: string) => void;
   onAlign: (subject: Subject) => void;
+  onGenerate: (subject: Subject, position: number) => void;
 }) {
   const frames = FRAME_POSITIONS.filter((frame) => framePositions.includes(frame.id));
   const columns = { gridTemplateColumns: `3.5rem repeat(${frames.length + 1}, minmax(0, 1fr))` };
@@ -250,14 +292,29 @@ function FrameMatrix({
               {frames.map((frame) => {
                 const img = active.get(frame.id) ?? null;
                 return (
-                  <FrameTile
-                    key={frame.id}
-                    image={img}
-                    alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
-                    selected={img != null && img.id === selectedId}
-                    generating={generating.get(`${subject}-${frame.id}`)}
-                    onSelect={() => img && onSelect(img.id)}
-                  />
+                  img ? (
+                    <FrameTile
+                      key={frame.id}
+                      image={img}
+                      alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
+                      selected={img.id === selectedId}
+                      generating={generating.get(`${subject}-${frame.id}`)}
+                      onSelect={() => onSelect(img.id)}
+                    />
+                  ) : (
+                    <EmptySlot
+                      key={frame.id}
+                      alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
+                      blockedReason={
+                        frame.id !== 0 && !active.has(0)
+                          ? "Generate Start first: Mid and End edit it"
+                          : null
+                      }
+                      disabled={!canGenerate}
+                      generating={generating.get(`${subject}-${frame.id}`)}
+                      onGenerate={() => onGenerate(subject, frame.id)}
+                    />
+                  )
                 );
               })}
               <div
@@ -629,9 +686,13 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     if (listKey) await mutate(listKey);
   }, [detailKey, listKey]);
 
-  async function runGenerate() {
-    if (!exercise || !styleId || queue.running || missingStart) return;
-    if (!(await confirmGeneration.run(subjects.length * runPositions.length))) return;
+  /** Generates the toolbar's subjects and positions, or one empty slot of the matrix. */
+  async function runGenerate(slot?: { subject: Subject; position: number }) {
+    if (!exercise || !styleId || queue.running) return;
+    if (!slot && missingStart) return;
+    const runSubjects = slot ? [slot.subject] : subjects;
+    const positionsToRun = slot ? [slot.position] : runPositions;
+    if (!(await confirmGeneration.run(runSubjects.length * positionsToRun.length))) return;
     const run = overrides;
     const referenceIds = runReferences;
     await queue.start({
@@ -642,8 +703,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           framePositions: exercise.frame_positions,
         },
       ],
-      positions: runPositions,
-      subjects,
+      positions: positionsToRun,
+      subjects: runSubjects,
       maxConcurrency: DEFAULT_MAX_CONCURRENCY,
       generateStep: async (stepExoId, position, stepSubject, guideImageId) => {
         const { image } = (await staffFetch("/api/images/generate", {
@@ -1053,8 +1114,10 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             selectedId={selectedId}
             generating={generating}
             busy={busy}
+            canGenerate={!busy && !queue.running}
             onSelect={setSelectedId}
             onAlign={setAlignSubject}
+            onGenerate={(subject, position) => void runGenerate({ subject, position })}
           />
           <HistoryStrip
             images={historyImages}
