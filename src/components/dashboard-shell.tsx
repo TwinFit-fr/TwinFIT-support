@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Search, Menu, X, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandMenu } from "@/components/command-menu";
+import { GenerationIndicator } from "@/components/images/generation-indicator";
 import { ConfirmProvider } from "@/components/ui/confirm";
 import { ToastProvider } from "@/components/ui/toast";
 
@@ -125,6 +126,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               </div>
 
               <div className="flex items-center gap-2 sm:gap-3">
+                <GenerationIndicator />
                 <button
                   type="button"
                   onClick={() => setCommandOpen(true)}

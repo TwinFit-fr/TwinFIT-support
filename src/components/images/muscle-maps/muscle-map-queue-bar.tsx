@@ -1,13 +1,19 @@
 "use client";
 
-import { Loader2, X } from "lucide-react";
+import { X } from "lucide-react";
 import { ViewToggles } from "@/components/images/generation-controls";
+import { ProgressLine, RunActions, RunSummary } from "@/components/images/run-status";
 import { Button } from "@/components/ui/primitives";
-import type { MuscleMapQueueItem } from "@/hooks/use-muscle-map-queue";
+import type { jobProgress } from "@/hooks/use-generation-jobs";
+import type { GenerationJob } from "@/lib/images/job-types";
 import type { MuscleMapView } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 import { VIEW_LABEL } from "./muscle-map-card";
 
+/**
+ * The Muscle maps board's bottom bar: the selection and which views to generate, and the
+ * server-side runs of this style (progress, maps being made or failed, cancel / retry / dismiss).
+ */
 export function MuscleMapQueueBar({
   selectedCount,
   onClearSelection,
@@ -15,13 +21,13 @@ export function MuscleMapQueueBar({
   missingBases,
   views,
   onViewsChange,
-  running,
-  items,
-  done,
-  total,
-  errors,
+  jobs,
+  progress,
+  nameOf,
   onGenerate,
   onCancel,
+  onRetry,
+  onDismiss,
 }: {
   selectedCount: number;
   onClearSelection: () => void;
@@ -30,46 +36,30 @@ export function MuscleMapQueueBar({
   missingBases: MuscleMapView[];
   views: MuscleMapView[];
   onViewsChange: (next: MuscleMapView[]) => void;
-  running: boolean;
-  items: MuscleMapQueueItem[];
-  done: number;
-  total: number;
-  errors: number;
+  jobs: GenerationJob[];
+  progress: ReturnType<typeof jobProgress>;
+  nameOf: (job: GenerationJob) => string;
   onGenerate: () => void;
   onCancel: () => void;
+  onRetry: () => void;
+  onDismiss: () => void;
 }) {
-  if (selectedCount === 0 && !running && items.length === 0) return null;
+  if (selectedCount === 0 && progress.total === 0) return null;
 
-  const showProgress = running || items.length > 0;
-  const visible = items.filter((i) => i.status === "processing" || i.status === "error");
+  const visible = jobs.filter((j) => j.status === "running" || j.status === "error");
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 shadow-[0_-4px_16px_-8px_rgba(0,0,0,0.12)] backdrop-blur-sm">
-      {showProgress && total > 0 && (
-        <div className="h-0.5 w-full bg-zinc-100">
-          <div
-            className={cn("h-full transition-all", errors ? "bg-red-500" : "bg-zinc-900")}
-            style={{ width: `${((done + errors) / total) * 100}%` }}
-          />
-        </div>
-      )}
+      <ProgressLine progress={progress} />
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
         <div
-          className="flex items-center gap-2 text-sm text-zinc-700"
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-700"
           role="status"
           aria-live="polite"
         >
-          {showProgress ? (
-            <>
-              {running && <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />}
-              <span className="font-medium text-zinc-900">{running ? "Generating" : "Done"}</span>
-              <span className="tabular-nums text-zinc-500">
-                {done}/{total} maps
-              </span>
-              {errors > 0 && <span className="text-red-600">· {errors} failed</span>}
-            </>
-          ) : (
-            <>
+          {progress.total > 0 && <RunSummary progress={progress} />}
+          {selectedCount > 0 && (
+            <span className="inline-flex items-center gap-2">
               <span className="font-medium tabular-nums text-zinc-900">
                 {selectedCount} selected
               </span>
@@ -87,44 +77,48 @@ export function MuscleMapQueueBar({
               >
                 <X className="h-3.5 w-3.5" />
               </button>
-            </>
+            </span>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <ViewToggles value={views} onChange={onViewsChange} disabled={running} />
-          {running ? (
-            <Button type="button" variant="secondary" className="h-8 py-0" onClick={onCancel}>
-              Cancel
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              className="h-8 py-0"
-              onClick={onGenerate}
-              disabled={selectedCount === 0 || plannedImages === 0}
-            >
-              {plannedImages > 0 ? `Generate ${plannedImages}` : "Generate"}
-            </Button>
+          {selectedCount > 0 && (
+            <>
+              <ViewToggles value={views} onChange={onViewsChange} />
+              <Button
+                type="button"
+                className="h-8 py-0"
+                onClick={onGenerate}
+                disabled={plannedImages === 0}
+              >
+                {plannedImages > 0 ? `Generate ${plannedImages}` : "Generate"}
+              </Button>
+            </>
           )}
+          <RunActions
+            progress={progress}
+            onCancel={onCancel}
+            onRetry={onRetry}
+            onDismiss={onDismiss}
+          />
         </div>
       </div>
       {visible.length > 0 && (
         <div className="mx-auto max-w-7xl px-4 pb-3">
           <div className="max-h-32 space-y-1 overflow-auto rounded-lg border border-zinc-100 bg-zinc-50 p-2 text-xs text-zinc-600">
-            {visible.map((item) => (
-              <div key={item.key} className="flex justify-between gap-2">
+            {visible.map((job) => (
+              <div key={job.id} className="flex justify-between gap-2">
                 <span className="truncate">
-                  {item.name}
-                  <span className="text-zinc-400"> · {VIEW_LABEL[item.view]}</span>
+                  {nameOf(job)}
+                  {job.view && <span className="text-zinc-400"> · {VIEW_LABEL[job.view]}</span>}
                 </span>
                 <span
-                  title={item.error}
+                  title={job.error ?? undefined}
                   className={cn(
                     "truncate",
-                    item.status === "error" ? "text-red-600" : "font-medium text-zinc-900",
+                    job.status === "error" ? "text-red-600" : "font-medium text-zinc-900",
                   )}
                 >
-                  {item.status === "error" ? item.error : "⟳"}
+                  {job.status === "error" ? job.error : "⟳"}
                 </span>
               </div>
             ))}

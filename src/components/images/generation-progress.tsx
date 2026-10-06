@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { QueueStep } from "@/hooks/use-generation-queue";
+import type { QueueStep } from "@/hooks/use-generation-jobs";
 import { framePositionLabel } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 

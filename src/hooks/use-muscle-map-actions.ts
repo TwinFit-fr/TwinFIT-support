@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { mutate } from "swr";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
+import { useGenerationJobs } from "@/hooks/use-generation-jobs";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import type {
   MuscleMapBoardTarget,
@@ -12,10 +13,11 @@ import type {
   MuscleMapTargetRef,
   MuscleMapView,
 } from "@/lib/images/types";
-import { muscleMapTargetKey } from "@/lib/images/types";
+import type { GenerationJob, JobSpec, MuscleMapJobOptions } from "@/lib/images/job-types";
+import { isActiveJob, jobTarget } from "@/lib/images/job-types";
 
 /** One-off edits for a single generation: a prompt text and/or library references. */
-export type MuscleMapRun = { promptOverride?: string; referenceIds?: string[] };
+export type MuscleMapRun = MuscleMapJobOptions;
 
 const VIEW_LABEL: Record<MuscleMapView, string> = { front: "Front", back: "Back" };
 
@@ -25,56 +27,55 @@ export function muscleMapBoardKey(styleId: string | null): string | null {
 
 /**
  * What can be done to muscle maps of a style, shared by the board (batch runs) and a target's
- * page: generate (raw for queues, or one map with feedback), and activate / deactivate / delete
- * with confirmation, toasts and Undo. Every change refetches the board, the one source of maps.
+ * page: queue maps on the server (one with the cost rule, or a batch), and activate /
+ * deactivate / delete with confirmation, toasts and Undo. Finished maps and every change
+ * refetch the board, the one source of maps.
  */
 export function useMuscleMapActions(styleId: string | null) {
   const staffFetch = useStaffFetch();
   const { success, error: toastError } = useToast();
   const confirm = useConfirm();
   const confirmGeneration = useGenerationConfirm();
-  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
   const boardKey = muscleMapBoardKey(styleId);
 
   const refresh = useCallback(async () => {
     if (boardKey) await mutate(boardKey);
   }, [boardKey]);
 
-  /** Generates one map and refetches; throws on failure (queues report it per item). */
-  const generate = useCallback(
-    async (target: MuscleMapTargetRef, view: MuscleMapView, run: MuscleMapRun = {}) => {
-      if (!styleId) throw new Error("Select a style first");
-      await staffFetch("/api/images/muscle-maps/generate", {
-        method: "POST",
-        body: JSON.stringify({
-          styleId,
-          target: { kind: target.kind, id: target.id },
-          view,
-          ...run,
-        }),
-      });
-      await refresh();
-    },
-    [staffFetch, styleId, refresh],
-  );
+  const jobs = useGenerationJobs(styleId, { kind: "muscle_map" }, () => void refresh());
 
-  async function generateOne(target: MuscleMapBoardTarget, view: MuscleMapView, run: MuscleMapRun) {
+  /** Queues targets × views; returns how many maps were queued. */
+  async function enqueue(
+    targets: MuscleMapTargetRef[],
+    views: MuscleMapView[],
+    run?: MuscleMapRun,
+  ): Promise<number> {
+    const specs: JobSpec[] = targets.flatMap((target) =>
+      views.map((view) => ({
+        kind: "muscle_map" as const,
+        target: { kind: target.kind, id: target.id },
+        view,
+        options: run,
+      })),
+    );
+    await jobs.enqueue(specs);
+    return specs.length;
+  }
+
+  /** One map of one view, with this page's prompt edit and references. */
+  async function generateOne(target: MuscleMapTargetRef, view: MuscleMapView, run: MuscleMapRun) {
     if (!(await confirmGeneration.run(1))) return;
-    const key = `${muscleMapTargetKey(target)}:${view}`;
-    setBusy((prev) => new Set(prev).add(key));
     try {
-      await generate(target, view, run);
-      success(`${target.name} · ${VIEW_LABEL[view]} generated`);
+      await enqueue([target], [view], run);
     } catch (err) {
-      toastError(err instanceof Error ? err.message : "Generation failed");
-    } finally {
-      setBusy((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
+      toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
     }
   }
+
+  const matches = (job: GenerationJob, target: MuscleMapTargetRef, view?: MuscleMapView) => {
+    const ref = jobTarget(job);
+    return ref?.kind === target.kind && ref.id === target.id && (!view || job.view === view);
+  };
 
   /** Activating a map deactivates the one active for its target and view (server side). */
   async function setMapActive(id: string, active: boolean) {
@@ -135,10 +136,15 @@ export function useMuscleMapActions(styleId: string | null) {
   }
 
   return {
-    generate,
+    jobs,
+    enqueue,
     generateOne,
     update,
+    /** A map of this target and view is queued or being made. */
     isBusy: (target: MuscleMapTargetRef, view: MuscleMapView) =>
-      busy.has(`${muscleMapTargetKey(target)}:${view}`),
+      jobs.jobs.some((job) => isActiveJob(job) && matches(job, target, view)),
+    /** This target's maps that failed, newest runs last. */
+    failedFor: (target: MuscleMapTargetRef) =>
+      jobs.jobs.filter((job) => job.status === "error" && matches(job, target)),
   };
 }

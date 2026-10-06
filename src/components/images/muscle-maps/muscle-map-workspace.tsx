@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { BOARD_REFRESH_MS, EmptyState, NeighbourLink } from "@/components/images/board-ui";
 import { CHECKER_STYLE } from "@/components/images/checker";
+import { JobFailures } from "@/components/images/run-status";
 import { StyleSelector } from "@/components/images/generation-controls";
 import { MuscleMapMetadataPanel } from "@/components/images/image-metadata";
 import {
@@ -14,7 +15,7 @@ import {
   type RunReferences,
 } from "@/components/images/run-inputs-panel";
 import { Button, Skeleton } from "@/components/ui/primitives";
-import { useStyleChoice } from "@/hooks/use-generation-queue";
+import { useStyleChoice } from "@/hooks/use-image-preferences";
 import {
   muscleMapBoardKey,
   useMuscleMapActions,
@@ -391,6 +392,16 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
           </Link>
           .
         </div>
+      )}
+
+      {target && (
+        <JobFailures
+          jobs={actions.failedFor(target)}
+          labelOf={(job) => (job.view ? `${VIEW_LABEL[job.view]} map` : "Map")}
+          canAct={!MUSCLE_MAP_VIEWS.some((view) => actions.isBusy(target, view))}
+          onRetry={() => void actions.jobs.retryFailed()}
+          onDismiss={() => void actions.jobs.dismissFinished()}
+        />
       )}
 
       {error ? (

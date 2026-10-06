@@ -18,25 +18,24 @@ import { ExerciseImageCard } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
 import { StyleSelector, runPositionsFor } from "@/components/images/generation-controls";
 import { useBoardSelection } from "@/hooks/use-board-selection";
+import { frameQueueItems, useGenerationJobs } from "@/hooks/use-generation-jobs";
 import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   useFrameCountChoice,
-  useGenerationQueue,
   usePositionSelection,
   useStyleChoice,
   useSubjectSelection,
-} from "@/hooks/use-generation-queue";
+} from "@/hooks/use-image-preferences";
 import {
   type BoardFilters,
   boardFiltersQuery,
   matchesBoardFilters,
   readBoardFilters,
 } from "@/lib/images/board-filters";
-import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
+import { frameJobSpecs } from "@/lib/images/job-types";
 import { MID_POSITION, framePositionsFor } from "@/lib/images/types";
 import type {
-  ExerciseImage,
   ExerciseImageBoardItem,
   ImageStyle,
   Subject,
@@ -103,7 +102,10 @@ export function ImageBoard() {
   // Replaced in place: typing a search adds no history entries.
   const setFilters = (patch: Partial<BoardFilters>) =>
     window.history.replaceState(null, "", `/images${boardFiltersQuery({ ...filters, ...patch })}`);
-  const queue = useGenerationQueue();
+  // Runs are processed on the server; finished frames refresh the board.
+  const jobs = useGenerationJobs(styleId, { kind: "exercise_frame" }, () => {
+    if (listKey) void mutate(listKey);
+  });
 
   const exercises = useMemo(() => data?.exercises ?? [], [data]);
 
@@ -151,27 +153,6 @@ export function ImageBoard() {
     0,
   );
 
-  async function generateStep(
-    exoId: number,
-    position: number,
-    stepSubject: Subject,
-    guideImageId?: string,
-  ): Promise<string> {
-    if (!styleId) throw new Error("Select a style first");
-    const { image } = (await staffFetch("/api/images/generate", {
-      method: "POST",
-      body: JSON.stringify({
-        exoId,
-        styleId,
-        position,
-        subject: stepSubject,
-        guideImageId,
-      }),
-    })) as { image: ExerciseImage };
-    if (listKey) await mutate(listKey);
-    return image.id;
-  }
-
   /** Saves the batch frame count on the exercises that differ; false if the user backs out. */
   async function applyFrameCount(exercises: ExerciseImageBoardItem[]): Promise<boolean> {
     if (frameCount === "exercise" || !styleId) return true;
@@ -215,21 +196,20 @@ export function ImageBoard() {
     if (!(await confirmGeneration.run(plannedImages))) return;
     try {
       if (!(await applyFrameCount(runnableExercises))) return;
-      await queue.start({
-        exercises: runnableExercises.map((ex) => ({
-          exoId: ex.exo_id,
-          name: ex.display_name,
-          framePositions: framePositionsOf(ex),
-        })),
-        positions: runPositions,
-        subjects,
-        maxConcurrency: DEFAULT_MAX_CONCURRENCY,
-        generateStep,
-      });
-      success(`${runnableExercises.length} exercise(s) processed`, "Queue finished");
-      if (listKey) await mutate(listKey);
+      await jobs.enqueue(
+        frameJobSpecs({
+          exercises: runnableExercises.map((ex) => ({
+            exoId: ex.exo_id,
+            framePositions: framePositionsOf(ex),
+          })),
+          positions: runPositions,
+          subjects,
+        }),
+      );
+      success(`${plannedImages} image(s) queued`, "Generating on the server");
+      selection.clear();
     } catch (err) {
-      toastError(err instanceof Error ? err.message : "Failed", "Queue error");
+      toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
     }
   }
 
@@ -241,7 +221,7 @@ export function ImageBoard() {
           styles={styles}
           value={styleId}
           onChange={setStyleId}
-          disabled={queue.running || preparing}
+          disabled={preparing}
         />
       </div>
 
@@ -338,15 +318,14 @@ export function ImageBoard() {
         onPositionsChange={setPositions}
         subjects={subjects}
         onSubjectsChange={setSubjects}
-        running={queue.running}
         preparing={preparing}
-        items={queue.items}
-        exercisesDone={queue.exercisesDone}
-        imagesDone={queue.imagesDone}
-        imagesTotal={queue.imagesTotal}
-        errors={queue.errors}
+        items={frameQueueItems(jobs.jobs)}
+        progress={jobs.progress}
+        nameOf={(exoId) => exercises.find((ex) => ex.exo_id === exoId)?.display_name ?? ""}
         onGenerate={() => void startQueue()}
-        onCancel={queue.cancel}
+        onCancel={() => void jobs.cancelActive()}
+        onRetry={() => void jobs.retryFailed()}
+        onDismiss={() => void jobs.dismissFinished()}
       />
     </div>
   );

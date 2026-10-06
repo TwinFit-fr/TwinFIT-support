@@ -14,10 +14,9 @@ import {
 import { StyleSelector } from "@/components/images/generation-controls";
 import { Input, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
-import { useStyleChoice, useViewSelection } from "@/hooks/use-generation-queue";
+import { useStyleChoice, useViewSelection } from "@/hooks/use-image-preferences";
 import { useBoardSelection } from "@/hooks/use-board-selection";
 import { muscleMapBoardKey, useMuscleMapActions } from "@/hooks/use-muscle-map-actions";
-import { useMuscleMapQueue } from "@/hooks/use-muscle-map-queue";
 import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
@@ -26,7 +25,7 @@ import {
   matchesMapBoardFilters,
   readMapBoardFilters,
 } from "@/lib/images/board-filters";
-import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
+import { jobTarget } from "@/lib/images/job-types";
 import type { ImageStyle, MuscleMapBoardRow } from "@/lib/images/types";
 import { MUSCLE_MAP_VIEWS, muscleMapTargetKey } from "@/lib/images/types";
 import { muscleMapPath } from "@/lib/images/urls";
@@ -36,7 +35,7 @@ import { MuscleMapQueueBar } from "./muscle-map-queue-bar";
 type BoardResponse = { rows: MuscleMapBoardRow[] };
 
 export function MuscleMapBoard() {
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
   const confirmGeneration = useGenerationConfirm();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
@@ -56,7 +55,6 @@ export function MuscleMapBoard() {
       "",
       `/images/muscle-maps${mapBoardFiltersQuery({ ...filters, ...patch })}`,
     );
-  const queue = useMuscleMapQueue();
   const actions = useMuscleMapActions(styleId);
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
@@ -100,13 +98,13 @@ export function MuscleMapBoard() {
   async function startQueue() {
     if (!selectedTargets.length || !runViews.length) return;
     if (!(await confirmGeneration.run(selectedTargets.length * runViews.length))) return;
-    await queue.start({
-      targets: selectedTargets.map((t) => ({ target: t, name: t.name })),
-      views: runViews,
-      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
-      generate: (target, view) => actions.generate(target, view),
-    });
-    success(`${selectedTargets.length} target(s) processed`, "Queue finished");
+    try {
+      const queued = await actions.enqueue(selectedTargets, runViews);
+      success(`${queued} map(s) queued`, "Generating on the server");
+      selection.clear();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
+    }
   }
 
   return (
@@ -122,7 +120,6 @@ export function MuscleMapBoard() {
           styles={styles}
           value={styleId}
           onChange={setStyleId}
-          disabled={queue.running}
         />
       </div>
 
@@ -223,13 +220,16 @@ export function MuscleMapBoard() {
         missingBases={missingBases}
         views={views}
         onViewsChange={setViews}
-        running={queue.running}
-        items={queue.items}
-        done={queue.done}
-        total={queue.total}
-        errors={queue.errors}
+        jobs={actions.jobs.jobs}
+        progress={actions.jobs.progress}
+        nameOf={(job) => {
+          const ref = jobTarget(job);
+          return targets.find((t) => t.kind === ref?.kind && t.id === ref?.id)?.name ?? "";
+        }}
         onGenerate={() => void startQueue()}
-        onCancel={queue.cancel}
+        onCancel={() => void actions.jobs.cancelActive()}
+        onRetry={() => void actions.jobs.retryFailed()}
+        onDismiss={() => void actions.jobs.dismissFinished()}
       />
     </div>
   );

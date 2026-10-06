@@ -19,15 +19,16 @@ import {
 import { Button, Skeleton } from "@/components/ui/primitives";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
+import { jobStep, useGenerationJobs } from "@/hooks/use-generation-jobs";
 import { useShortcuts } from "@/hooks/use-shortcuts";
+import { JobFailures } from "@/components/images/run-status";
 import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
-  useGenerationQueue,
   usePositionSelection,
   useStyleChoice,
   useSubjectSelection,
-} from "@/hooks/use-generation-queue";
+} from "@/hooks/use-image-preferences";
 import { ExerciseComposeDialog } from "@/components/catalog/exercise-compose-dialog";
 import { useElapsedSeconds } from "@/components/images/generation-progress";
 import { FramePlayer } from "@/components/images/frame-player";
@@ -48,7 +49,7 @@ import {
   type RunReferences,
 } from "@/components/images/run-inputs-panel";
 import { selectedPrompts } from "@/lib/images/prompt";
-import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
+import { frameJobSpecs, isActiveJob } from "@/lib/images/job-types";
 import {
   PositionToggles,
   SegmentedControl,
@@ -558,23 +559,6 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(
     styleId ? `/api/images/prompts?styleId=${styleId}` : null,
   );
-  const queue = useGenerationQueue();
-  const generating = useMemo(() => {
-    const map = new Map<string, { startedAt?: number }>();
-    for (const item of queue.items) {
-      for (const step of item.steps) {
-        if (step.status === "processing" || (queue.running && step.status === "waiting")) {
-          map.set(`${item.subject}-${step.position}`, { startedAt: step.startedAt });
-        }
-      }
-    }
-    return map;
-  }, [queue.items, queue.running]);
-  const failedSteps = queue.items.flatMap((item) =>
-    item.steps
-      .filter((s) => s.status === "error")
-      .map((s) => ({ subject: item.subject, position: s.position, error: s.error })),
-  );
   const { data, isLoading, error } = useStaffSWR<{
     exercise: ExerciseImageDetail;
   }>(detailKey, { refreshInterval: 5000 });
@@ -655,44 +639,43 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     if (listKey) await mutate(listKey);
   }, [detailKey, listKey]);
 
+  // Runs are processed on the server; each finished frame refreshes this exercise.
+  const jobs = useGenerationJobs(styleId, { kind: "exercise_frame", exoId }, () => void refresh());
+  const running = jobs.progress.active;
+  const generating = useMemo(() => {
+    const map = new Map<string, { startedAt?: number }>();
+    for (const job of jobs.jobs) {
+      if (isActiveJob(job)) map.set(`${job.subject}-${job.position}`, jobStep(job));
+    }
+    return map;
+  }, [jobs.jobs]);
+  const failedJobs = jobs.jobs.filter((job) => job.status === "error");
+
   /** Generates the toolbar's subjects and positions, or one empty slot of the matrix. */
   async function runGenerate(slot?: { subject: Subject; position: number }) {
-    if (!exercise || !styleId || queue.running) return;
+    if (!exercise || !styleId || running) return;
     if (!slot && missingStart) return;
     const runSubjects = slot ? [slot.subject] : subjects;
     const positionsToRun = slot ? [slot.position] : runPositions;
     if (!(await confirmGeneration.run(runSubjects.length * positionsToRun.length))) return;
     const run = overrides;
     const referenceIds = runReferences;
-    await queue.start({
-      exercises: [
-        {
-          exoId: exercise.exo_id,
-          name: exercise.display_name,
-          framePositions: exercise.frame_positions,
-        },
-      ],
-      positions: positionsToRun,
-      subjects: runSubjects,
-      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
-      generateStep: async (stepExoId, position, stepSubject, guideImageId) => {
-        const { image } = (await staffFetch("/api/images/generate", {
-          method: "POST",
-          body: JSON.stringify({
-            exoId: stepExoId,
-            styleId,
-            position,
-            subject: stepSubject,
+    try {
+      await jobs.enqueue(
+        frameJobSpecs({
+          exercises: [{ exoId: exercise.exo_id, framePositions: exercise.frame_positions }],
+          positions: positionsToRun,
+          subjects: runSubjects,
+          options: (position) => ({
             systemOverride: run.system,
             positionOverride: run.positions[position],
-            guideImageId,
             referenceIds,
           }),
-        })) as { image: ExerciseImage };
-        await refresh();
-        return image.id;
-      },
-    });
+        }),
+      );
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
+    }
   }
 
   async function toggleTwoFrames(next: boolean) {
@@ -900,7 +883,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           styles={styles}
           value={styleId}
           onChange={setStyleId}
-          disabled={queue.running}
+          disabled={running}
         />
         <div className="flex">
           <NeighbourLink direction="previous" href={previousHref} noun="exercise" />
@@ -986,19 +969,19 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
         <SequenceLengthControl
           value={exercise.two_frames ? 2 : 3}
-          disabled={busy || queue.running}
+          disabled={busy || running}
           onChange={(next) => void toggleTwoFrames(next === 2)}
         />
         <span className="hidden h-5 w-px bg-zinc-200 sm:block" />
-        <SubjectToggles value={subjects} onChange={setSubjects} disabled={queue.running} />
+        <SubjectToggles value={subjects} onChange={setSubjects} disabled={running} />
         <PositionToggles
           value={positions}
           onChange={setPositions}
           available={framePositions}
-          disabled={queue.running}
+          disabled={running}
         />
         <div className="ml-auto flex items-center gap-2">
-          {missingStart && !queue.running && (
+          {missingStart && !running && (
             <span
               className="text-xs text-amber-700"
               title="Mid/End are edits of the Start: generate Start first"
@@ -1006,10 +989,10 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
               No active Start · {missingStartSubjects.map((s) => SUBJECT_LABEL[s]).join(", ")}
             </span>
           )}
-          {queue.running && (
+          {running && (
             <span className="flex items-center gap-1.5 text-xs tabular-nums text-zinc-500">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {queue.imagesDone}/{queue.imagesTotal}
+              {jobs.progress.done}/{jobs.progress.total}
             </span>
           )}
           <Button
@@ -1050,8 +1033,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
               </span>
             )}
           </Button>
-          {queue.running ? (
-            <Button type="button" variant="secondary" className="h-8 py-0" onClick={queue.cancel}>
+          {running ? (
+            <Button type="button" variant="secondary" className="h-8 py-0" onClick={() => void jobs.cancelActive()}>
               Cancel
             </Button>
           ) : (
@@ -1068,18 +1051,15 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         </div>
       </div>
 
-      {failedSteps.length > 0 && (
-        <div className="space-y-0.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {failedSteps.map((step) => (
-            <p key={`${step.subject}-${step.position}`}>
-              <span className="font-medium">
-                {SUBJECT_LABEL[step.subject]} · {framePositionLabel(step.position)}:
-              </span>{" "}
-              {step.error}
-            </p>
-          ))}
-        </div>
-      )}
+      <JobFailures
+        jobs={failedJobs}
+        labelOf={(job) =>
+          `${job.subject ? SUBJECT_LABEL[job.subject] : ""} · ${framePositionLabel(job.position)}`
+        }
+        canAct={!running}
+        onRetry={() => void jobs.retryFailed()}
+        onDismiss={() => void jobs.dismissFinished()}
+      />
 
       {showOverrides && (
         <PromptOverridesPanel
@@ -1089,7 +1069,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           positionTemplates={templates.positions}
           value={overrides}
           onChange={setOverrides}
-          disabled={queue.running}
+          disabled={running}
         />
       )}
 
@@ -1106,7 +1086,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
               ? "Sent with Start. Mid and End edit that Start, so they only add the logo."
               : "This run has no Start: Mid and End edit the active Start, so library references are not sent."
           }
-          disabled={queue.running || !startInRun}
+          disabled={running || !startInRun}
         />
       )}
 
@@ -1118,7 +1098,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             selectedId={selectedId}
             generating={generating}
             busy={busy}
-            canGenerate={!busy && !queue.running}
+            canGenerate={!busy && !running}
             onSelect={setSelectedId}
             onAlign={setAlignSubject}
             onGenerate={(subject, position) => void runGenerate({ subject, position })}

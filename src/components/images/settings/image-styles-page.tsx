@@ -7,7 +7,7 @@ import { Button, Skeleton } from "@/components/ui/primitives";
 import { useConfirm } from "@/components/ui/confirm";
 import { TabList, TabPanel, type TabItem } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
-import { useStyleChoice } from "@/hooks/use-generation-queue";
+import { useStyleChoice } from "@/hooks/use-image-preferences";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { validateGenerationParams } from "@/lib/images/capabilities";
 import type { GenerationParams, ImageStyle, MuscleMapView, Subject } from "@/lib/images/types";
