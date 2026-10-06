@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { STATUS_DOT } from "@/components/images/exercise-image-card";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +39,47 @@ export function statusCounts(statuses: BoardStatus[]): Record<StatusFilter, numb
   };
   for (const status of statuses) counts[status] += 1;
   return counts;
+}
+
+/** Previous / next item of a board's filtered list ([ and ] in a workspace); inert at the ends. */
+export function NeighbourLink({
+  direction,
+  href,
+  noun,
+}: {
+  direction: "previous" | "next";
+  href: string | null;
+  /** What the board lists: "exercise", "target". */
+  noun: string;
+}) {
+  const Icon = direction === "previous" ? ChevronLeft : ChevronRight;
+  const label = direction === "previous" ? `Previous ${noun} ([)` : `Next ${noun} (])`;
+  const className = cn(
+    "border border-zinc-300 bg-white p-1.5",
+    direction === "previous" ? "rounded-l-md" : "-ml-px rounded-r-md",
+  );
+  if (!href) {
+    return (
+      <span
+        role="link"
+        aria-disabled="true"
+        aria-label={label}
+        className={cn(className, "text-zinc-300")}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      title={label}
+      className={cn(className, "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900")}
+    >
+      <Icon className="h-4 w-4" />
+    </Link>
+  );
 }
 
 /** All / Empty / Partial / Complete / Inactive tabs with counts. */

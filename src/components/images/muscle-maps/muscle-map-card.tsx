@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Check } from "lucide-react";
 import { CHECKER_STYLE } from "@/components/images/checker";
 import { STATUS_DOT } from "@/components/images/exercise-image-card";
@@ -15,7 +16,7 @@ export function MuscleMapCard({
   selected,
   selecting,
   onToggle,
-  onOpen,
+  href,
 }: {
   target: MuscleMapBoardTarget;
   selected: boolean;
@@ -23,7 +24,8 @@ export function MuscleMapCard({
   selecting: boolean;
   /** `range`: Shift was held, extend from the last toggled card. */
   onToggle: (range: boolean) => void;
-  onOpen: () => void;
+  /** The target's page, carrying the board filters. */
+  href: string;
 }) {
   return (
     <div
@@ -51,7 +53,7 @@ export function MuscleMapCard({
       >
         <Check className="h-3.5 w-3.5" strokeWidth={3} />
       </button>
-      <button type="button" onClick={onOpen} className="block w-full text-left">
+      <Link href={href} className="block w-full text-left focus-visible:outline-none">
         <div className="grid grid-cols-2 gap-px bg-zinc-200">
           {MUSCLE_MAP_VIEWS.map((view) => {
             const url = imageThumbUrl(target.active[view]?.image_url, 320);
@@ -87,7 +89,7 @@ export function MuscleMapCard({
             <span className="truncate text-zinc-400">{target.code}</span>
           </div>
         </div>
-      </button>
+      </Link>
     </div>
   );
 }

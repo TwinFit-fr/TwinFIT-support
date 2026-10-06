@@ -1,3 +1,21 @@
+import type { MuscleMapTargetKind, MuscleMapTargetRef } from "./types";
+
+const MAP_KIND_SEGMENT: Record<MuscleMapTargetKind, string> = {
+  muscle_group: "group",
+  muscle: "muscle",
+};
+
+/** The page of one muscle or group's maps: /images/muscle-maps/group/<id> or …/muscle/<id>. */
+export function muscleMapPath(ref: MuscleMapTargetRef): string {
+  return `/images/muscle-maps/${MAP_KIND_SEGMENT[ref.kind]}/${ref.id}`;
+}
+
+/** The target kind of a muscle map page segment, or null when it is not one. */
+export function muscleMapKindOf(segment: string): MuscleMapTargetKind | null {
+  const entry = Object.entries(MAP_KIND_SEGMENT).find(([, value]) => value === segment);
+  return entry ? (entry[0] as MuscleMapTargetKind) : null;
+}
+
 export function imageDisplayUrl(imageUrl: string | null | undefined): string | null {
   return imageUrl || null;
 }

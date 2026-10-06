@@ -1,12 +1,14 @@
-import type { ExerciseImageBoardItem } from "./types";
+import type { ExerciseImageBoardItem, MuscleMapBoardTarget, MuscleMapTargetRef } from "./types";
 
 type BoardStatus = ExerciseImageBoardItem["status"];
+type SearchParamsLike = { get(name: string): string | null };
 
 const BOARD_STATUSES: readonly BoardStatus[] = ["empty", "partial", "complete", "inactive_only"];
 
 /**
- * The Exercises board filters. They live in the URL, so the exercise workspace browses the same
- * filtered list and going back restores the board as it was.
+ * Board filters live in the URL, so a workspace browses the same filtered list as its board and
+ * going back restores the board as it was. Exercises filter by text, status, muscle group and
+ * equipment; Muscle maps by text and status.
  */
 export type BoardFilters = {
   q: string;
@@ -17,51 +19,100 @@ export type BoardFilters = {
   equipment: string;
 };
 
-export function readBoardFilters(params: { get(name: string): string | null }): BoardFilters {
+export type MapBoardFilters = Pick<BoardFilters, "q" | "status">;
+
+function readStatus(params: SearchParamsLike): BoardFilters["status"] {
   const status = params.get("status");
+  return BOARD_STATUSES.find((s) => s === status) ?? "all";
+}
+
+/** "?q=…&status=…" with only the set values ("" and "all" are unset), or "" when none is. */
+function toQuery(values: Record<string, string>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value && value !== "all") params.set(key, value);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function matchesText(q: string, ...fields: string[]): boolean {
+  const query = q.trim().toLowerCase();
+  return !query || fields.some((field) => field.toLowerCase().includes(query));
+}
+
+/**
+ * The matching items before and after `index`. Neighbours are looked up from the item's place in
+ * the whole list, so they stay right after it stops matching (a generation moves it out of
+ * "Empty").
+ */
+function neighboursAt<T>(items: T[], index: number, matches: (item: T) => boolean) {
+  if (index < 0) return { previous: null, next: null };
+  return {
+    previous: items.slice(0, index).findLast(matches) ?? null,
+    next: items.slice(index + 1).find(matches) ?? null,
+  };
+}
+
+export function readBoardFilters(params: SearchParamsLike): BoardFilters {
   return {
     q: params.get("q") ?? "",
-    status: BOARD_STATUSES.find((s) => s === status) ?? "all",
+    status: readStatus(params),
     muscle: params.get("muscle") || "all",
     equipment: params.get("equipment") || "all",
   };
 }
 
-/** "?q=…&status=…" with only the active filters, or "" when none is set. */
 export function boardFiltersQuery(filters: BoardFilters): string {
-  const params = new URLSearchParams();
-  if (filters.q) params.set("q", filters.q);
-  if (filters.status !== "all") params.set("status", filters.status);
-  if (filters.muscle !== "all") params.set("muscle", filters.muscle);
-  if (filters.equipment !== "all") params.set("equipment", filters.equipment);
-  const query = params.toString();
-  return query ? `?${query}` : "";
+  return toQuery(filters);
 }
 
 export function matchesBoardFilters(ex: ExerciseImageBoardItem, filters: BoardFilters): boolean {
   if (filters.status !== "all" && ex.status !== filters.status) return false;
   if (filters.muscle !== "all" && ex.primary_muscle_group?.id !== filters.muscle) return false;
   if (filters.equipment !== "all" && ex.equipment?.id !== filters.equipment) return false;
-  const q = filters.q.trim().toLowerCase();
-  if (!q) return true;
-  return ex.display_name.toLowerCase().includes(q) || String(ex.exo_id).includes(q);
+  return matchesText(filters.q, ex.display_name, String(ex.exo_id));
 }
 
-/**
- * The filtered exercises before and after `exoId` in board order. Neighbours are looked up from
- * the exercise's place in the whole board, so they stay right after it stops matching (a
- * generation moves it out of "Empty").
- */
+/** The filtered exercises before and after `exoId` in board order. */
 export function boardNeighbours(
   exercises: ExerciseImageBoardItem[],
   filters: BoardFilters,
   exoId: number,
 ): { previous: number | null; next: number | null } {
-  const index = exercises.findIndex((ex) => ex.exo_id === exoId);
-  if (index < 0) return { previous: null, next: null };
-  const matching = (ex: ExerciseImageBoardItem) => matchesBoardFilters(ex, filters);
-  return {
-    previous: exercises.slice(0, index).findLast(matching)?.exo_id ?? null,
-    next: exercises.slice(index + 1).find(matching)?.exo_id ?? null,
-  };
+  const { previous, next } = neighboursAt(
+    exercises,
+    exercises.findIndex((ex) => ex.exo_id === exoId),
+    (ex) => matchesBoardFilters(ex, filters),
+  );
+  return { previous: previous?.exo_id ?? null, next: next?.exo_id ?? null };
+}
+
+export function readMapBoardFilters(params: SearchParamsLike): MapBoardFilters {
+  return { q: params.get("q") ?? "", status: readStatus(params) };
+}
+
+export function mapBoardFiltersQuery(filters: MapBoardFilters): string {
+  return toQuery(filters);
+}
+
+export function matchesMapBoardFilters(
+  target: MuscleMapBoardTarget,
+  filters: MapBoardFilters,
+): boolean {
+  if (filters.status !== "all" && target.status !== filters.status) return false;
+  return matchesText(filters.q, target.name, target.code);
+}
+
+/** The filtered targets before and after `ref` in board order (each group, then its muscles). */
+export function mapBoardNeighbours(
+  targets: MuscleMapBoardTarget[],
+  filters: MapBoardFilters,
+  ref: MuscleMapTargetRef,
+): { previous: MuscleMapBoardTarget | null; next: MuscleMapBoardTarget | null } {
+  return neighboursAt(
+    targets,
+    targets.findIndex((t) => t.kind === ref.kind && t.id === ref.id),
+    (t) => matchesMapBoardFilters(t, filters),
+  );
 }

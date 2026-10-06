@@ -1,5 +1,10 @@
+import { Suspense } from "react";
 import { MuscleMapBoard } from "@/components/images/muscle-maps/muscle-map-board";
 
 export default function MuscleMapsPage() {
-  return <MuscleMapBoard />;
+  return (
+    <Suspense>
+      <MuscleMapBoard />
+    </Suspense>
+  );
 }

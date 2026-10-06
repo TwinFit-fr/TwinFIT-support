@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { mutate } from "swr";
 import {
-  ChevronLeft,
   ChevronRight,
   ExternalLink,
   ImageOff,
@@ -32,6 +31,7 @@ import {
 import { ExerciseComposeDialog } from "@/components/catalog/exercise-compose-dialog";
 import { useElapsedSeconds } from "@/components/images/generation-progress";
 import { FramePlayer } from "@/components/images/frame-player";
+import { NeighbourLink } from "@/components/images/board-ui";
 import { CHECKER_STYLE } from "@/components/images/checker";
 import { ImageMetadataPanel } from "@/components/images/image-metadata";
 import { FrameAlignEditor } from "@/components/images/frame-align-editor";
@@ -104,44 +104,6 @@ function imageLabel(img: ExerciseImage): string {
   if (img.active) return framePositionLabel(img.position);
   const target = targetPosition(img);
   return target != null ? `${framePositionLabel(target)} · inactive` : "Inactive";
-}
-
-/** Previous / next exercise of the board list; inert at either end. */
-function NeighbourLink({
-  direction,
-  href,
-}: {
-  direction: "previous" | "next";
-  href: string | null;
-}) {
-  const Icon = direction === "previous" ? ChevronLeft : ChevronRight;
-  const label = direction === "previous" ? "Previous exercise ([)" : "Next exercise (])";
-  const className = cn(
-    "border border-zinc-300 bg-white p-1.5",
-    direction === "previous" ? "rounded-l-md" : "-ml-px rounded-r-md",
-  );
-  if (!href) {
-    return (
-      <span
-        role="link"
-        aria-disabled="true"
-        aria-label={label}
-        className={cn(className, "text-zinc-300")}
-      >
-        <Icon className="h-4 w-4" />
-      </span>
-    );
-  }
-  return (
-    <Link
-      href={href}
-      aria-label={label}
-      title={label}
-      className={cn(className, "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900")}
-    >
-      <Icon className="h-4 w-4" />
-    </Link>
-  );
 }
 
 function GeneratingOverlay({ startedAt }: { startedAt?: number }) {
@@ -941,8 +903,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           disabled={queue.running}
         />
         <div className="flex">
-          <NeighbourLink direction="previous" href={previousHref} />
-          <NeighbourLink direction="next" href={nextHref} />
+          <NeighbourLink direction="previous" href={previousHref} noun="exercise" />
+          <NeighbourLink direction="next" href={nextHref} noun="exercise" />
         </div>
       </div>
     </div>
