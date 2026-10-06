@@ -24,6 +24,7 @@ import type {
   Subject,
 } from "@/lib/images/types";
 import { FRAME_POSITIONS, MUSCLE_MAP_VIEWS, SUBJECTS } from "@/lib/images/types";
+import { styleLabel } from "@/components/images/generation-controls";
 import { cn } from "@/lib/utils";
 
 type StylePromptsResponse = StylePrompts & {
@@ -214,8 +215,7 @@ export function ImagePromptsPage() {
           >
             {styles.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.code} — {s.name}
-                {s.is_default ? " (default)" : ""}
+                {styleLabel(s)}
               </option>
             ))}
           </select>

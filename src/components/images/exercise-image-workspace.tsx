@@ -49,11 +49,13 @@ import {
 import { selectedPrompts } from "@/lib/images/prompt";
 import { DEFAULT_MAX_CONCURRENCY } from "@/lib/images/capabilities";
 import {
-  PositionSelector,
+  PositionToggles,
+  SegmentedControl,
+  SequenceLengthControl,
   StyleSelector,
-  SubjectSelector,
+  SubjectToggles,
   runPositionsFor,
-} from "@/components/images/position-selector";
+} from "@/components/images/generation-controls";
 import type {
   ExerciseImage,
   ExerciseImageBoardItem,
@@ -131,41 +133,6 @@ function NeighbourLink({
     >
       <Icon className="h-4 w-4" />
     </Link>
-  );
-}
-
-function Segmented<T extends string | number>({
-  value,
-  options,
-  onChange,
-  disabled,
-  size = "sm",
-}: {
-  value: T;
-  options: [T, string][];
-  onChange: (next: T) => void;
-  disabled?: boolean;
-  size?: "xs" | "sm";
-}) {
-  return (
-    <div className="inline-flex rounded-lg bg-zinc-100 p-0.5">
-      {options.map(([id, label]) => (
-        <button
-          key={id}
-          type="button"
-          disabled={disabled}
-          aria-pressed={value === id}
-          onClick={() => value !== id && onChange(id)}
-          className={cn(
-            "rounded-md font-medium transition disabled:opacity-50",
-            size === "xs" ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs",
-            value === id ? "bg-white text-zinc-900 shadow-xs" : "text-zinc-600 hover:text-zinc-900",
-          )}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
   );
 }
 
@@ -351,14 +318,15 @@ function HistoryStrip({
           <span className="text-sm font-medium text-zinc-900">History</span>
           <span className="text-xs tabular-nums text-zinc-400">{images.length}</span>
         </div>
-        <Segmented
+        <SegmentedControl
+          label="History subject"
           size="xs"
           value={subject}
           onChange={onSubjectChange}
           options={[
-            ["all", "All"],
-            ["man", "Man"],
-            ["woman", "Woman"],
+            { value: "all", label: "All" },
+            { value: "man", label: "Man" },
+            { value: "woman", label: "Woman" },
           ]}
         />
       </div>
@@ -951,18 +919,14 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       {header}
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
-        <Segmented
+        <SequenceLengthControl
           value={exercise.two_frames ? 2 : 3}
           disabled={busy || queue.running}
           onChange={(next) => void toggleTwoFrames(next === 2)}
-          options={[
-            [2, "2 frames"],
-            [3, "3 frames"],
-          ]}
         />
         <span className="hidden h-5 w-px bg-zinc-200 sm:block" />
-        <SubjectSelector value={subjects} onChange={setSubjects} disabled={queue.running} />
-        <PositionSelector
+        <SubjectToggles value={subjects} onChange={setSubjects} disabled={queue.running} />
+        <PositionToggles
           value={positions}
           onChange={setPositions}
           available={framePositions}

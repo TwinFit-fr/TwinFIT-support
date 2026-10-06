@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, X } from "lucide-react";
-import { ViewSelector } from "@/components/images/position-selector";
+import { ViewToggles } from "@/components/images/generation-controls";
 import { Button } from "@/components/ui/primitives";
 import type { MuscleMapQueueItem } from "@/hooks/use-muscle-map-queue";
 import type { MuscleMapView } from "@/lib/images/types";
@@ -91,7 +91,7 @@ export function MuscleMapQueueBar({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <ViewSelector value={views} onChange={onViewsChange} disabled={running} />
+          <ViewToggles value={views} onChange={onViewsChange} disabled={running} />
           {running ? (
             <Button type="button" variant="secondary" className="h-8 py-0" onClick={onCancel}>
               Cancel

@@ -12,7 +12,7 @@ import {
   statusCounts,
   type StatusFilter,
 } from "@/components/images/board-ui";
-import { StyleSelector } from "@/components/images/position-selector";
+import { StyleSelector } from "@/components/images/generation-controls";
 import { Input, Skeleton } from "@/components/ui/primitives";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";

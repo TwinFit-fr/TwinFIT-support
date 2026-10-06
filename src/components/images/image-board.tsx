@@ -16,7 +16,7 @@ import {
 } from "@/components/images/board-ui";
 import { ExerciseImageCard } from "@/components/images/exercise-image-card";
 import { GenerationQueueBar } from "@/components/images/generation-queue-bar";
-import { StyleSelector, runPositionsFor } from "@/components/images/position-selector";
+import { StyleSelector, runPositionsFor } from "@/components/images/generation-controls";
 import { useBoardSelection } from "@/hooks/use-board-selection";
 import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";

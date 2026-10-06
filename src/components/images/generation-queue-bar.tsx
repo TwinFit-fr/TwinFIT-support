@@ -4,10 +4,10 @@ import { Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/primitives";
 import { StepTrail } from "@/components/images/generation-progress";
 import {
-  FrameCountSelector,
-  PositionSelector,
-  SubjectSelector,
-} from "@/components/images/position-selector";
+  PositionToggles,
+  SequenceLengthControl,
+  SubjectToggles,
+} from "@/components/images/generation-controls";
 import type { QueueItem } from "@/hooks/use-generation-queue";
 import type { FrameCountChoice, Subject } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
@@ -118,9 +118,14 @@ export function GenerationQueueBar({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <SubjectSelector value={subjects} onChange={onSubjectsChange} disabled={locked} />
-          <FrameCountSelector value={frameCount} onChange={onFrameCountChange} disabled={locked} />
-          <PositionSelector
+          <SubjectToggles value={subjects} onChange={onSubjectsChange} disabled={locked} />
+          <SequenceLengthControl
+            perExercise
+            value={frameCount}
+            onChange={onFrameCountChange}
+            disabled={locked}
+          />
+          <PositionToggles
             value={positions}
             available={availablePositions}
             onChange={onPositionsChange}
