@@ -335,7 +335,7 @@ export default function SupportUserPage() {
                   value={profile?.weight_kg != null ? `${profile.weight_kg} kg` : "—"}
                 />
                 <Field
-                  label="Sessions / week"
+                  label="Training days / week"
                   value={profile?.sessions_per_week != null ? String(profile.sessions_per_week) : "—"}
                 />
                 <Field label="Hypertrophy" value={profile?.hypertrophy_level ?? "—"} />
