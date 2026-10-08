@@ -26,13 +26,16 @@ import {
   readMapBoardFilters,
 } from "@/lib/images/board-filters";
 import { jobTarget } from "@/lib/images/job-types";
-import type { ImageStyle, MuscleMapBoardRow } from "@/lib/images/types";
-import { MUSCLE_MAP_VIEWS, muscleMapTargetKey } from "@/lib/images/types";
+import type { ImageStyle, MuscleMapBoard as MuscleMapBoardData } from "@/lib/images/types";
+import {
+  MUSCLE_MAP_VIEWS,
+  muscleMapBoardTargets,
+  muscleMapTargetKey,
+  sameMuscleMapTarget,
+} from "@/lib/images/types";
 import { muscleMapPath } from "@/lib/images/urls";
 import { MuscleMapCard } from "./muscle-map-card";
 import { MuscleMapQueueBar } from "./muscle-map-queue-bar";
-
-type BoardResponse = { rows: MuscleMapBoardRow[] };
 
 export function MuscleMapBoard() {
   const { success, error: toastError } = useToast();
@@ -42,7 +45,7 @@ export function MuscleMapBoard() {
   const [styleId, setStyleId] = useStyleChoice(styles);
   const style = styles.find((s) => s.id === styleId) ?? null;
   const boardKey = muscleMapBoardKey(styleId);
-  const { data, isLoading, error } = useStaffSWR<BoardResponse>(boardKey, {
+  const { data, isLoading, error } = useStaffSWR<MuscleMapBoardData>(boardKey, {
     refreshInterval: BOARD_REFRESH_MS,
   });
   const [views, setViews] = useViewSelection();
@@ -58,12 +61,13 @@ export function MuscleMapBoard() {
   const actions = useMuscleMapActions(styleId);
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
-  const targets = useMemo(
-    () => rows.flatMap((row) => (row.group ? [row.group, ...row.muscles] : row.muscles)),
-    [rows],
-  );
+  const targets = useMemo(() => muscleMapBoardTargets(data), [data]);
   const counts = useMemo(() => statusCounts(targets.map((t) => t.status)), [targets]);
   const { q, status } = filters;
+  const visibleRegions = useMemo(
+    () => (data?.regions ?? []).filter((r) => matchesMapBoardFilters(r, { q, status })),
+    [data, q, status],
+  );
   const visibleRows = useMemo(
     () =>
       rows
@@ -79,11 +83,13 @@ export function MuscleMapBoard() {
     [rows, q, status],
   );
   const visibleTargets = useMemo(
-    () =>
-      visibleRows.flatMap((row) =>
+    () => [
+      ...visibleRegions,
+      ...visibleRows.flatMap((row) =>
         row.group && row.groupMatches ? [row.group, ...row.muscles] : row.muscles,
       ),
-    [visibleRows],
+    ],
+    [visibleRegions, visibleRows],
   );
   const visibleKeys = useMemo(() => visibleTargets.map(muscleMapTargetKey), [visibleTargets]);
   const selection = useBoardSelection(visibleKeys);
@@ -94,10 +100,15 @@ export function MuscleMapBoard() {
   const runViews = views.filter((view) => baseViews.includes(view));
   const missingBases = views.filter((view) => !baseViews.includes(view));
   const selectedTargets = visibleTargets.filter((t) => selection.has(muscleMapTargetKey(t)));
+  // A region is drawn in its card view only.
+  const plannedImages = selectedTargets.reduce(
+    (sum, t) => sum + runViews.filter((view) => t.views.includes(view)).length,
+    0,
+  );
 
   async function startQueue() {
-    if (!selectedTargets.length || !runViews.length) return;
-    if (!(await confirmGeneration.run(selectedTargets.length * runViews.length))) return;
+    if (!plannedImages) return;
+    if (!(await confirmGeneration.run(plannedImages))) return;
     try {
       const queued = await actions.enqueue(selectedTargets, runViews);
       success(`${queued} map(s) queued`, "Generating on the server");
@@ -113,7 +124,8 @@ export function MuscleMapBoard() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Muscle maps</h1>
           <p className="text-sm text-zinc-500">
-            One front and one back map per muscle group and per muscle.
+            One map per region (its catalog card view), one front and one back per muscle
+            group and per muscle.
           </p>
         </div>
         <StyleSelector
@@ -146,7 +158,7 @@ export function MuscleMapBoard() {
           <Input
             value={q}
             onChange={(e) => setFilters({ q: e.target.value })}
-            placeholder="Search muscle or group"
+            placeholder="Search muscle, group or region"
             className="h-8 w-56 py-1 pl-8 text-xs"
           />
         </div>
@@ -181,10 +193,32 @@ export function MuscleMapBoard() {
             <Skeleton key={i} className="aspect-[2/1.3] rounded-xl" />
           ))}
         </div>
-      ) : visibleRows.length === 0 ? (
-        <EmptyState>No muscles or groups match these filters.</EmptyState>
+      ) : visibleTargets.length === 0 ? (
+        <EmptyState>No muscles, groups or regions match these filters.</EmptyState>
       ) : (
         <div className="space-y-6">
+          {visibleRegions.length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+                Regions · app catalog cards
+              </h2>
+              <div className={BOARD_GRID}>
+                {visibleRegions.map((target) => {
+                  const key = muscleMapTargetKey(target);
+                  return (
+                    <MuscleMapCard
+                      key={key}
+                      target={target}
+                      selected={selection.has(key)}
+                      selecting={selection.count > 0}
+                      onToggle={(range) => selection.toggle(key, range)}
+                      href={`${muscleMapPath(target)}${filtersQuery}`}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          )}
           {visibleRows.map((row) => {
             const cards = row.group && row.groupMatches ? [row.group, ...row.muscles] : row.muscles;
             return (
@@ -216,16 +250,13 @@ export function MuscleMapBoard() {
       <MuscleMapQueueBar
         selectedCount={selection.count}
         onClearSelection={selection.clear}
-        plannedImages={selectedTargets.length * runViews.length}
+        plannedImages={plannedImages}
         missingBases={missingBases}
         views={views}
         onViewsChange={setViews}
         jobs={actions.jobs.jobs}
         progress={actions.jobs.progress}
-        nameOf={(job) => {
-          const ref = jobTarget(job);
-          return targets.find((t) => t.kind === ref?.kind && t.id === ref?.id)?.name ?? "";
-        }}
+        nameOf={(job) => targets.find((t) => sameMuscleMapTarget(t, jobTarget(job)))?.name ?? ""}
         onGenerate={() => void startQueue()}
         onCancel={() => void actions.jobs.cancelActive()}
         onRetry={() => void actions.jobs.retryFailed()}

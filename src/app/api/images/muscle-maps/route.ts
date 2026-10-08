@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   try {
     const token = requireStaffToken(request);
     const styleId = z.string().uuid().parse(new URL(request.url).searchParams.get("style"));
-    return NextResponse.json({ rows: await listMuscleMapBoard(token, styleId) });
+    return NextResponse.json(await listMuscleMapBoard(token, styleId));
   } catch (error) {
     if (error instanceof Response) return error;
     if (error instanceof z.ZodError) {

@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 import { staffGql } from "@/lib/staff-gql";
 import { getUserIdFromToken } from "./queries";
 import { downloadImageFile } from "./storage";
-import { MAX_RUN_REFERENCES } from "./types";
-import type { ReferenceLink, ReferenceTarget, StyleReference } from "./types";
+import {
+  MAX_RUN_REFERENCES,
+  MUSCLE_MAP_KIND_LABEL,
+  MUSCLE_MAP_TARGET_COLUMN,
+  muscleMapTargetColumns,
+  muscleMapTargetOf,
+} from "./types";
+import type { MuscleMapTargetKind, ReferenceLink, ReferenceTarget, StyleReference } from "./types";
 
 export { MAX_RUN_REFERENCES };
 
@@ -20,9 +26,11 @@ const REFERENCE_FIELDS = `
     exo_id
     muscle_id
     muscle_group_id
+    body_region_id
     exercise { display_name }
     muscle { name }
     muscle_group { name }
+    body_region { name }
   }
 `;
 
@@ -30,17 +38,17 @@ type RawLink = {
   exo_id: number | null;
   muscle_id: string | null;
   muscle_group_id: string | null;
+  body_region_id: string | null;
   exercise: { display_name: string } | null;
-  muscle: { name: string } | null;
-  muscle_group: { name: string } | null;
-};
+} & Record<MuscleMapTargetKind, { name: string } | null>;
 
 type RawReference = Omit<StyleReference, "links"> & { links: RawLink[] };
 
 const KIND_ORDER: Record<ReferenceTarget["kind"], number> = {
-  muscle_group: 0,
-  muscle: 1,
-  exercise: 2,
+  body_region: 0,
+  muscle_group: 1,
+  muscle: 2,
+  exercise: 3,
 };
 
 function toLink(link: RawLink): ReferenceLink {
@@ -48,14 +56,9 @@ function toLink(link: RawLink): ReferenceLink {
     const name = link.exercise?.display_name ?? `#${link.exo_id}`;
     return { kind: "exercise", id: link.exo_id, name };
   }
-  if (link.muscle_id) {
-    return { kind: "muscle", id: link.muscle_id, name: link.muscle?.name ?? "Muscle" };
-  }
-  return {
-    kind: "muscle_group",
-    id: link.muscle_group_id as string,
-    name: link.muscle_group?.name ?? "Group",
-  };
+  const ref = muscleMapTargetOf(link);
+  if (!ref) throw new Error("Reference link without a target");
+  return { ...ref, name: link[ref.kind]?.name ?? MUSCLE_MAP_KIND_LABEL[ref.kind] };
 }
 
 function toReference(row: RawReference): StyleReference {
@@ -69,18 +72,15 @@ function toReference(row: RawReference): StyleReference {
 
 /** Hasura row of a link to `target`. */
 function linkColumns(target: ReferenceTarget) {
-  return {
-    exo_id: target.kind === "exercise" ? target.id : null,
-    muscle_id: target.kind === "muscle" ? target.id : null,
-    muscle_group_id: target.kind === "muscle_group" ? target.id : null,
-  };
+  return target.kind === "exercise"
+    ? { exo_id: target.id, ...muscleMapTargetColumns(null) }
+    : { exo_id: null, ...muscleMapTargetColumns(target) };
 }
 
 /** Hasura filter for links pointing at `target`. */
 function linkWhere(target: ReferenceTarget) {
   if (target.kind === "exercise") return { exo_id: { _eq: target.id } };
-  if (target.kind === "muscle") return { muscle_id: { _eq: target.id } };
-  return { muscle_group_id: { _eq: target.id } };
+  return { [MUSCLE_MAP_TARGET_COLUMN[target.kind]]: { _eq: target.id } };
 }
 
 export async function listStyleReferences(

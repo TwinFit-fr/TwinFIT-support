@@ -36,7 +36,7 @@ import {
 import { PROMPT_PLACEHOLDERS } from "@/lib/images/prompt";
 import type {
   ImageStyle,
-  MuscleMapBoardRow,
+  MuscleMapBoard,
   MuscleMapBoardTarget,
   MuscleMapImage,
   MuscleMapTargetRef,
@@ -44,7 +44,13 @@ import type {
   StylePrompts,
   StyleReference,
 } from "@/lib/images/types";
-import { MUSCLE_MAP_VIEWS, muscleMapTargetKey } from "@/lib/images/types";
+import {
+  MUSCLE_MAP_KIND_LABEL,
+  MUSCLE_MAP_VIEWS,
+  muscleMapBoardTargets,
+  muscleMapTargetKey,
+  sameMuscleMapTarget,
+} from "@/lib/images/types";
 import { imageThumbUrl, muscleMapPath } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 import { VIEW_LABEL } from "./muscle-map-card";
@@ -186,7 +192,7 @@ function ViewColumn({
   );
 }
 
-/** Both views of one muscle or group, its inputs and a one-off prompt for its next maps. */
+/** The views of one target, its inputs and a one-off prompt for its next maps. */
 function TargetMaps({
   target,
   template,
@@ -219,15 +225,13 @@ function TargetMaps({
   // 1 replaces the active map; more add candidates to the view's history to pick from.
   const [variants, setVariants] = useState(1);
   const baseViews = bases.map((b) => b.view);
-  const linked = library.filter((r) =>
-    r.links.some((l) => l.kind === target.kind && l.id === target.id),
-  );
-  const automatic: AutomaticInput[] = MUSCLE_MAP_VIEWS.map((view) => ({
+  const linked = library.filter((r) => r.links.some((l) => sameMuscleMapTarget(l, target)));
+  const automatic: AutomaticInput[] = target.views.map((view) => ({
     label: `Base · ${VIEW_LABEL[view]}`,
     detail: `For the ${view} map`,
     fileId: bases.find((b) => b.view === view)?.file_id ?? null,
   }));
-  const anyBusy = MUSCLE_MAP_VIEWS.some(isBusy);
+  const anyBusy = target.views.some(isBusy);
 
   const run: MuscleMapRun = {
     ...(edited ? { promptOverride: prompt ?? undefined } : {}),
@@ -236,8 +240,12 @@ function TargetMaps({
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <div className="grid gap-4 rounded-xl border border-zinc-200 bg-white p-3 sm:grid-cols-2">
-        {MUSCLE_MAP_VIEWS.map((view) => (
+      <div
+        className={`grid gap-4 rounded-xl border border-zinc-200 bg-white p-3 ${
+          target.views.length > 1 ? "sm:grid-cols-2" : ""
+        }`}
+      >
+        {target.views.map((view) => (
           <ViewColumn
             key={view}
             view={view}
@@ -279,7 +287,11 @@ function TargetMaps({
           library={library}
           value={references}
           onChange={setReferences}
-          note="Each map edits the base of its view; library references are sent with both views."
+          note={
+            target.views.length > 1
+              ? "Each map edits the base of its view; library references are sent with both views."
+              : "The map edits the base of its view; library references are sent with it."
+          }
           disabled={anyBusy}
         />
 
@@ -353,14 +365,14 @@ const SHORTCUTS: [string, string][] = [
   ["Esc", "Back"],
 ];
 
-/** The page of one muscle or group: both map views, their history, inputs and prompt. */
+/** The page of one target: its map views, their history, inputs and prompt. */
 export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef }) {
   const router = useRouter();
   const { data: stylesData } = useStaffSWR<{ styles: ImageStyle[] }>("/api/images/styles");
   const styles = stylesData?.styles ?? [];
   const [styleId, setStyleId] = useStyleChoice(styles);
   const style = styles.find((s) => s.id === styleId) ?? null;
-  const { data, isLoading, error } = useStaffSWR<{ rows: MuscleMapBoardRow[] }>(
+  const { data, isLoading, error } = useStaffSWR<MuscleMapBoard>(
     muscleMapBoardKey(styleId),
     { refreshInterval: BOARD_REFRESH_MS },
   );
@@ -372,12 +384,8 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
   );
   const actions = useMuscleMapActions(styleId);
 
-  const targets = useMemo(
-    () =>
-      (data?.rows ?? []).flatMap((row) => (row.group ? [row.group, ...row.muscles] : row.muscles)),
-    [data],
-  );
-  const target = targets.find((t) => t.kind === ref.kind && t.id === ref.id) ?? null;
+  const targets = useMemo(() => muscleMapBoardTargets(data), [data]);
+  const target = targets.find((t) => sameMuscleMapTarget(t, ref)) ?? null;
 
   // Previous / next browse the board list with the filters the board was left with.
   const filters = readMapBoardFilters(useSearchParams());
@@ -404,7 +412,7 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
               Muscle maps
             </Link>
             <ChevronRight className="h-3 w-3 text-zinc-400" />
-            <span>{ref.kind === "muscle_group" ? "Group" : "Muscle"}</span>
+            <span>{MUSCLE_MAP_KIND_LABEL[ref.kind]}</span>
           </nav>
           {target && (
             <>
@@ -445,7 +453,7 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
         <JobFailures
           jobs={actions.failedFor(target)}
           labelOf={(job) => (job.view ? `${VIEW_LABEL[job.view]} map` : "Map")}
-          canAct={!MUSCLE_MAP_VIEWS.some((view) => actions.isBusy(target, view))}
+          canAct={!target.views.some((view) => actions.isBusy(target, view))}
           onRetry={() => void actions.jobs.retryFailed()}
           onDismiss={() => void actions.jobs.dismissFinished()}
         />
@@ -458,7 +466,7 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
       ) : isLoading || !styleId ? (
         <Skeleton className="h-[32rem] w-full rounded-xl" />
       ) : !target ? (
-        <EmptyState>This muscle or group is not on the board.</EmptyState>
+        <EmptyState>This target is not on the board.</EmptyState>
       ) : (
         <TargetMaps
           // Per-target choices (prompt edit, references, picked image) reset on navigation.

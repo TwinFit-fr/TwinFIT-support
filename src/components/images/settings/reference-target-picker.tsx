@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import type { ReferenceLink, ReferenceTarget } from "@/lib/images/types";
-import { referenceTargetKey } from "@/lib/images/types";
+import { MUSCLE_MAP_KIND_LABEL, referenceTargetKey } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 import { selectClass } from "./form-ui";
 
@@ -15,17 +15,18 @@ export type PickerExercise = {
 
 export type PickerOptions = {
   exercises: PickerExercise[];
+  regions: { id: string; name: string }[];
   groups: { id: string; name: string }[];
   muscles: { id: string; name: string }[];
 };
 
 export const TARGET_KIND_LABEL: Record<ReferenceTarget["kind"], string> = {
-  muscle_group: "Group",
-  muscle: "Muscle",
+  ...MUSCLE_MAP_KIND_LABEL,
   exercise: "Exercise",
 };
 
 const KIND_STYLE: Record<ReferenceTarget["kind"], string> = {
+  body_region: "bg-emerald-50 text-emerald-800 border-emerald-200",
   muscle_group: "bg-sky-50 text-sky-800 border-sky-200",
   muscle: "bg-violet-50 text-violet-800 border-violet-200",
   exercise: "bg-zinc-50 text-zinc-700 border-zinc-200",
@@ -56,7 +57,7 @@ export function TargetChip({ link, onRemove }: { link: ReferenceLink; onRemove?:
   );
 }
 
-/** Pick the exercises, muscles and groups a reference is sent for. Links are explicit only. */
+/** Pick the exercises, muscles, groups and regions a reference is sent for. Links are explicit only. */
 export function ReferenceTargetPicker({
   value,
   onChange,
@@ -71,6 +72,7 @@ export function ReferenceTargetPicker({
 
   const all = useMemo<ReferenceLink[]>(
     () => [
+      ...options.regions.map((r) => ({ kind: "body_region" as const, id: r.id, name: r.name })),
       ...options.groups.map((g) => ({ kind: "muscle_group" as const, id: g.id, name: g.name })),
       ...options.muscles.map((m) => ({ kind: "muscle" as const, id: m.id, name: m.name })),
       ...options.exercises.map((e) => ({
@@ -127,7 +129,7 @@ export function ReferenceTargetPicker({
       <div className="relative">
         <input
           className={cn(selectClass, "mt-0")}
-          placeholder="Search exercises, muscles or groups…"
+          placeholder="Search exercises, muscles, groups or regions…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />

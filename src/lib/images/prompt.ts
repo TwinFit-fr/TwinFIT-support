@@ -99,13 +99,14 @@ export type MuscleMapTarget = {
   kind: MuscleMapTargetKind;
   name: string;
   description: string | null;
-  /** Muscles to highlight: the muscle itself, or the group's target muscles. */
+  /** Muscles to highlight: the muscle itself, or the target muscles of the group / region. */
   muscles: { name: string; description: string | null }[];
 };
 
 const TARGET_KIND_LABEL: Record<MuscleMapTargetKind, string> = {
   muscle: "muscle",
   muscle_group: "muscle group",
+  body_region: "body region",
 };
 
 type DescribedRow = { name: string; description?: string | null; active?: boolean };
@@ -115,17 +116,39 @@ export function muscleTarget(muscle: DescribedRow): MuscleMapTarget {
   return { kind: "muscle", ...self, muscles: [self] };
 }
 
-/** A group highlights its target muscles (their canonical home), not the secondary options. */
-export function muscleGroupTarget(
-  group: DescribedRow & { group_muscles: { role: string; muscle: DescribedRow }[] },
-): MuscleMapTarget {
+type GroupRow = DescribedRow & { group_muscles: { role: string; muscle: DescribedRow }[] };
+
+/** The muscles whose canonical home is the group, not its secondary options. */
+function groupTargetMuscles(group: GroupRow): MuscleMapTarget["muscles"] {
+  return group.group_muscles
+    .filter((link) => link.role === "target" && link.muscle.active !== false)
+    .map((link) => ({ name: link.muscle.name, description: link.muscle.description ?? null }));
+}
+
+/** A group highlights its target muscles. */
+export function muscleGroupTarget(group: GroupRow): MuscleMapTarget {
   return {
     kind: "muscle_group",
     name: group.name,
     description: group.description ?? null,
-    muscles: group.group_muscles
-      .filter((link) => link.role === "target" && link.muscle.active !== false)
-      .map((link) => ({ name: link.muscle.name, description: link.muscle.description ?? null })),
+    muscles: groupTargetMuscles(group),
+  };
+}
+
+/**
+ * A body region highlights the target muscles of its active groups. Its description steers
+ * regions that are not muscles (CARDIO: heart and lungs).
+ */
+export function bodyRegionTarget(
+  region: DescribedRow & { muscle_groups: GroupRow[] },
+): MuscleMapTarget {
+  return {
+    kind: "body_region",
+    name: region.name,
+    description: region.description ?? null,
+    muscles: region.muscle_groups
+      .filter((group) => group.active !== false)
+      .flatMap(groupTargetMuscles),
   };
 }
 

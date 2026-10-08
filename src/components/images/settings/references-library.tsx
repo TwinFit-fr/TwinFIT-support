@@ -126,8 +126,8 @@ function ReferenceDialog({
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-zinc-600">Used for</p>
           <p className="text-[11px] text-zinc-500">
-            Sent when generating these targets: an exercise’s Start frame, or a muscle or
-            group map. A group link does not include its muscles or exercises.
+            Sent when generating these targets: an exercise’s Start frame, or a muscle, group
+            or region map. A group or region link does not include what it contains.
           </p>
           <ReferenceTargetPicker
             value={draft.links}
@@ -243,6 +243,7 @@ export function ReferencesLibrary({ style }: { style: ImageStyle }) {
   const options = useMemo<PickerOptions>(
     () => ({
       exercises: exercisesData?.exercises ?? [],
+      regions: (taxonomy?.data?.catalog_body_regions ?? []).filter((r) => r.active !== false),
       groups: (taxonomy?.data?.catalog_muscle_groups ?? []).filter((g) => g.active !== false),
       muscles: (taxonomy?.data?.catalog_muscles ?? []).filter((m) => m.active !== false),
     }),
