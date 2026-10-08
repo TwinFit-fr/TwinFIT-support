@@ -10,6 +10,7 @@ import {
 } from "./normalize";
 
 export const LOOKUP_TABLES = [
+  "catalog_body_regions",
   "catalog_muscle_groups",
   "catalog_muscles",
   "catalog_movement_types",
@@ -34,6 +35,11 @@ function assertLookupTable(table: unknown): LookupTable {
 const TAXONOMY_LOCALIZATIONS: Partial<
   Record<LookupTable, { table: string; fk: string; constraint: string }>
 > = {
+  catalog_body_regions: {
+    table: "catalog_body_region_localizations",
+    fk: "body_region_id",
+    constraint: "body_region_localizations_body_region_id_locale_key",
+  },
   catalog_equipment: {
     table: "catalog_equipment_localizations",
     fk: "equipment_id",
@@ -66,12 +72,25 @@ const TAXONOMY_LOCALIZATIONS: Partial<
   },
 };
 
-/** Finds a lookup row by code, creating it (Title Case name) when it does not exist yet. */
+/**
+ * Rows with required fields beyond code and name: a region has a card view, a group belongs to
+ * a region. They are created only from Taxonomy (`upsertLookup`), never implied by a code.
+ */
+const EXPLICIT_LOOKUP_TABLES = new Set<LookupTable>(["catalog_body_regions", "catalog_muscle_groups"]);
+
+const MAP_VIEWS = ["front", "back"] as const;
+
+/**
+ * Finds a lookup row by code, creating it (Title Case name) when it does not exist yet.
+ * `columns` are the extra fields of an explicit table's new row; without them an unknown code
+ * of such a table is an error.
+ */
 export async function ensureLookup(
   token: string,
   table: LookupTable,
   code: unknown,
   name?: unknown,
+  columns?: Record<string, unknown>,
 ): Promise<LookupRef> {
   const c = table === "catalog_muscles" ? normalizeMuscleCode(code) : normalizeTaxonomy(code);
   if (!c) throw new Error(`Empty code for ${table}`);
@@ -82,13 +101,40 @@ export async function ensureLookup(
   );
   const hit = existing[table]?.[0];
   if (hit) return hit;
+  if (EXPLICIT_LOOKUP_TABLES.has(table) && !columns) {
+    throw new Error(`Unknown ${table.replace("catalog_", "")} code: ${c}. Create it in Taxonomy first.`);
+  }
   const label = String(name || "").trim() || defaultLookupName(c);
   const inserted = await staffGql<Record<string, LookupRef>>(
     token,
     `mutation($o: ${table}_insert_input!) { insert_${table}_one(object: $o) { id code } }`,
-    { o: { code: c, name: label, active: true } },
+    { o: { code: c, name: label, active: true, ...columns } },
   );
   return inserted[`insert_${table}_one`];
+}
+
+/** A body region is lookup-only here: unknown code → error. */
+async function resolveBodyRegionId(token: string, raw: unknown): Promise<string> {
+  const code = normalizeTaxonomy(raw);
+  if (!code) throw new Error("A muscle group needs a body region");
+  const data = await staffGql<{ catalog_body_regions: LookupRef[] }>(
+    token,
+    `query($code: String!) {
+      catalog_body_regions(where: { code: { _eq: $code } }, limit: 1) { id code }
+    }`,
+    { code },
+  );
+  const hit = data.catalog_body_regions[0];
+  if (!hit) throw new Error(`Unknown body region code: ${code}`);
+  return hit.id;
+}
+
+function parseMapView(raw: unknown): (typeof MAP_VIEWS)[number] {
+  const view = String(raw || "front");
+  if (!MAP_VIEWS.includes(view as (typeof MAP_VIEWS)[number])) {
+    throw new Error("map_view must be front|back");
+  }
+  return view as (typeof MAP_VIEWS)[number];
 }
 
 /** Support equipment is lookup-only: empty → null, unknown code → error. */
@@ -276,11 +322,34 @@ export type UpsertLookupPayload = {
   labels?: Partial<Record<CatalogLocale, unknown>>;
   muscle_group_code?: unknown;
   role?: unknown;
+  /** Required for a new muscle group. */
+  body_region_code?: unknown;
+  /** New body region: card view, front (default) or back. */
+  map_view?: unknown;
 };
+
+/** Extra fields of a new row of an explicit table. */
+async function explicitColumns(
+  token: string,
+  table: LookupTable,
+  payload: UpsertLookupPayload,
+): Promise<Record<string, unknown> | undefined> {
+  if (table === "catalog_muscle_groups") {
+    return { body_region_id: await resolveBodyRegionId(token, payload.body_region_code) };
+  }
+  if (table === "catalog_body_regions") return { map_view: parseMapView(payload.map_view) };
+  return undefined;
+}
 
 export async function upsertLookup(token: string, payload: UpsertLookupPayload) {
   const table = assertLookupTable(payload.table);
-  const row = await ensureLookup(token, table, payload.code, payload.name);
+  const row = await ensureLookup(
+    token,
+    table,
+    payload.code,
+    payload.name,
+    await explicitColumns(token, table, payload),
+  );
   if (TAXONOMY_LOCALIZATIONS[table]) {
     await upsertTaxonomyLocalizations(token, table, row.id, {
       en: String(payload.name || "").trim() || defaultLookupName(row.code),
@@ -303,9 +372,14 @@ export type UpdateLookupPayload = {
   active?: unknown;
   sort_order?: unknown;
   description?: unknown;
+  /** Muscle groups: move to another body region. */
+  body_region_code?: unknown;
+  /** Body regions: card view. */
+  map_view?: unknown;
 };
 
 const DESCRIBED_LOOKUP_TABLES = new Set([
+  "catalog_body_regions",
   "catalog_grips",
   "catalog_support_equipment",
   "catalog_muscles",
@@ -326,11 +400,21 @@ export async function updateLookup(token: string, payload: UpdateLookupPayload) 
     const text = String(payload.description ?? "").trim();
     set.description = text || null;
   }
+  if (table === "catalog_muscle_groups" && payload.body_region_code != null) {
+    set.body_region_id = await resolveBodyRegionId(token, payload.body_region_code);
+  }
+  if (table === "catalog_body_regions" && payload.map_view != null) {
+    set.map_view = parseMapView(payload.map_view);
+  }
   if (!Object.keys(set).length && !labels) throw new Error("nothing to update");
 
-  const fields = DESCRIBED_LOOKUP_TABLES.has(table)
-    ? "{ id code name description active sort_order }"
-    : "{ id code name active sort_order }";
+  const columns = [
+    "id code name active sort_order",
+    DESCRIBED_LOOKUP_TABLES.has(table) && "description",
+    table === "catalog_muscle_groups" && "body_region_id",
+    table === "catalog_body_regions" && "map_view",
+  ];
+  const fields = `{ ${columns.filter(Boolean).join(" ")} }`;
   const data = Object.keys(set).length
     ? await staffGql<Record<string, unknown>>(
         token,
@@ -462,8 +546,12 @@ export function fetchTaxonomy(token: string) {
   return staffGql(
     token,
     `query TaxonomyAdmin {
+      catalog_body_regions(order_by: { sort_order: asc, code: asc }) {
+        id code name description map_view sort_order active
+        localizations(order_by: { locale: asc }) { locale display_name }
+      }
       catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {
-        id code name description sort_order active
+        id code name description sort_order active body_region_id
         localizations(order_by: { locale: asc }) { locale display_name }
         group_muscles { role muscle { id code name description active localizations(order_by: { locale: asc }) { locale display_name } } }
         group_movement_types {

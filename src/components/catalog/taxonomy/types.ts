@@ -12,7 +12,8 @@ export type TaxonomyTabId =
   | "catalog_load_modalities"
   | "catalog_logging_modes"
   | "catalog_muscles"
-  | "catalog_muscle_groups";
+  | "catalog_muscle_groups"
+  | "catalog_body_regions";
 
 export const TAXONOMY_TABS: Array<{ id: TaxonomyTabId; label: string }> = [
   { id: "anatomy", label: "Anatomy" },
@@ -27,6 +28,7 @@ export const TAXONOMY_TABS: Array<{ id: TaxonomyTabId; label: string }> = [
   { id: "catalog_logging_modes", label: "Logging" },
   { id: "catalog_muscles", label: "Muscles" },
   { id: "catalog_muscle_groups", label: "Groups" },
+  { id: "catalog_body_regions", label: "Regions" },
 ];
 
 export const LOCALIZED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
@@ -35,6 +37,7 @@ export const LOCALIZED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
   "catalog_movement_types",
   "catalog_muscles",
   "catalog_muscle_groups",
+  "catalog_body_regions",
   "catalog_load_modalities",
 ]);
 
@@ -44,17 +47,24 @@ export const DESCRIBED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
   "catalog_support_equipment",
   "catalog_muscles",
   "catalog_muscle_groups",
+  "catalog_body_regions",
 ]);
+
+export type MapView = "front" | "back";
 
 export type LookupRowFull = {
   id: string;
   code: string;
   name: string;
-  /** Internal visual description (grips / support / muscles / groups); not localized. */
+  /** Internal visual description (grips / support / muscles / groups / regions); not localized. */
   description?: string | null;
   sort_order?: number;
   active?: boolean;
   localizations?: LocalizationRow[];
+  /** Muscle groups: the body region they belong to. */
+  body_region_id?: string;
+  /** Body regions: view of the catalog card muscle map. */
+  map_view?: MapView;
 };
 
 export type MuscleGroupRow = {
@@ -63,6 +73,7 @@ export type MuscleGroupRow = {
   name: string;
   description?: string | null;
   active?: boolean;
+  body_region_id: string;
   localizations?: LocalizationRow[];
   group_muscles: Array<{
     role: string;
@@ -89,6 +100,7 @@ export type MuscleGroupRow = {
 };
 
 export type TaxonomyData = {
+  catalog_body_regions: LookupRowFull[];
   catalog_muscle_groups: MuscleGroupRow[];
   catalog_muscles: LookupRowFull[];
   catalog_movement_types: LookupRowFull[];

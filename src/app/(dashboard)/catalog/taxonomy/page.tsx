@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { TaxonomyAnatomyPanel } from "@/components/catalog/taxonomy/taxonomy-anatomy-panel";
 import { TaxonomyGroupMovementsPanel } from "@/components/catalog/taxonomy/taxonomy-group-movements-panel";
-import { TaxonomyLookupTable } from "@/components/catalog/taxonomy/taxonomy-lookup-table";
+import {
+  type LookupExtraFields,
+  TaxonomyLookupTable,
+} from "@/components/catalog/taxonomy/taxonomy-lookup-table";
 import { TaxonomySubnav } from "@/components/catalog/taxonomy/taxonomy-subnav";
 import type { LookupRowFull, TaxonomyData, TaxonomyTabId } from "@/components/catalog/taxonomy/types";
 import { CATALOG_LOCALES, type CatalogLocale } from "@/lib/catalog/locales";
@@ -20,6 +23,7 @@ const LOOKUP_TABLES: TaxonomyTabId[] = [
   "catalog_logging_modes",
   "catalog_muscles",
   "catalog_muscle_groups",
+  "catalog_body_regions",
 ];
 
 export default function CatalogTaxonomyPage() {
@@ -46,6 +50,7 @@ export default function CatalogTaxonomyPage() {
     code: string,
     name: string,
     labels?: Record<CatalogLocale, string>,
+    extra?: LookupExtraFields,
   ) {
     setMessage(null);
     try {
@@ -56,6 +61,7 @@ export default function CatalogTaxonomyPage() {
           code,
           name,
           ...(labels ? { labels } : {}),
+          ...extra,
         }),
       });
       setMessage(`Added ${code}`);
@@ -74,7 +80,7 @@ export default function CatalogTaxonomyPage() {
       active: boolean;
       description?: string | null;
       labels?: Record<CatalogLocale, string>;
-    },
+    } & LookupExtraFields,
   ) {
     setMessage(null);
     try {
@@ -89,6 +95,8 @@ export default function CatalogTaxonomyPage() {
           active: fields.active,
           ...(fields.description !== undefined ? { description: fields.description } : {}),
           ...(fields.labels ? { labels: fields.labels } : {}),
+          ...(fields.body_region_code ? { body_region_code: fields.body_region_code } : {}),
+          ...(fields.map_view ? { map_view: fields.map_view } : {}),
         }),
       });
       setMessage("Saved");
@@ -187,7 +195,8 @@ export default function CatalogTaxonomyPage() {
         <h1 className="text-2xl font-semibold">Taxonomy</h1>
         <p className="mt-1 text-sm text-zinc-500">
           Anatomy links muscles to groups. Group movements links movement types and edits
-          pair display names. Other tabs edit lookup codes, names and sort order.
+          pair display names. Regions group muscle groups for the app catalog. Other tabs edit
+          lookup codes, names and sort order.
         </p>
       </div>
 
@@ -217,7 +226,12 @@ export default function CatalogTaxonomyPage() {
           locale={locale}
           groups={data.catalog_muscle_groups}
           muscles={data.catalog_muscles}
-          onAddGroup={(code) => addEntry("catalog_muscle_groups", code, "")}
+          regions={data.catalog_body_regions}
+          onAddGroup={(code, regionCode) =>
+            addEntry("catalog_muscle_groups", code, "", undefined, {
+              body_region_code: regionCode,
+            })
+          }
           onApplyRelations={applyRelations}
           onAddMuscle={async (code) => {
             await addEntry("catalog_muscles", code, "");
@@ -246,7 +260,8 @@ export default function CatalogTaxonomyPage() {
         <TaxonomyLookupTable
           table={tab}
           rows={lookupRows}
-          onAdd={(code, name, labels) => addEntry(tab, code, name, labels)}
+          regions={data.catalog_body_regions}
+          onAdd={(code, name, labels, extra) => addEntry(tab, code, name, labels, extra)}
           onSave={(id, fields) => saveRow(tab, id, fields)}
         />
       )}

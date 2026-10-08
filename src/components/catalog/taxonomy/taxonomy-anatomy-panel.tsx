@@ -7,6 +7,7 @@ import {
   type CatalogLocale,
   type LocalizedLookup,
 } from "@/lib/catalog/locales";
+import { RegionSelect } from "./taxonomy-lookup-table";
 import type { LookupRowFull, MuscleGroupRow } from "./types";
 
 export type RelationApplyItem = {
@@ -19,7 +20,9 @@ type AnatomyPanelProps = {
   locale: CatalogLocale;
   groups: MuscleGroupRow[];
   muscles: LookupRowFull[];
-  onAddGroup: (code: string) => Promise<void>;
+  /** Body regions: a new group needs one. */
+  regions: LookupRowFull[];
+  onAddGroup: (code: string, regionCode: string) => Promise<void>;
   onApplyRelations: (
     groupCode: string,
     kind: "muscle",
@@ -39,6 +42,7 @@ export function TaxonomyAnatomyPanel({
   locale,
   groups,
   muscles,
+  regions,
   onAddGroup,
   onApplyRelations,
   onAddMuscle,
@@ -47,6 +51,7 @@ export function TaxonomyAnatomyPanel({
   const [linkRole, setLinkRole] = useState<"target" | "secondary">("target");
   const [poolFilter, setPoolFilter] = useState("");
   const [newGroupCode, setNewGroupCode] = useState("");
+  const [newGroupRegion, setNewGroupRegion] = useState("");
   const [newItemCode, setNewItemCode] = useState("");
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showNewItem, setShowNewItem] = useState(false);
@@ -139,12 +144,15 @@ export function TaxonomyAnatomyPanel({
               value={newGroupCode}
               onChange={(e) => setNewGroupCode(e.target.value)}
             />
+            <RegionSelect regions={regions} value={newGroupRegion} onChange={setNewGroupRegion} />
             <Button
               type="button"
               className="w-full"
+              disabled={!newGroupRegion}
               onClick={() => {
-                void onAddGroup(newGroupCode).then(() => {
+                void onAddGroup(newGroupCode, newGroupRegion).then(() => {
                   setNewGroupCode("");
+                  setNewGroupRegion("");
                   setShowNewGroup(false);
                   setGroupCode(newGroupCode.trim().toUpperCase());
                 });
