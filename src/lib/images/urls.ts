@@ -1,13 +1,19 @@
 import type { MuscleMapTargetKind, MuscleMapTargetRef } from "./types";
 
 const MAP_KIND_SEGMENT: Record<MuscleMapTargetKind, string> = {
+  body_region: "region",
   muscle_group: "group",
   muscle: "muscle",
 };
 
-/** The page of one muscle or group's maps: /images/muscle-maps/group/<id> or …/muscle/<id>. */
+/** Short name of a target kind in URLs and file names: region, group or muscle. */
+export function muscleMapKindSegment(kind: MuscleMapTargetKind): string {
+  return MAP_KIND_SEGMENT[kind];
+}
+
+/** The page of one target's maps: /images/muscle-maps/<region|group|muscle>/<id>. */
 export function muscleMapPath(ref: MuscleMapTargetRef): string {
-  return `/images/muscle-maps/${MAP_KIND_SEGMENT[ref.kind]}/${ref.id}`;
+  return `/images/muscle-maps/${muscleMapKindSegment(ref.kind)}/${ref.id}`;
 }
 
 /** The target kind of a muscle map page segment, or null when it is not one. */

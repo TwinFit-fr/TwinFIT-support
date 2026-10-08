@@ -8,9 +8,10 @@ import { errorMessage, isRetryable } from "./generation-error";
 import type { GenerationJob, JobSpec } from "./job-types";
 import { jobTarget } from "./job-types";
 import { getUserIdFromToken } from "./queries";
+import { muscleMapTargetColumns } from "./types";
 
 const JOB_FIELDS = `
-  id seq batch_id style_id kind exo_id subject position muscle_id muscle_group_id view options
+  id seq batch_id style_id kind exo_id subject position muscle_id muscle_group_id body_region_id view options
   depends_on status attempts max_attempts not_before error result_exercise_image_id
   result_muscle_map_id inserted_at started_at finished_at
 `;
@@ -53,9 +54,7 @@ export async function enqueueJobs(
       return {
         ...common,
         view: spec.view,
-        ...(spec.target.kind === "muscle"
-          ? { muscle_id: spec.target.id }
-          : { muscle_group_id: spec.target.id }),
+        ...muscleMapTargetColumns(spec.target),
       };
     }
     const dependsOn = spec.after ? idByKey.get(spec.after) : undefined;

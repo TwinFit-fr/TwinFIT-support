@@ -10,6 +10,7 @@ import {
   PROMPT_PLACEHOLDERS,
   assembleImagePrompt,
   fillMuscleMapTemplate,
+  bodyRegionTarget,
   muscleGroupTarget,
   muscleTarget,
   selectedPrompts,
@@ -207,10 +208,20 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
   const sample = exercisesData?.exercises?.[0];
 
   const sampleTarget = useMemo(() => {
-    const group = taxonomy?.data?.catalog_muscle_groups.find(
+    const groups = taxonomy?.data?.catalog_muscle_groups ?? [];
+    const group = groups.find(
       (g) => g.active !== false && g.group_muscles.some((link) => link.role === "target"),
     );
     if (!group) return null;
+    if (previewTargetKind === "body_region") {
+      const region = taxonomy?.data?.catalog_body_regions.find((r) => r.id === group.body_region_id);
+      return region
+        ? bodyRegionTarget({
+            ...region,
+            muscle_groups: groups.filter((g) => g.body_region_id === region.id),
+          })
+        : null;
+    }
     if (previewTargetKind === "muscle_group") return muscleGroupTarget(group);
     const muscle = group.group_muscles.find((link) => link.role === "target")?.muscle;
     return muscle ? muscleTarget(muscle) : null;
@@ -335,6 +346,7 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
                   value={previewTargetKind}
                   onChange={setPreviewTargetKind}
                   options={[
+                    { value: "body_region", label: "Region" },
                     { value: "muscle_group", label: "Group" },
                     { value: "muscle", label: "Muscle" },
                   ]}

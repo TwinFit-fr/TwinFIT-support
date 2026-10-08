@@ -1,7 +1,19 @@
 import { staffGql } from "@/lib/staff-gql";
-import { type MuscleMapTarget, muscleGroupTarget, muscleTarget } from "./prompt";
-import { MUSCLE_MAP_VIEWS } from "./types";
+import {
+  type MuscleMapTarget,
+  bodyRegionTarget,
+  muscleGroupTarget,
+  muscleTarget,
+} from "./prompt";
+import {
+  MUSCLE_MAP_TARGET_COLUMN,
+  MUSCLE_MAP_VIEWS,
+  muscleMapTargetColumns,
+  muscleMapTargetKey,
+  muscleMapTargetOf,
+} from "./types";
 import type {
+  MuscleMapBoard,
   MuscleMapBoardRow,
   MuscleMapBoardTarget,
   MuscleMapImage,
@@ -15,6 +27,7 @@ const MUSCLE_MAP_FIELDS = `
   style_id
   muscle_id
   muscle_group_id
+  body_region_id
   view
   file_id
   image_url
@@ -40,6 +53,11 @@ type CatalogGroup = CatalogMuscle & {
   group_muscles: { role: string; muscle: CatalogMuscle }[];
 };
 
+type CatalogRegion = CatalogMuscle & {
+  map_view: MuscleMapView;
+  muscle_groups: CatalogGroup[];
+};
+
 const GROUP_FIELDS = `
   id code name description active
   group_muscles(order_by: { muscle: { sort_order: asc } }) {
@@ -48,38 +66,43 @@ const GROUP_FIELDS = `
   }
 `;
 
+const REGION_FIELDS = `
+  id code name description active map_view
+  muscle_groups(order_by: [{ sort_order: asc }, { code: asc }]) { ${GROUP_FIELDS} }
+`;
+
 /** Hasura filter selecting the maps of one target. */
 function targetWhere(ref: MuscleMapTargetRef) {
-  return ref.kind === "muscle"
-    ? { muscle_id: { _eq: ref.id } }
-    : { muscle_group_id: { _eq: ref.id } };
+  return { [MUSCLE_MAP_TARGET_COLUMN[ref.kind]]: { _eq: ref.id } };
 }
 
 function targetOf(image: MuscleMapImage): MuscleMapTargetRef {
-  return image.muscle_id
-    ? { kind: "muscle", id: image.muscle_id }
-    : { kind: "muscle_group", id: image.muscle_group_id as string };
+  const ref = muscleMapTargetOf(image);
+  if (!ref) throw new Error(`Muscle map ${image.id} has no target`);
+  return ref;
 }
 
 function boardTarget(
   ref: MuscleMapTargetRef,
   row: CatalogMuscle,
+  views: MuscleMapView[],
   images: MuscleMapImage[],
 ): MuscleMapBoardTarget {
   const active: MuscleMapBoardTarget["active"] = {};
   for (const image of images) {
     if (image.active) active[image.view] = image;
   }
-  const activeCount = MUSCLE_MAP_VIEWS.filter((view) => active[view]).length;
+  const activeCount = views.filter((view) => active[view]).length;
   return {
     ...ref,
     code: row.code,
     name: row.name,
     description: row.description,
+    views,
     images,
     active,
     status:
-      activeCount === MUSCLE_MAP_VIEWS.length
+      activeCount === views.length
         ? "complete"
         : activeCount > 0
           ? "partial"
@@ -89,18 +112,23 @@ function boardTarget(
   };
 }
 
-/** Active groups with the muscles whose home they are, then muscles without a home. */
-export async function listMuscleMapBoard(
-  token: string,
-  styleId: string,
-): Promise<MuscleMapBoardRow[]> {
+/**
+ * Active body regions (one view each: their catalog card), then active groups with the
+ * muscles whose home they are, then muscles without a home.
+ */
+export async function listMuscleMapBoard(token: string, styleId: string): Promise<MuscleMapBoard> {
   const data = await staffGql<{
+    catalog_body_regions: CatalogRegion[];
     catalog_muscle_groups: CatalogGroup[];
     catalog_muscles: CatalogMuscle[];
     images_muscle_map_images: MuscleMapImage[];
   }>(
     token,
     `query($styleId: uuid!) {
+      catalog_body_regions(
+        where: { active: { _eq: true } }
+        order_by: [{ sort_order: asc }, { code: asc }]
+      ) { id code name description active map_view }
       catalog_muscle_groups(
         where: { active: { _eq: true } }
         order_by: [{ sort_order: asc }, { code: asc }]
@@ -119,12 +147,15 @@ export async function listMuscleMapBoard(
 
   const imagesByTarget = new Map<string, MuscleMapImage[]>();
   for (const image of data.images_muscle_map_images ?? []) {
-    const ref = targetOf(image);
-    const key = `${ref.kind}:${ref.id}`;
+    const key = muscleMapTargetKey(targetOf(image));
     imagesByTarget.set(key, [...(imagesByTarget.get(key) ?? []), image]);
   }
-  const target = (ref: MuscleMapTargetRef, row: CatalogMuscle) =>
-    boardTarget(ref, row, imagesByTarget.get(`${ref.kind}:${ref.id}`) ?? []);
+  const target = (ref: MuscleMapTargetRef, row: CatalogMuscle, views = [...MUSCLE_MAP_VIEWS]) =>
+    boardTarget(ref, row, views, imagesByTarget.get(muscleMapTargetKey(ref)) ?? []);
+
+  const regions = (data.catalog_body_regions ?? []).map((region) =>
+    target({ kind: "body_region", id: region.id }, region, [region.map_view]),
+  );
 
   const housed = new Set<string>();
   const rows: MuscleMapBoardRow[] = (data.catalog_muscle_groups ?? []).map((group) => {
@@ -143,7 +174,7 @@ export async function listMuscleMapBoard(
       muscles: homeless.map((m) => target({ kind: "muscle", id: m.id }, m)),
     });
   }
-  return rows;
+  return { regions, rows };
 }
 
 /** Catalog data a map prompt needs; null when the target does not exist. */
@@ -151,24 +182,37 @@ export async function getMuscleMapTarget(
   token: string,
   ref: MuscleMapTargetRef,
 ): Promise<(MuscleMapTarget & { code: string }) | null> {
-  if (ref.kind === "muscle") {
-    const data = await staffGql<{ catalog_muscles_by_pk: CatalogMuscle | null }>(
-      token,
-      `query($id: uuid!) {
-        catalog_muscles_by_pk(id: $id) { id code name description active }
-      }`,
-      { id: ref.id },
-    );
-    const muscle = data.catalog_muscles_by_pk;
-    return muscle ? { ...muscleTarget(muscle), code: muscle.code } : null;
+  switch (ref.kind) {
+    case "muscle": {
+      const data = await staffGql<{ catalog_muscles_by_pk: CatalogMuscle | null }>(
+        token,
+        `query($id: uuid!) {
+          catalog_muscles_by_pk(id: $id) { id code name description active }
+        }`,
+        { id: ref.id },
+      );
+      const muscle = data.catalog_muscles_by_pk;
+      return muscle ? { ...muscleTarget(muscle), code: muscle.code } : null;
+    }
+    case "muscle_group": {
+      const data = await staffGql<{ catalog_muscle_groups_by_pk: CatalogGroup | null }>(
+        token,
+        `query($id: uuid!) { catalog_muscle_groups_by_pk(id: $id) { ${GROUP_FIELDS} } }`,
+        { id: ref.id },
+      );
+      const group = data.catalog_muscle_groups_by_pk;
+      return group ? { ...muscleGroupTarget(group), code: group.code } : null;
+    }
+    case "body_region": {
+      const data = await staffGql<{ catalog_body_regions_by_pk: CatalogRegion | null }>(
+        token,
+        `query($id: uuid!) { catalog_body_regions_by_pk(id: $id) { ${REGION_FIELDS} } }`,
+        { id: ref.id },
+      );
+      const region = data.catalog_body_regions_by_pk;
+      return region ? { ...bodyRegionTarget(region), code: region.code } : null;
+    }
   }
-  const data = await staffGql<{ catalog_muscle_groups_by_pk: CatalogGroup | null }>(
-    token,
-    `query($id: uuid!) { catalog_muscle_groups_by_pk(id: $id) { ${GROUP_FIELDS} } }`,
-    { id: ref.id },
-  );
-  const group = data.catalog_muscle_groups_by_pk;
-  return group ? { ...muscleGroupTarget(group), code: group.code } : null;
 }
 
 export async function getMuscleMapImage(
@@ -208,8 +252,7 @@ export async function insertMuscleMapImage(
     {
       object: {
         style_id: input.style_id,
-        muscle_id: input.target.kind === "muscle" ? input.target.id : null,
-        muscle_group_id: input.target.kind === "muscle_group" ? input.target.id : null,
+        ...muscleMapTargetColumns(input.target),
         view: input.view,
         file_id: input.file_id,
         image_url: input.image_url,

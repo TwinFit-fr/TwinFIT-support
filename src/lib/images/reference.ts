@@ -1,4 +1,5 @@
 import type { MuscleMapTargetKind, MuscleMapView, Subject } from "./types";
+import { muscleMapKindSegment } from "./urls";
 
 /** Appended when a generation uses the style character reference as input image. */
 export const REFERENCE_USE_DIRECTIVE = `CHARACTER REFERENCE: the input image is the official character for this style. Draw exactly this same person — same face, hair, body type, skin tone, clothing, colors and illustration style. Do NOT copy the pose, framing or camera angle of the reference: use only the pose described above, and show any equipment it requires.`;
@@ -72,7 +73,7 @@ export function muscleMapFileName(
   view: MuscleMapView,
   extension: string,
 ): string {
-  const prefix = target.kind === "muscle_group" ? "group" : "muscle";
+  const prefix = muscleMapKindSegment(target.kind);
   return styleAssetPath(
     styleCode,
     "muscles",

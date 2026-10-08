@@ -15,6 +15,7 @@ import type {
 } from "@/lib/images/types";
 import type { GenerationJob, JobSpec, MuscleMapJobOptions } from "@/lib/images/job-types";
 import { isActiveJob, jobTarget } from "@/lib/images/job-types";
+import { sameMuscleMapTarget } from "@/lib/images/types";
 
 /** One-off edits for a single generation: a prompt text and/or library references. */
 export type MuscleMapRun = MuscleMapJobOptions;
@@ -45,17 +46,20 @@ export function useMuscleMapActions(styleId: string | null) {
   const jobs = useGenerationJobs(styleId, { kind: "muscle_map" }, () => void refresh());
 
   /**
-   * Queues targets × views; returns how many maps were queued. With `variants` > 1 each gets
-   * that many inactive candidates and the active maps stay.
+   * Queues targets × views (only the views a target is drawn in, when it says); returns how
+   * many maps were queued. With `variants` > 1 each gets that many inactive candidates and the
+   * active maps stay.
    */
   async function enqueue(
-    targets: MuscleMapTargetRef[],
+    targets: (MuscleMapTargetRef & { views?: MuscleMapView[] })[],
     views: MuscleMapView[],
     run?: MuscleMapRun,
     variants = 1,
   ): Promise<number> {
     const specs: JobSpec[] = targets.flatMap((target) =>
-      views.flatMap((view) =>
+      views
+        .filter((view) => !target.views || target.views.includes(view))
+        .flatMap((view) =>
         Array.from({ length: variants }, () => ({
           kind: "muscle_map" as const,
           target: { kind: target.kind, id: target.id },
@@ -124,10 +128,8 @@ export function useMuscleMapActions(styleId: string | null) {
     }
   }
 
-  const matches = (job: GenerationJob, target: MuscleMapTargetRef, view?: MuscleMapView) => {
-    const ref = jobTarget(job);
-    return ref?.kind === target.kind && ref.id === target.id && (!view || job.view === view);
-  };
+  const matches = (job: GenerationJob, target: MuscleMapTargetRef, view?: MuscleMapView) =>
+    sameMuscleMapTarget(jobTarget(job), target) && (!view || job.view === view);
 
   /** Activating a map deactivates the one active for its target and view (server side). */
   async function setMapActive(id: string, active: boolean) {

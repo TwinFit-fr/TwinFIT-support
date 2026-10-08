@@ -45,6 +45,7 @@ const referenceTarget = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("exercise"), id: z.number().int().positive() }),
   z.object({ kind: z.literal("muscle"), id: z.string().uuid() }),
   z.object({ kind: z.literal("muscle_group"), id: z.string().uuid() }),
+  z.object({ kind: z.literal("body_region"), id: z.string().uuid() }),
 ]);
 
 /** Fields of a library reference as the Styles page sends them. */

@@ -21,7 +21,58 @@ export const SUBJECTS: readonly Subject[] = ["man", "woman"];
 export type MuscleMapView = "front" | "back";
 export const MUSCLE_MAP_VIEWS: readonly MuscleMapView[] = ["front", "back"];
 
-export type MuscleMapTargetKind = "muscle" | "muscle_group";
+export type MuscleMapTargetKind = "muscle" | "muscle_group" | "body_region";
+
+/** Column of images.muscle_map_images / generation_jobs / style_reference_links per target kind. */
+export const MUSCLE_MAP_TARGET_COLUMN = {
+  muscle: "muscle_id",
+  muscle_group: "muscle_group_id",
+  body_region: "body_region_id",
+} as const satisfies Record<MuscleMapTargetKind, string>;
+
+export type MuscleMapTargetColumn = (typeof MUSCLE_MAP_TARGET_COLUMN)[MuscleMapTargetKind];
+
+export const MUSCLE_MAP_TARGET_KINDS = [
+  "muscle",
+  "muscle_group",
+  "body_region",
+] as const satisfies readonly MuscleMapTargetKind[];
+
+export const MUSCLE_MAP_KIND_LABEL: Record<MuscleMapTargetKind, string> = {
+  muscle: "Muscle",
+  muscle_group: "Group",
+  body_region: "Region",
+};
+
+/** Every target column, the one of `ref` set and the others null (all null without a ref). */
+export function muscleMapTargetColumns(
+  ref: MuscleMapTargetRef | null,
+): Record<MuscleMapTargetColumn, string | null> {
+  const columns = Object.fromEntries(
+    Object.values(MUSCLE_MAP_TARGET_COLUMN).map((column) => [column, null]),
+  ) as Record<MuscleMapTargetColumn, string | null>;
+  if (ref) columns[MUSCLE_MAP_TARGET_COLUMN[ref.kind]] = ref.id;
+  return columns;
+}
+
+/** The target a row points at (exactly one target column is set), or null when none is. */
+export function muscleMapTargetOf(
+  row: Partial<Record<MuscleMapTargetColumn, string | null>>,
+): MuscleMapTargetRef | null {
+  for (const kind of MUSCLE_MAP_TARGET_KINDS) {
+    const id = row[MUSCLE_MAP_TARGET_COLUMN[kind]];
+    if (id) return { kind, id };
+  }
+  return null;
+}
+
+/** Same target (any kind with an id: also a reference's exercise link). */
+export function sameMuscleMapTarget(
+  a: { kind: string; id: string | number } | null | undefined,
+  b: { kind: string; id: string | number } | null | undefined,
+): boolean {
+  return Boolean(a && b && a.kind === b.kind && a.id === b.id);
+}
 
 /** Frames per sequence chosen for a batch; "exercise" keeps each exercise's own setting. */
 export type FrameCountChoice = "exercise" | 2 | 3;
@@ -126,6 +177,7 @@ export type MuscleMapImage = {
   style_id: string;
   muscle_id: string | null;
   muscle_group_id: string | null;
+  body_region_id: string | null;
   view: MuscleMapView;
   file_id: string;
   image_url: string;
@@ -141,15 +193,20 @@ export type MuscleMapImage = {
 
 export type MuscleMapTargetRef = { kind: MuscleMapTargetKind; id: string };
 
-/** A muscle or a muscle group on the muscle map board, with its maps for one style. */
+/** A muscle, muscle group or body region on the muscle map board, with its maps for one style. */
 export type MuscleMapBoardTarget = MuscleMapTargetRef & {
   code: string;
   name: string;
   description: string | null;
+  /**
+   * The views this target is drawn in: both for muscles and groups, the card view
+   * (catalog.body_regions.map_view) for a region.
+   */
+  views: MuscleMapView[];
   /** Newest first. */
   images: MuscleMapImage[];
   active: Partial<Record<MuscleMapView, MuscleMapImage>>;
-  /** Complete when both views have an active map. */
+  /** Complete when every view of the target has an active map. */
   status: "complete" | "partial" | "inactive_only" | "empty";
 };
 
@@ -159,15 +216,29 @@ export type MuscleMapBoardRow = {
   muscles: MuscleMapBoardTarget[];
 };
 
+/** The board: body regions (catalog carousel cards), then groups with their muscles. */
+export type MuscleMapBoard = {
+  regions: MuscleMapBoardTarget[];
+  rows: MuscleMapBoardRow[];
+};
+
+/** Every target of the board in board order. */
+export function muscleMapBoardTargets(board: MuscleMapBoard | undefined): MuscleMapBoardTarget[] {
+  if (!board) return [];
+  return [
+    ...board.regions,
+    ...board.rows.flatMap((row) => (row.group ? [row.group, ...row.muscles] : row.muscles)),
+  ];
+}
+
 export function muscleMapTargetKey(ref: MuscleMapTargetRef): string {
   return `${ref.kind}:${ref.id}`;
 }
 
-/** What a library reference is used for: one exercise, muscle or muscle group. */
+/** What a library reference is used for: one exercise, muscle, muscle group or body region. */
 export type ReferenceTarget =
   | { kind: "exercise"; id: number }
-  | { kind: "muscle"; id: string }
-  | { kind: "muscle_group"; id: string };
+  | { kind: MuscleMapTargetKind; id: string };
 
 export type ReferenceLink = ReferenceTarget & { name: string };
 

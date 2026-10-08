@@ -1,4 +1,5 @@
 import type { MuscleMapTargetRef, MuscleMapView, Subject } from "./types";
+import { muscleMapTargetOf } from "./types";
 
 /**
  * Server-side generation jobs (images.generation_jobs): a run enqueues one job per image and
@@ -47,6 +48,7 @@ export type GenerationJob = {
   position: number | null;
   muscle_id: string | null;
   muscle_group_id: string | null;
+  body_region_id: string | null;
   view: MuscleMapView | null;
   options: FrameJobOptions & MuscleMapJobOptions;
   depends_on: string | null;
@@ -142,7 +144,5 @@ export function isCandidateJob(job: Pick<GenerationJob, "options">): boolean {
 }
 
 export function jobTarget(job: GenerationJob): MuscleMapTargetRef | null {
-  if (job.muscle_id) return { kind: "muscle", id: job.muscle_id };
-  if (job.muscle_group_id) return { kind: "muscle_group", id: job.muscle_group_id };
-  return null;
+  return muscleMapTargetOf(job);
 }

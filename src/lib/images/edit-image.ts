@@ -6,8 +6,8 @@ import { getExerciseImage, getStyle, getUserIdFromToken, insertExerciseImage } f
 import { frameFileName, imageEditDirective, muscleMapFileName } from "./reference";
 import { downloadImageFile, uploadImageFile } from "./storage";
 import { extensionForMime } from "./style-assets";
-import type { ExerciseImage, MuscleMapImage, MuscleMapTargetRef } from "./types";
-import { targetPosition } from "./types";
+import type { ExerciseImage, MuscleMapImage } from "./types";
+import { muscleMapTargetOf, targetPosition } from "./types";
 
 /** An existing image and what to change in it. */
 export type EditRequest = { styleId: string; sourceId: string; instruction: string };
@@ -90,11 +90,9 @@ export async function editMuscleMap(
   if (!source || source.style_id !== styleId) {
     throw new GenerationError("The map to edit was not found in this style", 404);
   }
-  const ref: MuscleMapTargetRef = source.muscle_id
-    ? { kind: "muscle", id: source.muscle_id }
-    : { kind: "muscle_group", id: source.muscle_group_id as string };
-  const target = await getMuscleMapTarget(token, ref);
-  if (!target) throw new GenerationError("Muscle or group not found", 404);
+  const ref = muscleMapTargetOf(source);
+  const target = ref ? await getMuscleMapTarget(token, ref) : null;
+  if (!ref || !target) throw new GenerationError("Muscle map target not found", 404);
 
   const prompt = imageEditDirective(instruction);
   const input = await downloadImageFile(token, source.file_id);
