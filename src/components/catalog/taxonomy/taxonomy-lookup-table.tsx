@@ -37,7 +37,8 @@ type TaxonomyLookupTableProps = {
   onSave: (
     id: string,
     fields: {
-      name: string;
+      /** Only tables without translations: a translated name is its English label. */
+      name?: string;
       sort_order: number;
       active: boolean;
       description?: string | null;
@@ -130,7 +131,7 @@ export function TaxonomyLookupTable({
           <p className="text-sm text-zinc-500">
             {filtered.length} / {rows.length} items
             {TABLE_HINTS[table] && ` · ${TABLE_HINTS[table]}`}
-            {isLocalized && " · name = English; translations on Catalog → Localizations"}
+            {isLocalized && " · names in every language on Catalog → Localizations"}
             {hasDescription && " · description is internal (image prompts)"}
           </p>
         </div>
@@ -150,11 +151,14 @@ export function TaxonomyLookupTable({
       {showAdd && (
         <div className="mt-4 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
           <Input placeholder="CODE" value={newCode} onChange={(e) => setNewCode(e.target.value)} />
-          <Input
-            placeholder={isLocalized ? "Name (English)" : "Name"}
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-          />
+          {/* A translated entry gets a Title Case name from its code; edit it on Localizations. */}
+          {!isLocalized && (
+            <Input
+              placeholder="Name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+          )}
           {hasRegion && (
             <RegionSelect
               regions={regions}
@@ -175,7 +179,7 @@ export function TaxonomyLookupTable({
               disabled={hasRegion && !newExtra.body_region_code}
               onClick={() => {
                 // Empty name: the server derives a Title Case label from the code.
-                void onAdd(newCode, newName.trim(), {
+                void onAdd(newCode, isLocalized ? "" : newName.trim(), {
                   ...(hasRegion ? { body_region_code: newExtra.body_region_code } : {}),
                   ...(hasMap ? { map: newExtra.map } : {}),
                 }).then(() => {
@@ -200,7 +204,7 @@ export function TaxonomyLookupTable({
           <thead className="border-b border-zinc-200">
             <tr>
               <th className="px-3 py-2">Code</th>
-              <th className="px-3 py-2">Name</th>
+              {!isLocalized && <th className="px-3 py-2">Name</th>}
               {hasRegion && <th className="px-3 py-2">Region</th>}
               {hasMap && <th className="px-3 py-2">Muscle maps</th>}
               {hasDescription && <th className="px-3 py-2">Description</th>}
@@ -218,12 +222,14 @@ export function TaxonomyLookupTable({
                   className={`border-b border-zinc-100 ${row.active === false ? "text-zinc-400" : ""}`}
                 >
                   <td className="px-3 py-2 font-mono align-top">{row.code}</td>
-                  <td className="px-3 py-2 align-top">
-                    <Input
-                      value={draft.name}
-                      onChange={(e) => setDraft(row.id, { name: e.target.value })}
-                    />
-                  </td>
+                  {!isLocalized && (
+                    <td className="px-3 py-2 align-top">
+                      <Input
+                        value={draft.name}
+                        onChange={(e) => setDraft(row.id, { name: e.target.value })}
+                      />
+                    </td>
+                  )}
                   {hasRegion && (
                     <td className="px-3 py-2 align-top">
                       <RegionSelect
@@ -278,7 +284,7 @@ export function TaxonomyLookupTable({
                       variant="secondary"
                       onClick={() =>
                         void onSave(row.id, {
-                          name: draft.name,
+                          name: isLocalized ? undefined : draft.name,
                           sort_order: draft.sort_order,
                           active: draft.active,
                           description: hasDescription ? draft.description : undefined,

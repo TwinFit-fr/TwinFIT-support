@@ -73,7 +73,7 @@ export default function CatalogTaxonomyPage() {
     table: string,
     id: string,
     fields: {
-      name: string;
+      name?: string;
       sort_order: number;
       active: boolean;
       description?: string | null;
@@ -87,7 +87,7 @@ export default function CatalogTaxonomyPage() {
           kind: "update",
           table,
           id,
-          name: fields.name,
+          ...(fields.name !== undefined ? { name: fields.name } : {}),
           sort_order: fields.sort_order,
           active: fields.active,
           ...(fields.description !== undefined ? { description: fields.description } : {}),
@@ -168,7 +168,7 @@ export default function CatalogTaxonomyPage() {
         <p className="mt-1 text-sm text-zinc-500">
           Anatomy links muscles to groups. Group movements links movement types to groups.
           Regions group muscle groups for the app catalog. Other tabs edit lookup codes, names
-          and sort order. Names here are English; every language is on{" "}
+          and sort order. Names of translated entries, in every language, are on{" "}
           <Link href="/catalog/localizations" className="underline">
             Catalog → Localizations
           </Link>
