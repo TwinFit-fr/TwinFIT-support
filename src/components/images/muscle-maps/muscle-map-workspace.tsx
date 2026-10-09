@@ -86,7 +86,8 @@ function SlotColumn({
   const [pickedId, setPickedId] = useState<string | null>(null);
   const shown =
     images.find((img) => img.id === pickedId) ?? images.find((img) => img.active) ?? images[0];
-  const url = imageThumbUrl(shown?.image_url, 720);
+  // The canvas is at most 15rem wide: 480 px stays sharp on 2x screens.
+  const url = imageThumbUrl(shown?.image_url, 480);
   const label = muscleMapSlotLabel(slot);
 
   return (
@@ -111,7 +112,7 @@ function SlotColumn({
         </Button>
       </div>
       <div
-        className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-zinc-200"
+        className="relative mx-auto flex aspect-square w-full max-w-60 items-center justify-center overflow-hidden rounded-lg border border-zinc-200"
         style={CHECKER_STYLE}
       >
         {url ? (
@@ -254,8 +255,9 @@ function TargetMaps({
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <div
+        // Columns of about the canvas width: two, three or more maps share a row.
         className={`grid gap-4 rounded-xl border border-zinc-200 bg-white p-3 ${
-          target.slots.length > 1 ? "sm:grid-cols-2" : ""
+          target.slots.length > 1 ? "grid-cols-[repeat(auto-fill,minmax(16rem,1fr))]" : ""
         }`}
       >
         {target.slots.map((slot) => (

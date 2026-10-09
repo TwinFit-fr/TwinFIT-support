@@ -2,12 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
-import {
-  CATALOG_LOCALES,
-  emptyLocaleLabels,
-  resolveLocalizedName,
-  type CatalogLocale,
-} from "@/lib/catalog/locales";
+import { resolveLocalizedName } from "@/lib/catalog/locales";
 import type { MuscleMapChoices } from "@/lib/images/types";
 import { MapChoicesEditor, mapChoicesOf } from "./taxonomy-map-choices";
 import type { LookupRowFull, TaxonomyTabId } from "./types";
@@ -23,7 +18,6 @@ type DraftFields = {
   description: string;
   sort_order: number;
   active: boolean;
-  labels: Record<CatalogLocale, string>;
   body_region_code: string;
   map: MuscleMapChoices;
 };
@@ -39,12 +33,7 @@ type TaxonomyLookupTableProps = {
   rows: LookupRowFull[];
   /** Body regions, for the region column of muscle groups. */
   regions: LookupRowFull[];
-  onAdd: (
-    code: string,
-    name: string,
-    labels?: Record<CatalogLocale, string>,
-    extra?: LookupExtraFields,
-  ) => Promise<void>;
+  onAdd: (code: string, name: string, extra?: LookupExtraFields) => Promise<void>;
   onSave: (
     id: string,
     fields: {
@@ -52,7 +41,6 @@ type TaxonomyLookupTableProps = {
       sort_order: number;
       active: boolean;
       description?: string | null;
-      labels?: Record<CatalogLocale, string>;
     } & LookupExtraFields,
   ) => Promise<void>;
 };
@@ -71,18 +59,6 @@ const TABLE_HINTS: Partial<Record<TaxonomyTabId, string>> = {
     "app catalog carousel; maps: views × crops to draw and the card map; optional description feeds muscle-map prompts",
 };
 
-function labelsFromRow(row: LookupRowFull): Record<CatalogLocale, string> {
-  const labels = emptyLocaleLabels();
-  for (const loc of row.localizations ?? []) {
-    const key = loc.locale as CatalogLocale;
-    if (key in labels && loc.display_name) {
-      labels[key] = loc.display_name;
-    }
-  }
-  if (!labels.en) labels.en = row.name ?? row.code;
-  return labels;
-}
-
 export function TaxonomyLookupTable({
   table,
   rows,
@@ -100,7 +76,7 @@ export function TaxonomyLookupTable({
   const [filter, setFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newCode, setNewCode] = useState("");
-  const [newLabels, setNewLabels] = useState(emptyLocaleLabels());
+  const [newName, setNewName] = useState("");
   const emptyExtra = (): Required<LookupExtraFields> => ({
     body_region_code: "",
     map: mapChoicesOf({}, inheritable),
@@ -126,14 +102,13 @@ export function TaxonomyLookupTable({
   );
 
   function getDraft(row: LookupRowFull): DraftFields {
-    const labels = labelsFromRow(row);
     return (
       drafts[row.id] ?? {
-        name: labels.en,
+        // The canonical name is the English label (the row name when it has none).
+        name: resolveLocalizedName(row, "en"),
         description: row.description ?? "",
         sort_order: Number(row.sort_order) || 0,
         active: row.active !== false,
-        labels,
         body_region_code: regionCodeOf(row.body_region_id),
         map: mapChoicesOf(row, inheritable),
       }
@@ -147,17 +122,6 @@ export function TaxonomyLookupTable({
     setDrafts((prev) => ({ ...prev, [id]: { ...current, ...patch } }));
   }
 
-  function setDraftLabel(id: string, locale: CatalogLocale, value: string) {
-    const row = rows.find((r) => r.id === id);
-    if (!row) return;
-    const current = getDraft(row);
-    const labels = { ...current.labels, [locale]: value };
-    setDraft(id, {
-      labels,
-      name: locale === "en" ? value : current.name,
-    });
-  }
-
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -166,7 +130,7 @@ export function TaxonomyLookupTable({
           <p className="text-sm text-zinc-500">
             {filtered.length} / {rows.length} items
             {TABLE_HINTS[table] && ` · ${TABLE_HINTS[table]}`}
-            {isLocalized && " · edit EN / ES / FR labels"}
+            {isLocalized && " · name = English; translations on Catalog → Localizations"}
             {hasDescription && " · description is internal (image prompts)"}
           </p>
         </div>
@@ -186,28 +150,11 @@ export function TaxonomyLookupTable({
       {showAdd && (
         <div className="mt-4 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
           <Input placeholder="CODE" value={newCode} onChange={(e) => setNewCode(e.target.value)} />
-          {isLocalized ? (
-            <div className="grid gap-2 sm:grid-cols-3">
-              {CATALOG_LOCALES.map((loc) => (
-                <label key={loc} className="text-xs">
-                  <span className="mb-1 block font-medium uppercase">{loc}</span>
-                  <Input
-                    placeholder={loc === "en" ? "Required" : "Optional"}
-                    value={newLabels[loc]}
-                    onChange={(e) =>
-                      setNewLabels((prev) => ({ ...prev, [loc]: e.target.value }))
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-          ) : (
-            <Input
-              placeholder="Name"
-              value={newLabels.en}
-              onChange={(e) => setNewLabels({ ...newLabels, en: e.target.value })}
-            />
-          )}
+          <Input
+            placeholder={isLocalized ? "Name (English)" : "Name"}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
           {hasRegion && (
             <RegionSelect
               regions={regions}
@@ -228,18 +175,12 @@ export function TaxonomyLookupTable({
               disabled={hasRegion && !newExtra.body_region_code}
               onClick={() => {
                 // Empty name: the server derives a Title Case label from the code.
-                const enName = newLabels.en.trim();
-                void onAdd(
-                  newCode,
-                  enName,
-                  isLocalized ? { ...newLabels, en: enName } : undefined,
-                  {
-                    ...(hasRegion ? { body_region_code: newExtra.body_region_code } : {}),
-                    ...(hasMap ? { map: newExtra.map } : {}),
-                  },
-                ).then(() => {
+                void onAdd(newCode, newName.trim(), {
+                  ...(hasRegion ? { body_region_code: newExtra.body_region_code } : {}),
+                  ...(hasMap ? { map: newExtra.map } : {}),
+                }).then(() => {
                   setNewCode("");
-                  setNewLabels(emptyLocaleLabels());
+                  setNewName("");
                   setNewExtra(emptyExtra());
                   setShowAdd(false);
                 });
@@ -259,15 +200,7 @@ export function TaxonomyLookupTable({
           <thead className="border-b border-zinc-200">
             <tr>
               <th className="px-3 py-2">Code</th>
-              {isLocalized ? (
-                CATALOG_LOCALES.map((loc) => (
-                  <th key={loc} className="px-3 py-2 uppercase">
-                    {loc}
-                  </th>
-                ))
-              ) : (
-                <th className="px-3 py-2">Name</th>
-              )}
+              <th className="px-3 py-2">Name</th>
               {hasRegion && <th className="px-3 py-2">Region</th>}
               {hasMap && <th className="px-3 py-2">Muscle maps</th>}
               {hasDescription && <th className="px-3 py-2">Description</th>}
@@ -285,24 +218,12 @@ export function TaxonomyLookupTable({
                   className={`border-b border-zinc-100 ${row.active === false ? "text-zinc-400" : ""}`}
                 >
                   <td className="px-3 py-2 font-mono align-top">{row.code}</td>
-                  {isLocalized ? (
-                    CATALOG_LOCALES.map((loc) => (
-                      <td key={loc} className="px-3 py-2 align-top">
-                        <Input
-                          value={draft.labels[loc]}
-                          placeholder={resolveLocalizedName(row, loc)}
-                          onChange={(e) => setDraftLabel(row.id, loc, e.target.value)}
-                        />
-                      </td>
-                    ))
-                  ) : (
-                    <td className="px-3 py-2 align-top">
-                      <Input
-                        value={draft.name}
-                        onChange={(e) => setDraft(row.id, { name: e.target.value })}
-                      />
-                    </td>
-                  )}
+                  <td className="px-3 py-2 align-top">
+                    <Input
+                      value={draft.name}
+                      onChange={(e) => setDraft(row.id, { name: e.target.value })}
+                    />
+                  </td>
                   {hasRegion && (
                     <td className="px-3 py-2 align-top">
                       <RegionSelect
@@ -357,11 +278,10 @@ export function TaxonomyLookupTable({
                       variant="secondary"
                       onClick={() =>
                         void onSave(row.id, {
-                          name: draft.labels.en || draft.name,
+                          name: draft.name,
                           sort_order: draft.sort_order,
                           active: draft.active,
                           description: hasDescription ? draft.description : undefined,
-                          labels: isLocalized ? draft.labels : undefined,
                           ...(hasRegion ? { body_region_code: draft.body_region_code } : {}),
                           ...(hasMap ? { map: draft.map } : {}),
                         })

@@ -3,14 +3,7 @@
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
 import { useConfirm } from "@/components/ui/confirm";
-import {
-  CATALOG_LOCALES,
-  emptyLocaleLabels,
-  resolveLocalizedName,
-  type CatalogLocale,
-  type LocalizationRow,
-  type LocalizedLookup,
-} from "@/lib/catalog/locales";
+import { resolveLocalizedName, type LocalizedLookup } from "@/lib/catalog/locales";
 import type { LookupRowFull, MuscleGroupRow } from "./types";
 
 type PairRow = {
@@ -19,50 +12,24 @@ type PairRow = {
   groupName: string;
   movementCode: string;
   movementName: string;
-  labels: Record<CatalogLocale, string>;
-  composed: Record<CatalogLocale, string>;
 };
 
 type Props = {
-  locale: CatalogLocale;
   groups: MuscleGroupRow[];
   movements: LookupRowFull[];
   onLink: (groupCode: string, movementCode: string) => Promise<void>;
   onUnlink: (groupCode: string, movementCode: string) => Promise<void>;
-  onSaveLabels: (
-    groupCode: string,
-    movementCode: string,
-    labels: Record<CatalogLocale, string>,
-  ) => Promise<void>;
 };
-
-function labelsFromRows(rows: LocalizationRow[] | undefined): Record<CatalogLocale, string> {
-  const labels = emptyLocaleLabels();
-  for (const row of rows ?? []) {
-    if (row.locale in labels && row.display_name) {
-      labels[row.locale as CatalogLocale] = row.display_name;
-    }
-  }
-  return labels;
-}
 
 function selectClass(extra = "") {
   return `rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm ${extra}`;
 }
 
-export function TaxonomyGroupMovementsPanel({
-  locale,
-  groups,
-  movements,
-  onLink,
-  onUnlink,
-  onSaveLabels,
-}: Props) {
+/** Which movement types each muscle group can use; pair names are on Catalog → Localizations. */
+export function TaxonomyGroupMovementsPanel({ groups, movements, onLink, onUnlink }: Props) {
   const [filter, setFilter] = useState("");
   const confirm = useConfirm();
   const [groupFilter, setGroupFilter] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, Record<CatalogLocale, string>>>({});
-  const [savingKey, setSavingKey] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [linkGroup, setLinkGroup] = useState(groups[0]?.code ?? "");
   const [linkMovement, setLinkMovement] = useState("");
@@ -72,18 +39,12 @@ export function TaxonomyGroupMovementsPanel({
     const rows: PairRow[] = [];
     for (const group of groups) {
       for (const x of group.group_movement_types) {
-        const composed = emptyLocaleLabels();
-        for (const loc of CATALOG_LOCALES) {
-          composed[loc] = `${resolveLocalizedName(group as LocalizedLookup, loc)} - ${resolveLocalizedName(x.movement_type as LocalizedLookup, loc)}`;
-        }
         rows.push({
           key: `${group.code}::${x.movement_type.code}`,
           groupCode: group.code,
-          groupName: resolveLocalizedName(group as LocalizedLookup, locale),
+          groupName: resolveLocalizedName(group as LocalizedLookup, "en"),
           movementCode: x.movement_type.code,
-          movementName: resolveLocalizedName(x.movement_type as LocalizedLookup, locale),
-          labels: labelsFromRows(x.localizations),
-          composed,
+          movementName: resolveLocalizedName(x.movement_type as LocalizedLookup, "en"),
         });
       }
     }
@@ -91,7 +52,7 @@ export function TaxonomyGroupMovementsPanel({
       const g = a.groupCode.localeCompare(b.groupCode);
       return g !== 0 ? g : a.movementCode.localeCompare(b.movementCode);
     });
-  }, [groups, locale]);
+  }, [groups]);
 
   const linkedForGroup = useMemo(() => {
     const set = new Set<string>();
@@ -117,41 +78,9 @@ export function TaxonomyGroupMovementsPanel({
       p.groupCode.toLowerCase().includes(q) ||
       p.movementCode.toLowerCase().includes(q) ||
       p.groupName.toLowerCase().includes(q) ||
-      p.movementName.toLowerCase().includes(q) ||
-      CATALOG_LOCALES.some(
-        (loc) =>
-          p.labels[loc].toLowerCase().includes(q) ||
-          p.composed[loc].toLowerCase().includes(q),
-      )
+      p.movementName.toLowerCase().includes(q)
     );
   });
-
-  function draftFor(row: PairRow): Record<CatalogLocale, string> {
-    return drafts[row.key] ?? row.labels;
-  }
-
-  function setDraft(key: string, labels: Record<CatalogLocale, string>) {
-    setDrafts((prev) => ({ ...prev, [key]: labels }));
-  }
-
-  function isDirty(row: PairRow): boolean {
-    const d = draftFor(row);
-    return CATALOG_LOCALES.some((loc) => (d[loc] || "") !== (row.labels[loc] || ""));
-  }
-
-  async function saveRow(row: PairRow) {
-    setSavingKey(row.key);
-    try {
-      await onSaveLabels(row.groupCode, row.movementCode, draftFor(row));
-      setDrafts((prev) => {
-        const next = { ...prev };
-        delete next[row.key];
-        return next;
-      });
-    } finally {
-      setSavingKey(null);
-    }
-  }
 
   async function unlinkRow(row: PairRow) {
     const unlink = await confirm({
@@ -164,11 +93,6 @@ export function TaxonomyGroupMovementsPanel({
     setBusyKey(row.key);
     try {
       await onUnlink(row.groupCode, row.movementCode);
-      setDrafts((prev) => {
-        const next = { ...prev };
-        delete next[row.key];
-        return next;
-      });
     } finally {
       setBusyKey(null);
     }
@@ -191,9 +115,8 @@ export function TaxonomyGroupMovementsPanel({
         <div>
           <h2 className="text-sm font-semibold text-zinc-900">Group movements</h2>
           <p className="text-xs text-zinc-500">
-            Which movement types each muscle group can use, and optional display names per
-            locale (e.g. Chest Press instead of Chest - Press). Empty locale → composed
-            fallback.
+            Which movement types each muscle group can use. Pair names per language (e.g.
+            Chest Press instead of Chest - Press) are on Catalog → Localizations.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -224,7 +147,7 @@ export function TaxonomyGroupMovementsPanel({
               <option value="">Select…</option>
               {availableMovements.map((m) => (
                 <option key={m.id} value={m.code}>
-                  {m.code} — {resolveLocalizedName(m as LocalizedLookup, locale)}
+                  {m.code} — {resolveLocalizedName(m as LocalizedLookup, "en")}
                 </option>
               ))}
             </select>
@@ -241,7 +164,7 @@ export function TaxonomyGroupMovementsPanel({
 
       <div className="flex flex-wrap items-center gap-2">
         <Input
-          placeholder="Filter group, movement, or name…"
+          placeholder="Filter group or movement…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className="max-w-sm"
@@ -269,26 +192,19 @@ export function TaxonomyGroupMovementsPanel({
             <tr>
               <th className="px-3 py-2 font-medium">Group</th>
               <th className="px-3 py-2 font-medium">Movement</th>
-              {CATALOG_LOCALES.map((loc) => (
-                <th key={loc} className="px-3 py-2 font-medium">
-                  {loc}
-                </th>
-              ))}
               <th className="px-3 py-2 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={3 + CATALOG_LOCALES.length} className="px-3 py-6 text-zinc-500">
+                <td colSpan={3} className="px-3 py-6 text-zinc-500">
                   No group–movement pairs yet. Link one above.
                 </td>
               </tr>
             ) : (
               filtered.map((row) => {
-                const draft = draftFor(row);
-                const dirty = isDirty(row);
-                const busy = savingKey === row.key || busyKey === row.key;
+                const busy = busyKey === row.key;
                 return (
                   <tr key={row.key} className="border-b border-zinc-100 align-top">
                     <td className="px-3 py-2">
@@ -299,29 +215,8 @@ export function TaxonomyGroupMovementsPanel({
                       <div className="font-mono text-xs">{row.movementCode}</div>
                       <div className="text-xs text-zinc-500">{row.movementName}</div>
                     </td>
-                    {CATALOG_LOCALES.map((loc) => (
-                      <td key={loc} className="px-3 py-2">
-                        <Input
-                          value={draft[loc]}
-                          placeholder={row.composed[loc]}
-                          disabled={busy}
-                          onChange={(e) =>
-                            setDraft(row.key, { ...draft, [loc]: e.target.value })
-                          }
-                          className="min-w-[8rem] text-xs"
-                        />
-                      </td>
-                    ))}
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
-                        <Button
-                          type="button"
-                          disabled={!dirty || busy}
-                          className="h-8 px-2 text-xs"
-                          onClick={() => void saveRow(row)}
-                        >
-                          {savingKey === row.key ? "…" : "Save"}
-                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
