@@ -56,6 +56,7 @@ export function exerciseDetails(exercise: ExerciseTaxonomy): string {
 export const PROMPT_PLACEHOLDERS = {
   exercise: ["{name}", "{description}", "{exo_id}", "{subject}", "{background_color}"],
   support: ["{support}", "{support_description}", "{background_color}"],
+  equipment: ["{equipment}", "{equipment_description}", "{background_color}"],
   muscleBase: ["{view}", "{crop}", "{background_color}"],
   muscleMap: [
     "{target}",
@@ -70,7 +71,12 @@ export const PROMPT_PLACEHOLDERS = {
 
 export function fillPromptTemplate(
   template: string,
-  values: TemplateValues & { support?: string; support_description?: string },
+  values: TemplateValues & {
+    support?: string;
+    support_description?: string;
+    equipment?: string;
+    equipment_description?: string;
+  },
 ): string {
   return template
     .replaceAll("{name}", values.name)
@@ -81,7 +87,9 @@ export function fillPromptTemplate(
     .replaceAll("{subject}", values.subject ?? "person")
     .replaceAll("{background_color}", values.background_color ?? "")
     .replaceAll("{support}", values.support ?? "")
-    .replaceAll("{support_description}", values.support_description ?? "");
+    .replaceAll("{support_description}", values.support_description ?? "")
+    .replaceAll("{equipment}", values.equipment ?? "")
+    .replaceAll("{equipment_description}", values.equipment_description ?? "");
 }
 
 export function assembleImagePrompt(

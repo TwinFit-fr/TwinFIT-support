@@ -461,6 +461,7 @@ export type UpdateLookupPayload = {
 
 const DESCRIBED_LOOKUP_TABLES = new Set([
   "catalog_body_regions",
+  "catalog_equipment",
   "catalog_grips",
   "catalog_support_equipment",
   "catalog_muscles",
@@ -647,7 +648,7 @@ export function fetchTaxonomy(token: string) {
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_equipment(order_by: { sort_order: asc, code: asc }) {
-        id code name sort_order active
+        id code name description sort_order active
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_support_equipment(order_by: { sort_order: asc, code: asc }) {

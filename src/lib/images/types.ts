@@ -1,4 +1,10 @@
-export type ImagePromptKind = "system" | "position" | "support" | "muscle_base" | "muscle_map";
+export type ImagePromptKind =
+  | "system"
+  | "position"
+  | "support"
+  | "equipment"
+  | "muscle_base"
+  | "muscle_map";
 
 /** OpenAI generation params stored on a style (no logo / concurrency). */
 export type GenerationParams = {
@@ -157,9 +163,12 @@ export type ImageStyle = {
   characters: { subject: Subject; file_id: string }[];
   /** Blank body per view and crop: the input image of every muscle map of that view and crop. */
   muscle_bases: (MuscleMapSlot & { file_id: string })[];
+  /** Support equipment image: Start-frame reference and the app's filter card. */
   supports: {
     support_equipment_id: string;
     file_id: string;
+    /** Public URL the app shows; null on rows saved before it existed. */
+    image_url: string | null;
     support_equipment: {
       id: string;
       code: string;
@@ -167,6 +176,12 @@ export type ImageStyle = {
       description: string | null;
       active: boolean;
     } | null;
+  }[];
+  /** Load equipment image: the app's filter card. */
+  equipment: {
+    equipment_id: string;
+    file_id: string;
+    image_url: string;
   }[];
 };
 
@@ -184,6 +199,7 @@ export type StylePrompts = {
   mid: ImagePrompt;
   end: ImagePrompt;
   support: ImagePrompt;
+  equipment: ImagePrompt;
   muscleBase: ImagePrompt;
   muscleMap: ImagePrompt;
 };

@@ -58,7 +58,8 @@ type TaxonomyLookupTableProps = {
 };
 
 const TABLE_HINTS: Partial<Record<TaxonomyTabId, string>> = {
-  catalog_equipment: "load implement (NONE = bodyweight)",
+  catalog_equipment:
+    "load implement (NONE = bodyweight); optional description feeds equipment image prompts",
   catalog_support_equipment:
     "station / auxiliary (not the load); optional description feeds image-generation prompts",
   catalog_grips: "optional description feeds image-generation prompts",

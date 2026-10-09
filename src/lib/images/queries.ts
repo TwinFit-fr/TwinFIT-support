@@ -61,8 +61,10 @@ const STYLE_FIELDS = `
   supports {
     support_equipment_id
     file_id
+    image_url
     support_equipment { id code name description active }
   }
+  equipment { equipment_id file_id image_url }
 `;
 const EXERCISE_FIELDS = `
   id
@@ -190,6 +192,7 @@ function normalizeStyle(row: ImageStyle): ImageStyle {
     characters: row.characters ?? [],
     muscle_bases: row.muscle_bases ?? [],
     supports: row.supports ?? [],
+    equipment: row.equipment ?? [],
   };
 }
 
@@ -242,12 +245,13 @@ export function getStylePrompts(prompts: ImagePrompt[]): StylePrompts {
   const mid = prompts.find((p) => p.kind === "position" && p.position === 1);
   const end = prompts.find((p) => p.kind === "position" && p.position === 2);
   const support = prompts.find((p) => p.kind === "support");
+  const equipment = prompts.find((p) => p.kind === "equipment");
   const muscleBase = prompts.find((p) => p.kind === "muscle_base");
   const muscleMap = prompts.find((p) => p.kind === "muscle_map");
-  if (!system || !start || !mid || !end || !support || !muscleBase || !muscleMap) {
+  if (!system || !start || !mid || !end || !support || !equipment || !muscleBase || !muscleMap) {
     throw new Error("Style is missing one or more required prompt slots");
   }
-  return { system, start, mid, end, support, muscleBase, muscleMap };
+  return { system, start, mid, end, support, equipment, muscleBase, muscleMap };
 }
 
 export async function createStyle(
@@ -875,6 +879,23 @@ export function getUserIdFromToken(token: string): string | null {
   } catch {
     return null;
   }
+}
+
+export async function listActiveEquipment(
+  token: string,
+): Promise<{ id: string; code: string; name: string; description: string | null }[]> {
+  const data = await staffGql<{
+    catalog_equipment: { id: string; code: string; name: string; description: string | null }[];
+  }>(
+    token,
+    `query {
+      catalog_equipment(
+        where: { active: { _eq: true } }
+        order_by: [{ sort_order: asc }, { code: asc }]
+      ) { id code name description }
+    }`,
+  );
+  return data.catalog_equipment ?? [];
 }
 
 export async function listActiveSupportEquipment(

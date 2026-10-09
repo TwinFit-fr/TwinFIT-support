@@ -305,6 +305,14 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
       </SlotGroup>
 
       <SlotGroup
+        title="Load equipment"
+        description="Generates the load equipment images of the style (app filter cards)."
+        placeholders={PROMPT_PLACEHOLDERS.equipment}
+      >
+        <PromptSlotEditor title="Equipment prompt" prompt={data?.equipment} styleId={styleId} />
+      </SlotGroup>
+
+      <SlotGroup
         title="Muscle maps"
         description="The base draws the blank body once per view and crop ({crop}: full, upper or lower body); each map edits the base of its view and crop to highlight a muscle, group or region."
         placeholders={PROMPT_PLACEHOLDERS.muscleMap}

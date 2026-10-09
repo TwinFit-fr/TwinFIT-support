@@ -65,6 +65,7 @@ function promptSlotLabel(
   if (!prompt) return "deleted prompt";
   if (prompt.kind === "system") return "System";
   if (prompt.kind === "support") return "Support";
+  if (prompt.kind === "equipment") return "Equipment";
   if (prompt.kind === "position") return framePositionLabel(prompt.position);
   return "Prompt";
 }
