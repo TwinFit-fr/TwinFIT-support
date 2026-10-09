@@ -14,6 +14,7 @@ import {
   ArrowRight,
   X,
   Image as ImageIcon,
+  Languages,
 } from "lucide-react";
 import { RoleBadges } from "@/components/support/role-badges";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
@@ -112,6 +113,14 @@ export function CommandMenu({
         category: "Navigation",
         icon: <Layers className="h-4 w-4 text-zinc-500" />,
         perform: () => router.push("/catalog/taxonomy"),
+      },
+      {
+        id: "nav-localizations",
+        title: "Catalog Localizations",
+        subtitle: "Translate regions, groups, muscles, movements and equipment (EN / ES / FR)",
+        category: "Navigation",
+        icon: <Languages className="h-4 w-4 text-zinc-500" />,
+        perform: () => router.push("/catalog/localizations"),
       },
       {
         id: "nav-images",

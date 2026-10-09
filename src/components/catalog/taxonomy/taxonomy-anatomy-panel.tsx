@@ -2,11 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
-import {
-  resolveLocalizedName,
-  type CatalogLocale,
-  type LocalizedLookup,
-} from "@/lib/catalog/locales";
+import { resolveLocalizedName, type LocalizedLookup } from "@/lib/catalog/locales";
 import { RegionSelect } from "./taxonomy-lookup-table";
 import type { LookupRowFull, MuscleGroupRow } from "./types";
 
@@ -17,7 +13,6 @@ export type RelationApplyItem = {
 };
 
 type AnatomyPanelProps = {
-  locale: CatalogLocale;
   groups: MuscleGroupRow[];
   muscles: LookupRowFull[];
   /** Body regions: a new group needs one. */
@@ -39,7 +34,6 @@ type LinkedItem = {
 };
 
 export function TaxonomyAnatomyPanel({
-  locale,
   groups,
   muscles,
   regions,
@@ -65,14 +59,14 @@ export function TaxonomyAnatomyPanel({
     return group.group_muscles
       .map((x) => ({
         code: x.muscle.code,
-        name: resolveLocalizedName(x.muscle as LocalizedLookup, locale),
+        name: resolveLocalizedName(x.muscle as LocalizedLookup, "en"),
         role: x.role === "target" ? "target" : "secondary",
       }))
       .sort((a, b) => {
         if (a.role !== b.role) return a.role === "target" ? -1 : 1;
         return a.code.localeCompare(b.code);
       });
-  }, [group, locale]);
+  }, [group]);
 
   const linkedCodes = new Set(linked.map((x) => x.code));
   const q = poolFilter.trim().toLowerCase();
@@ -177,7 +171,7 @@ export function TaxonomyAnatomyPanel({
             >
               <span className="font-mono">{g.code}</span>
               <span className="ml-1 text-zinc-500">
-                {resolveLocalizedName(g as LocalizedLookup, locale)}
+                {resolveLocalizedName(g as LocalizedLookup, "en")}
               </span>
             </button>
           ))}
@@ -192,7 +186,7 @@ export function TaxonomyAnatomyPanel({
             <div>
               <h3 className="font-medium">{group.code}</h3>
               <p className="text-sm text-zinc-500">
-                {resolveLocalizedName(group as LocalizedLookup, locale)} — link muscles
+                {resolveLocalizedName(group as LocalizedLookup, "en")} — link muscles
                 (target / secondary). Group + movement pairs are under{" "}
                 <span className="font-medium">Group movements</span>.
               </p>
@@ -298,7 +292,7 @@ export function TaxonomyAnatomyPanel({
                     >
                       <span className="font-mono text-sm">{item.code}</span>
                       <p className="mt-0.5 text-xs text-zinc-500">
-                        {resolveLocalizedName(item as LocalizedLookup, locale)}
+                        {resolveLocalizedName(item as LocalizedLookup, "en")}
                       </p>
                       {linkRow?.role && (
                         <span className="text-xs text-zinc-500">{linkRow.role}</span>

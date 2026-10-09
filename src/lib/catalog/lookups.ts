@@ -328,6 +328,10 @@ export async function resolveExerciseColumns(
 }
 
 /** EN is required; ES/FR are written only when they have a label. One request per call. */
+/**
+ * Sets every locale of a row: filled ones are upserted, emptied ones deleted (English is
+ * required), in one mutation.
+ */
 async function upsertTaxonomyLocalizations(
   token: string,
   table: LookupTable,
@@ -344,15 +348,35 @@ async function upsertTaxonomyLocalizations(
     }
     return [{ [cfg.fk]: parentId, locale, display_name }];
   });
+  const cleared = CATALOG_LOCALES.filter((locale) => !objects.some((o) => o.locale === locale));
   await staffGql(
     token,
-    `mutation($objects: [${cfg.table}_insert_input!]!) {
+    `mutation($objects: [${cfg.table}_insert_input!]!, $id: uuid!, $cleared: [String!]!) {
       insert_${cfg.table}(
         objects: $objects
         on_conflict: { constraint: ${cfg.constraint}, update_columns: [display_name] }
       ) { affected_rows }
+      delete_${cfg.table}(
+        where: { ${cfg.fk}: { _eq: $id }, locale: { _in: $cleared } }
+      ) { affected_rows }
     }`,
-    { objects },
+    { objects, id: parentId, cleared },
+  );
+}
+
+/** Keeps the English label equal to a renamed row's name; other locales are left as they are. */
+async function setEnglishLabel(token: string, table: LookupTable, parentId: string, name: string) {
+  const cfg = TAXONOMY_LOCALIZATIONS[table];
+  if (!cfg || !name) return;
+  await staffGql(
+    token,
+    `mutation($object: ${cfg.table}_insert_input!) {
+      insert_${cfg.table}_one(
+        object: $object
+        on_conflict: { constraint: ${cfg.constraint}, update_columns: [display_name] }
+      ) { locale }
+    }`,
+    { object: { [cfg.fk]: parentId, locale: "en", display_name: name } },
   );
 }
 
@@ -509,6 +533,8 @@ export async function updateLookup(token: string, payload: UpdateLookupPayload) 
         { id },
       );
   if (labels) await upsertTaxonomyLocalizations(token, table, id, labels);
+  // Taxonomy edits the name only; translations are edited on Localizations.
+  else if (typeof set.name === "string") await setEnglishLabel(token, table, id, set.name);
   return data.row;
 }
 
