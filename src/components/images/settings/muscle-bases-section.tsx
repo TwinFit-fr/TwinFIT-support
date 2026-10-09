@@ -10,7 +10,7 @@ import {
   muscleMapSlots,
   sameMuscleMapSlot,
 } from "@/lib/images/types";
-import { AssetCard, AssetNote } from "./asset-card";
+import { AssetCard, AssetGroup, AssetNote } from "./asset-card";
 
 const VIEW_NOTE = { front: "seen from the front", back: "seen from the back" } as const;
 const CROP_NOTE = {
@@ -39,16 +39,19 @@ export function MuscleBasesSection({
     (slot) => usedSlots.some((used) => sameMuscleMapSlot(used, slot)) || fileFor(slot),
   );
 
+  const filled = usedSlots.filter((slot) => fileFor(slot)).length;
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">
-          Muscle map bases
-        </p>
+    <AssetGroup
+      id="muscle-bases"
+      title="Muscle map bases"
+      summary={`${filled} / ${usedSlots.length} used`}
+      aside={
         <Link href="/images/muscle-maps" className="text-xs text-zinc-500 underline">
           Open muscle maps
         </Link>
-      </div>
+      }
+    >
       <div className="grid gap-3 lg:grid-cols-2">
         {slots.map((slot) => {
           const label = muscleMapSlotLabel(slot);
@@ -83,6 +86,6 @@ export function MuscleBasesSection({
         </Link>
         .
       </p>
-    </div>
+    </AssetGroup>
   );
 }
