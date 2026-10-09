@@ -3,40 +3,33 @@ import { requireStaffToken } from "@/lib/api-auth";
 import { assetBodySchema, assetErrorResponse, decodeAssetUpload } from "@/lib/images/asset-request";
 import { generateImage } from "@/lib/images/openai";
 import { fillPromptTemplate } from "@/lib/images/prompt";
-import {
-  getStyle,
-  listActiveSupportEquipment,
-  listImagePromptsForStyle,
-} from "@/lib/images/queries";
-import { supportFileName } from "@/lib/images/reference";
+import { getStyle, listActiveEquipment, listImagePromptsForStyle } from "@/lib/images/queries";
+import { equipmentFileName } from "@/lib/images/reference";
 import { deleteImageFile } from "@/lib/images/storage";
 import {
-  deleteStyleSupport,
+  deleteStyleEquipment,
   extensionForMime,
   replaceUploadedFile,
-  upsertStyleSupport,
+  upsertStyleEquipment,
 } from "@/lib/images/style-assets";
 
 export const maxDuration = 300;
 
-type Ctx = { params: Promise<{ styleId: string; supportId: string }> };
+type Ctx = { params: Promise<{ styleId: string; equipmentId: string }> };
 
+/** Uploads or generates a load equipment image of the style (the app's filter card). */
 export async function POST(request: Request, context: Ctx) {
   try {
     const token = requireStaffToken(request);
-    const { styleId, supportId } = await context.params;
+    const { styleId, equipmentId } = await context.params;
     const style = await getStyle(token, styleId);
     if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
 
-    const supports = await listActiveSupportEquipment(token);
-    const support = supports.find((s) => s.id === supportId);
-    if (!support) {
-      return NextResponse.json({ error: "Support equipment not found" }, { status: 404 });
-    }
+    const equipment = (await listActiveEquipment(token)).find((e) => e.id === equipmentId);
+    if (!equipment) return NextResponse.json({ error: "Equipment not found" }, { status: 404 });
 
     const body = assetBodySchema.parse(await request.json());
-    const previous =
-      style.supports.find((s) => s.support_equipment_id === supportId)?.file_id ?? null;
+    const previous = style.equipment.find((e) => e.equipment_id === equipmentId)?.file_id ?? null;
 
     let bytes: Buffer;
     let mimeType: string;
@@ -48,17 +41,17 @@ export async function POST(request: Request, context: Ctx) {
     } else {
       let template;
       try {
-        template = (await listImagePromptsForStyle(token, styleId)).support;
+        template = (await listImagePromptsForStyle(token, styleId)).equipment;
       } catch {
-        return NextResponse.json({ error: "No support prompt available" }, { status: 400 });
+        return NextResponse.json({ error: "No equipment prompt available" }, { status: 400 });
       }
       const prompt = fillPromptTemplate(template.content, {
-        name: support.name,
-        description: support.description ?? "",
+        name: equipment.name,
+        description: equipment.description ?? "",
         exo_id: 0,
         background_color: style.params.background_color,
-        support: support.name,
-        support_description: support.description?.trim() || "",
+        equipment: equipment.name,
+        equipment_description: equipment.description?.trim() || "",
       }).trim();
       const result = await generateImage(prompt, style.params);
       bytes = result.bytes;
@@ -69,24 +62,24 @@ export async function POST(request: Request, context: Ctx) {
       token,
       bytes,
       mimeType,
-      name: supportFileName(style.code, support.code, extensionForMime(mimeType)),
+      name: equipmentFileName(style.code, equipment.code, extensionForMime(mimeType)),
       previousFileId: previous,
     });
-    await upsertStyleSupport(token, styleId, supportId, uploaded);
+    await upsertStyleEquipment(token, styleId, equipmentId, uploaded);
     return NextResponse.json({ style: await getStyle(token, styleId) });
   } catch (error) {
-    return assetErrorResponse(error, "Support reference update failed");
+    return assetErrorResponse(error, "Equipment image update failed");
   }
 }
 
 export async function DELETE(request: Request, context: Ctx) {
   try {
     const token = requireStaffToken(request);
-    const { styleId, supportId } = await context.params;
-    const previous = await deleteStyleSupport(token, styleId, supportId);
+    const { styleId, equipmentId } = await context.params;
+    const previous = await deleteStyleEquipment(token, styleId, equipmentId);
     if (previous) await deleteImageFile(token, previous);
     return NextResponse.json({ style: await getStyle(token, styleId) });
   } catch (error) {
-    return assetErrorResponse(error, "Support reference removal failed", 500);
+    return assetErrorResponse(error, "Equipment image removal failed", 500);
   }
 }

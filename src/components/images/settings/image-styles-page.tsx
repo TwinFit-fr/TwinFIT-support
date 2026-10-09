@@ -22,10 +22,10 @@ import { StylePromptsEditor } from "@/components/images/prompt-editor";
 import { CharactersSection } from "./characters-section";
 import { Section, readAsBase64, selectClass } from "./form-ui";
 import { ModelSection } from "./model-section";
+import { EquipmentSection, type EquipmentKind } from "./equipment-section";
 import { MuscleBasesSection } from "./muscle-bases-section";
 import { ReferencesLibrary } from "./references-library";
 import { StyleBar } from "./style-bar";
-import { SupportsSection } from "./supports-section";
 
 type ModelsResponse = { models: { id: string }[] };
 type StylesResponse = { styles: ImageStyle[] };
@@ -96,7 +96,8 @@ export function ImageStylesPage() {
   );
   const [savingStyle, setSavingStyle] = useState(false);
   const [characterBusy, setCharacterBusy] = useState<Subject | null>(null);
-  const [supportBusy, setSupportBusy] = useState<string | null>(null);
+  /** The load or support equipment whose image is being saved. */
+  const [equipmentBusy, setEquipmentBusy] = useState<string | null>(null);
   const [muscleBaseBusy, setMuscleBaseBusy] = useState<MuscleMapSlotKey | null>(null);
   // The bases the catalog's maps need (view × crop of active regions, groups and muscles).
   const { data: usedSlotsData } = useStaffSWR<{ slots: MuscleMapSlot[] }>(
@@ -318,20 +319,25 @@ export function ImageStylesPage() {
     }
   }
 
-  async function supportAction(supportId: string, action: "generate" | "remove" | File) {
+  async function equipmentAction(
+    kind: EquipmentKind,
+    id: string,
+    action: "generate" | "remove" | File,
+  ) {
     if (!selectedStyleId) return;
-    setSupportBusy(supportId);
+    setEquipmentBusy(id);
+    const noun = kind === "load" ? "Equipment image" : "Support image";
     try {
       const result = await assetRequest(
-        `/api/images/styles/${selectedStyleId}/supports/${supportId}`,
+        `/api/images/styles/${selectedStyleId}/${kind === "load" ? "equipment" : "supports"}/${id}`,
         action,
       );
       await refreshStyle(result.style);
-      success(action === "remove" ? "Support reference removed" : "Support reference updated");
+      success(action === "remove" ? `${noun} removed` : `${noun} updated`);
     } catch (err) {
-      toastError(err instanceof Error ? err.message : "Support update failed");
+      toastError(err instanceof Error ? err.message : `${noun} update failed`);
     } finally {
-      setSupportBusy(null);
+      setEquipmentBusy(null);
     }
   }
 
@@ -553,9 +559,9 @@ export function ImageStylesPage() {
 
         <TabPanel id="assets" selected={tab === "assets"}>
           <p className="text-xs text-zinc-500">
-            Character sheets, brand logo, support equipment and muscle map bases, each sent
-            automatically by its rule. Images save at once; the logo and fidelity settings save with
-            the style.
+            Character sheets, brand logo, load and support equipment and muscle map bases, each
+            used by its rule. Images save at once; the logo and fidelity settings save with the
+            style.
           </p>
           <CharactersSection
             style={style}
@@ -577,12 +583,16 @@ export function ImageStylesPage() {
             onLogoUpload={(file) => void uploadLogo(file)}
             onLogoRemove={() => void removeLogo()}
           />
-          <SupportsSection
-            style={style}
-            dirty={styleDirty}
-            busyId={supportBusy}
-            onAction={(supportId, action) => void supportAction(supportId, action)}
-          />
+          {(["load", "support"] as const).map((kind) => (
+            <EquipmentSection
+              key={kind}
+              kind={kind}
+              style={style}
+              dirty={styleDirty}
+              busyId={equipmentBusy}
+              onAction={(id, action) => void equipmentAction(kind, id, action)}
+            />
+          ))}
           <MuscleBasesSection
             style={style}
             dirty={styleDirty}

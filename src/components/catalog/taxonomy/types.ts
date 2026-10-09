@@ -44,6 +44,7 @@ export const LOCALIZED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
 
 /** Tables with an optional staff-only visual description for image prompts. */
 export const DESCRIBED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
+  "catalog_equipment",
   "catalog_grips",
   "catalog_support_equipment",
   "catalog_muscles",
@@ -62,7 +63,7 @@ export type LookupRowFull = Partial<MuscleMapChoices> & {
   id: string;
   code: string;
   name: string;
-  /** Internal visual description (grips / support / muscles / groups / regions); not localized. */
+  /** Internal visual description (equipment / grips / support / muscles / groups / regions); not localized. */
   description?: string | null;
   sort_order?: number;
   active?: boolean;

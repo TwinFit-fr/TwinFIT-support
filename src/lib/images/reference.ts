@@ -52,7 +52,7 @@ export function libraryReferenceDirective(
 
 export function styleAssetPath(
   styleCode: string,
-  kind: "characters" | "supports" | "brand" | "frames" | "muscles" | "library",
+  kind: "characters" | "supports" | "equipment" | "brand" | "frames" | "muscles" | "library",
   name: string,
 ): string {
   return `styles/${styleCode.toLowerCase()}/${kind}/${name}`;
@@ -73,6 +73,18 @@ export function supportFileName(styleCode: string, supportCode: string, extensio
 /** "front" for a full crop, "front_upper" otherwise (full keeps the names it had before crops). */
 function slotFileSegment({ view, crop }: MuscleMapSlot): string {
   return crop === "full" ? view : `${view}_${crop}`;
+}
+
+export function equipmentFileName(
+  styleCode: string,
+  equipmentCode: string,
+  extension: string,
+): string {
+  return styleAssetPath(
+    styleCode,
+    "equipment",
+    `${equipmentCode.toLowerCase()}_${Date.now()}.${extension}`,
+  );
 }
 
 export function muscleBaseFileName(
