@@ -1,4 +1,4 @@
-import type { MuscleMapTargetRef, MuscleMapView, Subject } from "./types";
+import type { MuscleMapCrop, MuscleMapSlot, MuscleMapTargetRef, MuscleMapView, Subject } from "./types";
 import { muscleMapTargetOf } from "./types";
 
 /**
@@ -50,6 +50,7 @@ export type GenerationJob = {
   muscle_group_id: string | null;
   body_region_id: string | null;
   view: MuscleMapView | null;
+  crop: MuscleMapCrop | null;
   options: FrameJobOptions & MuscleMapJobOptions;
   depends_on: string | null;
   status: JobStatus;
@@ -81,7 +82,7 @@ export type JobSpec =
   | {
       kind: "muscle_map";
       target: MuscleMapTargetRef;
-      view: MuscleMapView;
+      slot: MuscleMapSlot;
       options?: MuscleMapJobOptions;
     };
 
@@ -145,4 +146,9 @@ export function isCandidateJob(job: Pick<GenerationJob, "options">): boolean {
 
 export function jobTarget(job: GenerationJob): MuscleMapTargetRef | null {
   return muscleMapTargetOf(job);
+}
+
+/** The view and crop of a muscle map job (null for frames). */
+export function jobSlot(job: GenerationJob): MuscleMapSlot | null {
+  return job.view ? { view: job.view, crop: job.crop ?? "full" } : null;
 }

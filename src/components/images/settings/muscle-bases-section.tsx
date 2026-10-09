@@ -1,28 +1,43 @@
 "use client";
 
 import Link from "next/link";
-import type { ImageStyle, MuscleMapView } from "@/lib/images/types";
-import { MUSCLE_MAP_VIEWS } from "@/lib/images/types";
+import type { ImageStyle, MuscleMapSlot, MuscleMapSlotKey } from "@/lib/images/types";
+import {
+  MUSCLE_MAP_CROPS,
+  MUSCLE_MAP_VIEWS,
+  muscleMapSlotKey,
+  muscleMapSlotLabel,
+  muscleMapSlots,
+  sameMuscleMapSlot,
+} from "@/lib/images/types";
 import { AssetCard, AssetNote } from "./asset-card";
 
-const VIEW_NOTES: Record<MuscleMapView, string> = {
-  front: "Blank body seen from the front. Every front muscle map edits this image.",
-  back: "Blank body seen from the back. Every back muscle map edits this image.",
-};
+const VIEW_NOTE = { front: "seen from the front", back: "seen from the back" } as const;
+const CROP_NOTE = {
+  full: "Blank full body",
+  upper: "Blank upper body (head to hips)",
+  lower: "Blank lower body (hips to feet)",
+} as const;
 
 export function MuscleBasesSection({
   style,
   dirty,
-  busyView,
+  usedSlots,
+  busySlot,
   onAction,
 }: {
   style: ImageStyle;
   dirty: boolean;
-  busyView: MuscleMapView | null;
-  onAction: (view: MuscleMapView, action: "generate" | "remove" | File) => void;
+  /** View × crop pairs the catalog has maps for; the others are shown only when they exist. */
+  usedSlots: MuscleMapSlot[];
+  busySlot: MuscleMapSlotKey | null;
+  onAction: (slot: MuscleMapSlot, action: "generate" | "remove" | File) => void;
 }) {
-  const fileFor = (view: MuscleMapView) =>
-    style.muscle_bases.find((b) => b.view === view)?.file_id ?? null;
+  const fileFor = (slot: MuscleMapSlot) =>
+    style.muscle_bases.find((b) => sameMuscleMapSlot(b, slot))?.file_id ?? null;
+  const slots = muscleMapSlots(MUSCLE_MAP_VIEWS, MUSCLE_MAP_CROPS).filter(
+    (slot) => usedSlots.some((used) => sameMuscleMapSlot(used, slot)) || fileFor(slot),
+  );
 
   return (
     <div className="space-y-3">
@@ -35,24 +50,39 @@ export function MuscleBasesSection({
         </Link>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
-        {MUSCLE_MAP_VIEWS.map((view) => (
-          <AssetCard
-            key={view}
-            fileId={fileFor(view)}
-            title={view === "front" ? "Front" : "Back"}
-            name={`${view} base`}
-            unsavedStyle={dirty}
-            emptyLabel="No base"
-            busy={busyView === view}
-            onUpload={(file) => onAction(view, file)}
-            onGenerate={() => onAction(view, "generate")}
-            onRemove={() => onAction(view, "remove")}
-          >
-            <AssetNote>{VIEW_NOTES[view]}</AssetNote>
-            <p className="mt-1 text-[10px] text-zinc-400">Uses this style’s base body prompt.</p>
-          </AssetCard>
-        ))}
+        {slots.map((slot) => {
+          const label = muscleMapSlotLabel(slot);
+          const used = usedSlots.some((u) => sameMuscleMapSlot(u, slot));
+          return (
+            <AssetCard
+              key={muscleMapSlotKey(slot)}
+              fileId={fileFor(slot)}
+              title={label}
+              name={`${label} base`}
+              unsavedStyle={dirty}
+              emptyLabel="No base"
+              busy={busySlot === muscleMapSlotKey(slot)}
+              onUpload={(file) => onAction(slot, file)}
+              onGenerate={() => onAction(slot, "generate")}
+              onRemove={() => onAction(slot, "remove")}
+            >
+              <AssetNote>
+                {CROP_NOTE[slot.crop]} {VIEW_NOTE[slot.view]}. Every {label.toLowerCase()} muscle
+                map edits this image.
+                {!used && " No catalog entry uses this view and crop now."}
+              </AssetNote>
+              <p className="mt-1 text-[10px] text-zinc-400">Uses this style’s base body prompt.</p>
+            </AssetCard>
+          );
+        })}
       </div>
+      <p className="text-[11px] text-zinc-500">
+        Which views and crops exist is set per region, group and muscle on{" "}
+        <Link href="/catalog/taxonomy" className="underline">
+          Catalog → Taxonomy
+        </Link>
+        .
+      </p>
     </div>
   );
 }

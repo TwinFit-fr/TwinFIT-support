@@ -57,7 +57,7 @@ const STYLE_FIELDS = `
   updated_at
   updated_by
   characters { subject file_id }
-  muscle_bases { view file_id }
+  muscle_bases { view crop file_id }
   supports {
     support_equipment_id
     file_id

@@ -4,12 +4,21 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { CHECKER_STYLE } from "@/components/images/checker";
 import { STATUS_DOT } from "@/components/images/exercise-image-card";
-import type { MuscleMapBoardTarget, MuscleMapView } from "@/lib/images/types";
-import { MUSCLE_MAP_KIND_LABEL } from "@/lib/images/types";
+import type { MuscleMapBoardTarget } from "@/lib/images/types";
+import {
+  MUSCLE_MAP_KIND_LABEL,
+  muscleMapSlotKey,
+  muscleMapSlotLabel,
+  sameMuscleMapSlot,
+} from "@/lib/images/types";
 import { imageThumbUrl, statusLabel } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
 
-export const VIEW_LABEL: Record<MuscleMapView, string> = { front: "Front", back: "Back" };
+/** Columns of the thumbnails: one wide tile, else rows of two or three. */
+function slotColumns(count: number): string {
+  if (count === 1) return "grid-cols-1";
+  return count % 3 === 0 || count === 5 ? "grid-cols-3" : "grid-cols-2";
+}
 
 export function MuscleMapCard({
   target,
@@ -54,32 +63,39 @@ export function MuscleMapCard({
         <Check className="h-3.5 w-3.5" strokeWidth={3} />
       </button>
       <Link href={href} className="block w-full text-left focus-visible:outline-none">
-        <div
-          className={cn(
-            "grid gap-px bg-zinc-200",
-            target.views.length > 1 ? "grid-cols-2" : "grid-cols-1",
-          )}
-        >
-          {target.views.map((view) => {
-            const url = imageThumbUrl(target.active[view]?.image_url, 320);
+        <div className={cn("grid gap-px bg-zinc-200", slotColumns(target.slots.length))}>
+          {target.slots.map((slot) => {
+            const key = muscleMapSlotKey(slot);
+            const label = muscleMapSlotLabel(slot);
+            const url = imageThumbUrl(target.active[key]?.image_url, 320);
+            const isCard = target.slots.length > 1 && sameMuscleMapSlot(slot, target.card);
             return (
               <div
-                key={view}
-                // A single view (region card) spans the width of the two views of other cards.
-                className={cn("relative", target.views.length > 1 ? "aspect-square" : "aspect-[2/1]")}
+                key={key}
+                // A single map spans the width of the two maps of other cards.
+                className={cn(
+                  "relative",
+                  target.slots.length > 1 ? "aspect-square" : "aspect-[2/1]",
+                )}
                 style={CHECKER_STYLE}
               >
                 {url && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={url}
-                    alt={`${target.name} · ${VIEW_LABEL[view]}`}
+                    alt={`${target.name} · ${label}`}
                     className="h-full w-full object-contain"
                     loading="lazy"
                   />
                 )}
-                <span className="absolute bottom-1.5 left-1.5 rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 shadow-xs">
-                  {VIEW_LABEL[view]}
+                <span
+                  className={cn(
+                    "absolute bottom-1.5 left-1.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium shadow-xs",
+                    isCard ? "bg-zinc-900 text-white" : "bg-white/90 text-zinc-700",
+                  )}
+                  title={isCard ? "Shown on the app card" : undefined}
+                >
+                  {label}
                 </span>
               </div>
             );

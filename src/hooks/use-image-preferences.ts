@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { FRAME_POSITIONS, MUSCLE_MAP_VIEWS, SUBJECTS } from "@/lib/images/types";
-import type { FrameCountChoice, MuscleMapView, Subject } from "@/lib/images/types";
+import { FRAME_POSITIONS, MUSCLE_MAP_CROPS, MUSCLE_MAP_VIEWS, SUBJECTS } from "@/lib/images/types";
+import type { FrameCountChoice, MuscleMapCrop, MuscleMapView, Subject } from "@/lib/images/types";
 
 /**
- * Choices the Images pages remember per browser (style, subjects, positions, views, frame
- * count), shared live across pages and tabs through localStorage.
+ * Choices the Images pages remember per browser (style, subjects, positions, views, crops,
+ * frame count), shared live across pages and tabs through localStorage.
  */
 
 const listeners = new Set<() => void>();
@@ -85,6 +85,12 @@ function parseViews(raw: unknown): MuscleMapView[] | null {
   return valid.length ? valid : null;
 }
 
+function parseCrops(raw: unknown): MuscleMapCrop[] | null {
+  if (!Array.isArray(raw)) return null;
+  const valid = MUSCLE_MAP_CROPS.filter((c) => raw.includes(c));
+  return valid.length ? valid : null;
+}
+
 function parseFrameCount(raw: unknown): FrameCountChoice | null {
   return raw === "exercise" || raw === 2 || raw === 3 ? raw : null;
 }
@@ -132,6 +138,18 @@ export function useViewSelection() {
     [setViews],
   );
   return [views, setSorted] as const;
+}
+
+const ALL_CROPS = [...MUSCLE_MAP_CROPS];
+
+/** Muscle map crops to generate; default is all (each target keeps only the crops it has). */
+export function useCropSelection() {
+  const [crops, setCrops] = useStoredChoice("twinfit.images.crops", ALL_CROPS, parseCrops);
+  const setSorted = useCallback(
+    (next: MuscleMapCrop[]) => setCrops(ALL_CROPS.filter((c) => next.includes(c))),
+    [setCrops],
+  );
+  return [crops, setSorted] as const;
 }
 
 export function useFrameCountChoice() {

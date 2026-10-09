@@ -10,7 +10,7 @@ import type {
   MuscleMapImage,
   StyleReference,
 } from "@/lib/images/types";
-import { framePositionLabel } from "@/lib/images/types";
+import { framePositionLabel, muscleMapSlotLabel } from "@/lib/images/types";
 
 type Row = [label: string, value: string];
 
@@ -212,7 +212,7 @@ export function MuscleMapMetadataPanel({
       p.edit_of
         ? `Edit: ${p.edit_instruction ?? ""}`
         : p.base_file_id
-          ? `Edit of the ${image.view} base`
+          ? `Edit of the ${muscleMapSlotLabel(image).toLowerCase()} base`
           : "—",
     ],
     ...outputRows(image, Boolean(p.base_file_id)),

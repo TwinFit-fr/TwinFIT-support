@@ -14,15 +14,16 @@ import {
 import { loadReferenceInputs, resolveRunReferences } from "@/lib/images/references";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { extensionForMime } from "@/lib/images/style-assets";
-import type { MuscleMapImage, MuscleMapTargetRef, MuscleMapView } from "./types";
+import type { MuscleMapImage, MuscleMapSlot, MuscleMapTargetRef } from "./types";
+import { muscleMapSlotLabel } from "./types";
 import { GenerationError } from "./generation-error";
 import { currentPromptVersions } from "./prompt-versions";
 
-/** One muscle map to generate: it edits the style's base of its view. */
+/** One muscle map to generate: it edits the style's base of its view and crop. */
 export type MuscleMapRequest = {
   styleId: string;
   target: MuscleMapTargetRef;
-  view: MuscleMapView;
+  slot: MuscleMapSlot;
   promptOverride?: string;
   /** Library references for this run; omitted = the ones linked to the target. */
   referenceIds?: string[];
@@ -31,12 +32,12 @@ export type MuscleMapRequest = {
 };
 
 /**
- * Generates one map and stores it as the active map of its target and view (the previous one
- * stays in history). Throws GenerationError when the request cannot succeed as asked.
+ * Generates one map and stores it as the active map of its target, view and crop (the previous
+ * one stays in history). Throws GenerationError when the request cannot succeed as asked.
  */
 export async function generateMuscleMap(
   token: string,
-  { styleId, target: ref, view, promptOverride, referenceIds, candidate }: MuscleMapRequest,
+  { styleId, target: ref, slot, promptOverride, referenceIds, candidate }: MuscleMapRequest,
 ): Promise<MuscleMapImage> {
   const [style, target] = await Promise.all([
     getStyle(token, styleId),
@@ -44,10 +45,12 @@ export async function generateMuscleMap(
   ]);
   if (!style) throw new GenerationError("Style not found", 404);
   if (!target) throw new GenerationError("Muscle or group not found", 404);
-  const baseFileId = style.muscle_bases.find((b) => b.view === view)?.file_id;
+  const baseFileId = style.muscle_bases.find(
+    (b) => b.view === slot.view && b.crop === slot.crop,
+  )?.file_id;
   if (!baseFileId) {
     throw new GenerationError(
-      `This style has no ${view} base: add it on Styles → Assets first`,
+      `This style has no ${muscleMapSlotLabel(slot)} base: add it on Styles → Assets first`,
       409,
     );
   }
@@ -60,11 +63,11 @@ export async function generateMuscleMap(
   // Input 1 is the base; library references follow from input 2.
   const prompt = [
     fillMuscleMapTemplate(promptOverride ?? template.content, {
-      view,
+      ...slot,
       background_color: style.params.background_color,
       target,
     }),
-    muscleBaseDirective(view),
+    muscleBaseDirective(slot),
     ...references.map((reference, i) => libraryReferenceDirective(i + 2, reference)),
   ].join("\n\n");
 
@@ -86,7 +89,7 @@ export async function generateMuscleMap(
     name: muscleMapFileName(
       style.code,
       { kind: ref.kind, code: target.code },
-      view,
+      slot,
       extensionForMime(result.mimeType),
     ),
   });
@@ -94,7 +97,7 @@ export async function generateMuscleMap(
     insertMuscleMapImage(token, {
       style_id: styleId,
       target: ref,
-      view,
+      slot,
       file_id: uploaded.id,
       image_url: uploaded.url,
       model: style.params.model,
@@ -113,13 +116,13 @@ export async function generateMuscleMap(
     });
 
   if (candidate) return insert();
-  await clearActiveMuscleMap(token, styleId, ref, view);
+  await clearActiveMuscleMap(token, styleId, ref, slot);
   let image;
   try {
     image = await insert();
   } catch (error) {
     if (!(error instanceof Error && /uniqueness|unique/i.test(error.message))) throw error;
-    await clearActiveMuscleMap(token, styleId, ref, view);
+    await clearActiveMuscleMap(token, styleId, ref, slot);
     image = await insert();
   }
   return image;

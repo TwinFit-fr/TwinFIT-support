@@ -1,17 +1,18 @@
 "use client";
 
 import { X } from "lucide-react";
-import { ViewToggles } from "@/components/images/generation-controls";
+import { CropToggles, ViewToggles } from "@/components/images/generation-controls";
 import { ProgressLine, RunActions, RunSummary } from "@/components/images/run-status";
 import { Button } from "@/components/ui/primitives";
 import type { jobProgress } from "@/hooks/use-generation-jobs";
 import type { GenerationJob } from "@/lib/images/job-types";
-import type { MuscleMapView } from "@/lib/images/types";
+import { jobSlot } from "@/lib/images/job-types";
+import type { MuscleMapCrop, MuscleMapView } from "@/lib/images/types";
+import { muscleMapSlotLabel } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
-import { VIEW_LABEL } from "./muscle-map-card";
 
 /**
- * The Muscle maps board's bottom bar: the selection and which views to generate, and the
+ * The Muscle maps board's bottom bar: the selection and which views and crops to generate, and the
  * server-side runs of this style (progress, maps being made or failed, cancel / retry / dismiss).
  */
 export function MuscleMapQueueBar({
@@ -21,6 +22,8 @@ export function MuscleMapQueueBar({
   missingBases,
   views,
   onViewsChange,
+  crops,
+  onCropsChange,
   jobs,
   progress,
   nameOf,
@@ -32,10 +35,12 @@ export function MuscleMapQueueBar({
   selectedCount: number;
   onClearSelection: () => void;
   plannedImages: number;
-  /** Selected views the style has no base for (they are skipped). */
-  missingBases: MuscleMapView[];
+  /** Labels of the chosen view × crop maps the style has no base for (they are skipped). */
+  missingBases: string[];
   views: MuscleMapView[];
   onViewsChange: (next: MuscleMapView[]) => void;
+  crops: MuscleMapCrop[];
+  onCropsChange: (next: MuscleMapCrop[]) => void;
   jobs: GenerationJob[];
   progress: ReturnType<typeof jobProgress>;
   nameOf: (job: GenerationJob) => string;
@@ -47,6 +52,10 @@ export function MuscleMapQueueBar({
   if (selectedCount === 0 && progress.total === 0) return null;
 
   const visible = jobs.filter((j) => j.status === "running" || j.status === "error");
+  const slotLabel = (job: GenerationJob) => {
+    const slot = jobSlot(job);
+    return slot ? muscleMapSlotLabel(slot) : null;
+  };
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 shadow-[0_-4px_16px_-8px_rgba(0,0,0,0.12)] backdrop-blur-sm">
@@ -64,7 +73,10 @@ export function MuscleMapQueueBar({
                 {selectedCount} selected
               </span>
               {missingBases.length > 0 && (
-                <span className="text-amber-700" title="Maps edit the style's base of each view">
+                <span
+                  className="text-amber-700"
+                  title="Maps edit the style's base of their view and crop"
+                >
                   · no {missingBases.join(" / ")} base
                 </span>
               )}
@@ -84,6 +96,7 @@ export function MuscleMapQueueBar({
           {selectedCount > 0 && (
             <>
               <ViewToggles value={views} onChange={onViewsChange} />
+              <CropToggles value={crops} onChange={onCropsChange} />
               <Button
                 type="button"
                 className="h-8 py-0"
@@ -109,7 +122,7 @@ export function MuscleMapQueueBar({
               <div key={job.id} className="flex justify-between gap-2">
                 <span className="truncate">
                   {nameOf(job)}
-                  {job.view && <span className="text-zinc-400"> · {VIEW_LABEL[job.view]}</span>}
+                  {slotLabel(job) && <span className="text-zinc-400"> · {slotLabel(job)}</span>}
                 </span>
                 <span
                   title={job.error ?? undefined}

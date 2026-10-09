@@ -61,7 +61,8 @@ export default function CatalogTaxonomyPage() {
           code,
           name,
           ...(labels ? { labels } : {}),
-          ...extra,
+          ...(extra?.body_region_code ? { body_region_code: extra.body_region_code } : {}),
+          ...extra?.map,
         }),
       });
       setMessage(`Added ${code}`);
@@ -96,7 +97,7 @@ export default function CatalogTaxonomyPage() {
           ...(fields.description !== undefined ? { description: fields.description } : {}),
           ...(fields.labels ? { labels: fields.labels } : {}),
           ...(fields.body_region_code ? { body_region_code: fields.body_region_code } : {}),
-          ...(fields.map_view ? { map_view: fields.map_view } : {}),
+          ...fields.map,
         }),
       });
       setMessage("Saved");
@@ -258,6 +259,8 @@ export default function CatalogTaxonomyPage() {
 
       {data && LOOKUP_TABLES.includes(tab) && (
         <TaxonomyLookupTable
+          // Drafts and the add form belong to one table.
+          key={tab}
           table={tab}
           rows={lookupRows}
           regions={data.catalog_body_regions}

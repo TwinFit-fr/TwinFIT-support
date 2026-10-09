@@ -14,9 +14,17 @@ import {
 import { StyleSelector } from "@/components/images/generation-controls";
 import { Input, Skeleton } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
-import { useStyleChoice, useViewSelection } from "@/hooks/use-image-preferences";
+import {
+  useCropSelection,
+  useStyleChoice,
+  useViewSelection,
+} from "@/hooks/use-image-preferences";
 import { useBoardSelection } from "@/hooks/use-board-selection";
-import { muscleMapBoardKey, useMuscleMapActions } from "@/hooks/use-muscle-map-actions";
+import {
+  muscleMapBoardKey,
+  useMuscleMapActions,
+  type MuscleMapPick,
+} from "@/hooks/use-muscle-map-actions";
 import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
@@ -26,11 +34,20 @@ import {
   readMapBoardFilters,
 } from "@/lib/images/board-filters";
 import { jobTarget } from "@/lib/images/job-types";
-import type { ImageStyle, MuscleMapBoard as MuscleMapBoardData } from "@/lib/images/types";
+import type {
+  ImageStyle,
+  MuscleMapBoard as MuscleMapBoardData,
+  MuscleMapSlot,
+} from "@/lib/images/types";
 import {
+  MUSCLE_MAP_CROPS,
   MUSCLE_MAP_VIEWS,
   muscleMapBoardTargets,
+  muscleMapSlotKey,
+  muscleMapSlotLabel,
+  muscleMapSlots,
   muscleMapTargetKey,
+  sameMuscleMapSlot,
   sameMuscleMapTarget,
 } from "@/lib/images/types";
 import { muscleMapPath } from "@/lib/images/urls";
@@ -49,6 +66,7 @@ export function MuscleMapBoard() {
     refreshInterval: BOARD_REFRESH_MS,
   });
   const [views, setViews] = useViewSelection();
+  const [crops, setCrops] = useCropSelection();
   const filters = readMapBoardFilters(useSearchParams());
   const filtersQuery = mapBoardFiltersQuery(filters);
   // Replaced in place: typing a search adds no history entries.
@@ -94,23 +112,31 @@ export function MuscleMapBoard() {
   const visibleKeys = useMemo(() => visibleTargets.map(muscleMapTargetKey), [visibleTargets]);
   const selection = useBoardSelection(visibleKeys);
 
-  const baseViews = MUSCLE_MAP_VIEWS.filter((view) =>
-    style?.muscle_bases.some((b) => b.view === view),
+  const hasBase = (slot: MuscleMapSlot) =>
+    Boolean(style?.muscle_bases.some((b) => sameMuscleMapSlot(b, slot)));
+  // Only the bases some target on the board has maps for are asked for.
+  const boardSlots = new Set(targets.flatMap((t) => t.slots.map(muscleMapSlotKey)));
+  const missingBoardBases = muscleMapSlots(MUSCLE_MAP_VIEWS, MUSCLE_MAP_CROPS).filter(
+    (slot) => boardSlots.has(muscleMapSlotKey(slot)) && !hasBase(slot),
   );
-  const runViews = views.filter((view) => baseViews.includes(view));
-  const missingBases = views.filter((view) => !baseViews.includes(view));
   const selectedTargets = visibleTargets.filter((t) => selection.has(muscleMapTargetKey(t)));
-  // A region is drawn in its card view only.
-  const plannedImages = selectedTargets.reduce(
-    (sum, t) => sum + runViews.filter((view) => t.views.includes(view)).length,
-    0,
+  // Each target makes the chosen views and crops it has.
+  const picks: MuscleMapPick[] = selectedTargets.flatMap((target) =>
+    target.slots
+      .filter((slot) => views.includes(slot.view) && crops.includes(slot.crop))
+      .map((slot) => ({ target, slot })),
   );
+  const runPicks = picks.filter((pick) => hasBase(pick.slot));
+  const missingBases = [
+    ...new Set(picks.filter((pick) => !hasBase(pick.slot)).map((p) => muscleMapSlotLabel(p.slot))),
+  ];
+  const plannedImages = runPicks.length;
 
   async function startQueue() {
     if (!plannedImages) return;
     if (!(await confirmGeneration.run(plannedImages))) return;
     try {
-      const queued = await actions.enqueue(selectedTargets, runViews);
+      const queued = await actions.enqueue(runPicks);
       success(`${queued} map(s) queued`, "Generating on the server");
       selection.clear();
     } catch (err) {
@@ -124,8 +150,11 @@ export function MuscleMapBoard() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Muscle maps</h1>
           <p className="text-sm text-zinc-500">
-            One map per region (its catalog card view), one front and one back per muscle
-            group and per muscle.
+            Each region, group and muscle has the views and crops set on{" "}
+            <Link href="/catalog/taxonomy" className="underline">
+              Catalog → Taxonomy
+            </Link>
+            ; the dark label is the one its app card shows.
           </p>
         </div>
         <StyleSelector
@@ -135,11 +164,10 @@ export function MuscleMapBoard() {
         />
       </div>
 
-      {style && baseViews.length < MUSCLE_MAP_VIEWS.length && (
+      {style && data && missingBoardBases.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          {style.name} has no{" "}
-          {MUSCLE_MAP_VIEWS.filter((v) => !baseViews.includes(v)).join(" or ")} base yet. Maps
-          edit the base of their view:{" "}
+          {style.name} has no {missingBoardBases.map(muscleMapSlotLabel).join(", ")} base yet.
+          Maps edit the base of their view and crop:{" "}
           <Link href="/images/styles?tab=assets" className="font-medium underline">
             add it on Styles → Assets
           </Link>
@@ -254,6 +282,8 @@ export function MuscleMapBoard() {
         missingBases={missingBases}
         views={views}
         onViewsChange={setViews}
+        crops={crops}
+        onCropsChange={setCrops}
         jobs={actions.jobs.jobs}
         progress={actions.jobs.progress}
         nameOf={(job) => targets.find((t) => sameMuscleMapTarget(t, jobTarget(job)))?.name ?? ""}

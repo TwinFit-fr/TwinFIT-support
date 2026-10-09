@@ -19,11 +19,19 @@ import type {
   ImagePrompt,
   ImageStyle,
   MuscleMapTargetKind,
+  MuscleMapCrop,
   MuscleMapView,
   StylePrompts,
   Subject,
 } from "@/lib/images/types";
-import { FRAME_POSITIONS, MUSCLE_MAP_VIEWS, SUBJECTS } from "@/lib/images/types";
+import {
+  FRAME_POSITIONS,
+  MUSCLE_MAP_CROPS,
+  MUSCLE_MAP_CROP_LABEL,
+  MUSCLE_MAP_VIEWS,
+  MUSCLE_MAP_VIEW_LABEL,
+  SUBJECTS,
+} from "@/lib/images/types";
 import { SegmentedControl } from "@/components/images/generation-controls";
 import type { PromptVersion } from "@/lib/images/prompt-versions";
 import { cn } from "@/lib/utils";
@@ -197,6 +205,7 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
   const [previewSubject, setPreviewSubject] = useState<Subject>("man");
   const [previewTargetKind, setPreviewTargetKind] = useState<MuscleMapTargetKind>("muscle_group");
   const [previewView, setPreviewView] = useState<MuscleMapView>("front");
+  const [previewCrop, setPreviewCrop] = useState<MuscleMapCrop>("full");
 
   const { data } = useStaffSWR<StylePromptsResponse>(`/api/images/prompts?styleId=${styleId}`);
   const { data: exercisesData } = useStaffSWR<ListResponse>(
@@ -232,6 +241,7 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
       if (!data?.muscleMap || !sampleTarget) return "";
       return fillMuscleMapTemplate(data.muscleMap.content, {
         view: previewView,
+        crop: previewCrop,
         background_color: style.params.background_color,
         target: sampleTarget,
       });
@@ -257,6 +267,7 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
     previewPosition,
     previewSubject,
     previewView,
+    previewCrop,
   ]);
 
   const previewSubjectLabel =
@@ -295,7 +306,7 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
 
       <SlotGroup
         title="Muscle maps"
-        description="The base draws the blank body once per view; each map edits that base to highlight a muscle or a group."
+        description="The base draws the blank body once per view and crop ({crop}: full, upper or lower body); each map edits the base of its view and crop to highlight a muscle, group or region."
         placeholders={PROMPT_PLACEHOLDERS.muscleMap}
       >
         <div className="grid gap-4 lg:grid-cols-2">
@@ -357,7 +368,16 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
                   onChange={setPreviewView}
                   options={MUSCLE_MAP_VIEWS.map((v) => ({
                     value: v,
-                    label: v === "front" ? "Front" : "Back",
+                    label: MUSCLE_MAP_VIEW_LABEL[v],
+                  }))}
+                />
+                <SegmentedControl
+                  label="Preview crop"
+                  value={previewCrop}
+                  onChange={setPreviewCrop}
+                  options={MUSCLE_MAP_CROPS.map((c) => ({
+                    value: c,
+                    label: MUSCLE_MAP_CROP_LABEL[c],
                   }))}
                 />
               </>

@@ -78,7 +78,7 @@ export async function editExerciseFrame(
   });
 }
 
-/** Applies an instruction to a muscle map; the result is an inactive candidate of its view. */
+/** Applies an instruction to a muscle map; the result is an inactive candidate of its view and crop. */
 export async function editMuscleMap(
   token: string,
   { styleId, sourceId, instruction }: EditRequest,
@@ -109,14 +109,14 @@ export async function editMuscleMap(
     name: muscleMapFileName(
       style.code,
       { kind: ref.kind, code: target.code },
-      source.view,
+      source,
       extensionForMime(result.mimeType),
     ),
   });
   return insertMuscleMapImage(token, {
     style_id: styleId,
     target: ref,
-    view: source.view,
+    slot: { view: source.view, crop: source.crop },
     file_id: uploaded.id,
     image_url: uploaded.url,
     model: style.params.model,

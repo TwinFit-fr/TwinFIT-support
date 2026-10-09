@@ -1,4 +1,5 @@
 import type { LocalizationRow } from "@/lib/catalog/locales";
+import type { MuscleMapChoices } from "@/lib/images/types";
 
 export type TaxonomyTabId =
   | "anatomy"
@@ -50,9 +51,14 @@ export const DESCRIBED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
   "catalog_body_regions",
 ]);
 
-export type MapView = "front" | "back";
+/** Tables whose rows choose their muscle maps (views × crops) and the app card map. */
+export const MAP_CHOICE_TABLES = new Set<TaxonomyTabId>([
+  "catalog_muscles",
+  "catalog_muscle_groups",
+  "catalog_body_regions",
+]);
 
-export type LookupRowFull = {
+export type LookupRowFull = Partial<MuscleMapChoices> & {
   id: string;
   code: string;
   name: string;
@@ -63,11 +69,9 @@ export type LookupRowFull = {
   localizations?: LocalizationRow[];
   /** Muscle groups: the body region they belong to. */
   body_region_id?: string;
-  /** Body regions: view of the catalog card muscle map. */
-  map_view?: MapView;
 };
 
-export type MuscleGroupRow = {
+export type MuscleGroupRow = Partial<MuscleMapChoices> & {
   id: string;
   code: string;
   name: string;

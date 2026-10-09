@@ -1,4 +1,5 @@
 import { staffGql } from "@/lib/staff-gql";
+import { MUSCLE_MAP_CROPS, MUSCLE_MAP_VIEWS } from "@/lib/images/types";
 import { CATALOG_LOCALES, type CatalogLocale } from "./locales";
 import {
   defaultLookupName,
@@ -78,7 +79,82 @@ const TAXONOMY_LOCALIZATIONS: Partial<
  */
 const EXPLICIT_LOOKUP_TABLES = new Set<LookupTable>(["catalog_body_regions", "catalog_muscle_groups"]);
 
-const MAP_VIEWS = ["front", "back"] as const;
+/** Tables whose rows choose their muscle maps (views × crops) and the card map. */
+const MAP_CHOICE_TABLES = new Set<LookupTable>([
+  "catalog_body_regions",
+  "catalog_muscle_groups",
+  "catalog_muscles",
+]);
+
+const MAP_CHOICE_COLUMNS = "map_views map_crops map_view map_crop";
+
+/** Muscle map choices of a payload; any of them may be left out. */
+type MapChoicesPayload = {
+  map_views?: unknown;
+  map_crops?: unknown;
+  map_view?: unknown;
+  map_crop?: unknown;
+};
+
+function parseChoiceList<T extends string>(
+  raw: unknown,
+  allowed: readonly T[],
+  field: string,
+): T[] {
+  const list = Array.isArray(raw) ? raw.map(String) : [];
+  const valid = allowed.filter((value) => list.includes(value));
+  if (!valid.length || valid.length !== new Set(list).size) {
+    throw new Error(`${field} must be a non-empty list of ${allowed.join("|")}`);
+  }
+  return valid;
+}
+
+function parseCardChoice<T extends string>(
+  raw: unknown,
+  allowed: readonly T[],
+  field: string,
+  nullable: boolean,
+): T | null {
+  if (raw == null || raw === "") {
+    if (nullable) return null;
+    throw new Error(`${field} is required`);
+  }
+  const value = String(raw) as T;
+  if (!allowed.includes(value)) throw new Error(`${field} must be ${allowed.join("|")}`);
+  return value;
+}
+
+/**
+ * The muscle map columns a payload sets. Lists must be non-empty subsets of the views / crops;
+ * the card view / crop must be one of them (the database checks it too). Groups and muscles may
+ * inherit the card (null); a region's card is required.
+ */
+function parseMapChoices(table: LookupTable, payload: MapChoicesPayload): Record<string, unknown> {
+  if (!MAP_CHOICE_TABLES.has(table)) return {};
+  const nullable = table !== "catalog_body_regions";
+  const set: Record<string, unknown> = {};
+  if (payload.map_views !== undefined) {
+    set.map_views = parseChoiceList(payload.map_views, MUSCLE_MAP_VIEWS, "map_views");
+  }
+  if (payload.map_crops !== undefined) {
+    set.map_crops = parseChoiceList(payload.map_crops, MUSCLE_MAP_CROPS, "map_crops");
+  }
+  if (payload.map_view !== undefined) {
+    set.map_view = parseCardChoice(payload.map_view, MUSCLE_MAP_VIEWS, "map_view", nullable);
+  }
+  if (payload.map_crop !== undefined) {
+    set.map_crop = parseCardChoice(payload.map_crop, MUSCLE_MAP_CROPS, "map_crop", nullable);
+  }
+  const views = set.map_views as string[] | undefined;
+  const crops = set.map_crops as string[] | undefined;
+  if (views && set.map_view != null && !views.includes(set.map_view as string)) {
+    throw new Error("The card view must be one of the map views");
+  }
+  if (crops && set.map_crop != null && !crops.includes(set.map_crop as string)) {
+    throw new Error("The card crop must be one of the map crops");
+  }
+  return set;
+}
 
 /**
  * Finds a lookup row by code, creating it (Title Case name) when it does not exist yet.
@@ -127,14 +203,6 @@ async function resolveBodyRegionId(token: string, raw: unknown): Promise<string>
   const hit = data.catalog_body_regions[0];
   if (!hit) throw new Error(`Unknown body region code: ${code}`);
   return hit.id;
-}
-
-function parseMapView(raw: unknown): (typeof MAP_VIEWS)[number] {
-  const view = String(raw || "front");
-  if (!MAP_VIEWS.includes(view as (typeof MAP_VIEWS)[number])) {
-    throw new Error("map_view must be front|back");
-  }
-  return view as (typeof MAP_VIEWS)[number];
 }
 
 /** Support equipment is lookup-only: empty → null, unknown code → error. */
@@ -324,9 +392,7 @@ export type UpsertLookupPayload = {
   role?: unknown;
   /** Required for a new muscle group. */
   body_region_code?: unknown;
-  /** New body region: card view, front (default) or back. */
-  map_view?: unknown;
-};
+} & MapChoicesPayload;
 
 /** Extra fields of a new row of an explicit table. */
 async function explicitColumns(
@@ -335,9 +401,13 @@ async function explicitColumns(
   payload: UpsertLookupPayload,
 ): Promise<Record<string, unknown> | undefined> {
   if (table === "catalog_muscle_groups") {
-    return { body_region_id: await resolveBodyRegionId(token, payload.body_region_code) };
+    return {
+      body_region_id: await resolveBodyRegionId(token, payload.body_region_code),
+      ...parseMapChoices(table, payload),
+    };
   }
-  if (table === "catalog_body_regions") return { map_view: parseMapView(payload.map_view) };
+  // Left out, a new region gets the database defaults (both views, full, card front / full).
+  if (table === "catalog_body_regions") return parseMapChoices(table, payload);
   return undefined;
 }
 
@@ -350,6 +420,19 @@ export async function upsertLookup(token: string, payload: UpsertLookupPayload) 
     payload.name,
     await explicitColumns(token, table, payload),
   );
+  // Muscles are not explicit (exercises may create them by code): their choices apply after.
+  if (table === "catalog_muscles") {
+    const choices = parseMapChoices(table, payload);
+    if (Object.keys(choices).length) {
+      await staffGql(
+        token,
+        `mutation($id: uuid!, $set: catalog_muscles_set_input!) {
+          update_catalog_muscles_by_pk(pk_columns: { id: $id }, _set: $set) { id }
+        }`,
+        { id: row.id, set: choices },
+      );
+    }
+  }
   if (TAXONOMY_LOCALIZATIONS[table]) {
     await upsertTaxonomyLocalizations(token, table, row.id, {
       en: String(payload.name || "").trim() || defaultLookupName(row.code),
@@ -374,9 +457,7 @@ export type UpdateLookupPayload = {
   description?: unknown;
   /** Muscle groups: move to another body region. */
   body_region_code?: unknown;
-  /** Body regions: card view. */
-  map_view?: unknown;
-};
+} & MapChoicesPayload;
 
 const DESCRIBED_LOOKUP_TABLES = new Set([
   "catalog_body_regions",
@@ -403,16 +484,14 @@ export async function updateLookup(token: string, payload: UpdateLookupPayload) 
   if (table === "catalog_muscle_groups" && payload.body_region_code != null) {
     set.body_region_id = await resolveBodyRegionId(token, payload.body_region_code);
   }
-  if (table === "catalog_body_regions" && payload.map_view != null) {
-    set.map_view = parseMapView(payload.map_view);
-  }
+  Object.assign(set, parseMapChoices(table, payload));
   if (!Object.keys(set).length && !labels) throw new Error("nothing to update");
 
   const columns = [
     "id code name active sort_order",
     DESCRIBED_LOOKUP_TABLES.has(table) && "description",
     table === "catalog_muscle_groups" && "body_region_id",
-    table === "catalog_body_regions" && "map_view",
+    MAP_CHOICE_TABLES.has(table) && MAP_CHOICE_COLUMNS,
   ];
   const fields = `{ ${columns.filter(Boolean).join(" ")} }`;
   const data = Object.keys(set).length
@@ -547,11 +626,11 @@ export function fetchTaxonomy(token: string) {
     token,
     `query TaxonomyAdmin {
       catalog_body_regions(order_by: { sort_order: asc, code: asc }) {
-        id code name description map_view sort_order active
+        id code name description sort_order active ${MAP_CHOICE_COLUMNS}
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {
-        id code name description sort_order active body_region_id
+        id code name description sort_order active body_region_id ${MAP_CHOICE_COLUMNS}
         localizations(order_by: { locale: asc }) { locale display_name }
         group_muscles { role muscle { id code name description active localizations(order_by: { locale: asc }) { locale display_name } } }
         group_movement_types {
@@ -560,7 +639,7 @@ export function fetchTaxonomy(token: string) {
         }
       }
       catalog_muscles(order_by: { code: asc }) {
-        id code name description sort_order active
+        id code name description sort_order active ${MAP_CHOICE_COLUMNS}
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_movement_types(order_by: { sort_order: asc, code: asc }) {

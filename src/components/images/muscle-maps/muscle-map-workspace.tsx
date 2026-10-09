@@ -39,24 +39,27 @@ import type {
   MuscleMapBoard,
   MuscleMapBoardTarget,
   MuscleMapImage,
+  MuscleMapSlot,
   MuscleMapTargetRef,
-  MuscleMapView,
   StylePrompts,
   StyleReference,
 } from "@/lib/images/types";
 import {
   MUSCLE_MAP_KIND_LABEL,
-  MUSCLE_MAP_VIEWS,
   muscleMapBoardTargets,
+  muscleMapSlotKey,
+  muscleMapSlotLabel,
   muscleMapTargetKey,
+  sameMuscleMapSlot,
   sameMuscleMapTarget,
 } from "@/lib/images/types";
+import { jobSlot } from "@/lib/images/job-types";
 import { imageThumbUrl, muscleMapPath } from "@/lib/images/urls";
 import { cn } from "@/lib/utils";
-import { VIEW_LABEL } from "./muscle-map-card";
 
-function ViewColumn({
-  view,
+function SlotColumn({
+  slot,
+  isCard,
   images,
   library,
   hasBase,
@@ -67,7 +70,9 @@ function ViewColumn({
   onDelete,
   onEdit,
 }: {
-  view: MuscleMapView;
+  slot: MuscleMapSlot;
+  /** The map the target's app card shows. */
+  isCard: boolean;
   images: MuscleMapImage[];
   library: StyleReference[];
   hasBase: boolean;
@@ -82,16 +87,24 @@ function ViewColumn({
   const shown =
     images.find((img) => img.id === pickedId) ?? images.find((img) => img.active) ?? images[0];
   const url = imageThumbUrl(shown?.image_url, 720);
+  const label = muscleMapSlotLabel(slot);
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-zinc-900">{VIEW_LABEL[view]}</h3>
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+          {label}
+          {isCard && (
+            <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] font-medium text-white">
+              App card
+            </span>
+          )}
+        </h3>
         <Button
           type="button"
           className="h-8 px-3 text-xs"
           disabled={busy || !hasBase}
-          title={hasBase ? undefined : `Add the ${view} base on Styles first`}
+          title={hasBase ? undefined : `Add the ${label} base on Styles first`}
           onClick={onGenerate}
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Generate"}
@@ -103,14 +116,14 @@ function ViewColumn({
       >
         {url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt={VIEW_LABEL[view]} className="h-full w-full object-contain" />
+          <img src={url} alt={label} className="h-full w-full object-contain" />
         ) : (
           <span className="px-4 text-center text-xs text-zinc-500">
             {hasBase ? (
               "No map yet"
             ) : (
               <>
-                No {view} base.{" "}
+                No {label} base.{" "}
                 <Link href="/images/styles?tab=assets" className="underline">
                   Add it on Styles
                 </Link>
@@ -192,7 +205,7 @@ function ViewColumn({
   );
 }
 
-/** The views of one target, its inputs and a one-off prompt for its next maps. */
+/** The maps (view × crop) of one target, its inputs and a one-off prompt for its next maps. */
 function TargetMaps({
   target,
   template,
@@ -209,12 +222,12 @@ function TargetMaps({
   template: string;
   /** Saves a one-off text as the style's prompt; resolves true when saved. */
   onSaveTemplate: (text: string) => Promise<boolean>;
-  /** The style's base file per view. */
-  bases: { view: MuscleMapView; file_id: string }[];
+  /** The style's base file per view and crop. */
+  bases: (MuscleMapSlot & { file_id: string })[];
   /** Every reference of the style; the ones linked to this target start on. */
   library: StyleReference[];
-  isBusy: (view: MuscleMapView) => boolean;
-  onGenerate: (view: MuscleMapView, run: MuscleMapRun, variants: number) => void;
+  isBusy: (slot: MuscleMapSlot) => boolean;
+  onGenerate: (slot: MuscleMapSlot, run: MuscleMapRun, variants: number) => void;
   onUpdate: (image: MuscleMapImage, change: "activate" | "deactivate" | "delete") => void;
   onEdit: (image: MuscleMapImage, instruction: string) => void;
 }) {
@@ -222,16 +235,16 @@ function TargetMaps({
   const [promptOpen, setPromptOpen] = useState(false);
   const edited = prompt != null && prompt !== template;
   const [references, setReferences] = useState<RunReferences>(undefined);
-  // 1 replaces the active map; more add candidates to the view's history to pick from.
+  // 1 replaces the active map; more add candidates to the map's history to pick from.
   const [variants, setVariants] = useState(1);
-  const baseViews = bases.map((b) => b.view);
+  const baseOf = (slot: MuscleMapSlot) => bases.find((b) => sameMuscleMapSlot(b, slot));
   const linked = library.filter((r) => r.links.some((l) => sameMuscleMapTarget(l, target)));
-  const automatic: AutomaticInput[] = target.views.map((view) => ({
-    label: `Base · ${VIEW_LABEL[view]}`,
-    detail: `For the ${view} map`,
-    fileId: bases.find((b) => b.view === view)?.file_id ?? null,
+  const automatic: AutomaticInput[] = target.slots.map((slot) => ({
+    label: `Base · ${muscleMapSlotLabel(slot)}`,
+    detail: `For the ${muscleMapSlotLabel(slot).toLowerCase()} map`,
+    fileId: baseOf(slot)?.file_id ?? null,
   }));
-  const anyBusy = target.views.some(isBusy);
+  const anyBusy = target.slots.some(isBusy);
 
   const run: MuscleMapRun = {
     ...(edited ? { promptOverride: prompt ?? undefined } : {}),
@@ -242,18 +255,19 @@ function TargetMaps({
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <div
         className={`grid gap-4 rounded-xl border border-zinc-200 bg-white p-3 ${
-          target.views.length > 1 ? "sm:grid-cols-2" : ""
+          target.slots.length > 1 ? "sm:grid-cols-2" : ""
         }`}
       >
-        {target.views.map((view) => (
-          <ViewColumn
-            key={view}
-            view={view}
-            images={target.images.filter((img) => img.view === view)}
+        {target.slots.map((slot) => (
+          <SlotColumn
+            key={muscleMapSlotKey(slot)}
+            slot={slot}
+            isCard={target.slots.length > 1 && sameMuscleMapSlot(slot, target.card)}
+            images={target.images.filter((img) => sameMuscleMapSlot(img, slot))}
             library={library}
-            hasBase={baseViews.includes(view)}
-            busy={isBusy(view)}
-            onGenerate={() => onGenerate(view, run, variants)}
+            hasBase={Boolean(baseOf(slot))}
+            busy={isBusy(slot)}
+            onGenerate={() => onGenerate(slot, run, variants)}
             onActivate={(image) => onUpdate(image, "activate")}
             onDeactivate={(image) => onUpdate(image, "deactivate")}
             onDelete={(image) => onUpdate(image, "delete")}
@@ -288,9 +302,9 @@ function TargetMaps({
           value={references}
           onChange={setReferences}
           note={
-            target.views.length > 1
-              ? "Each map edits the base of its view; library references are sent with both views."
-              : "The map edits the base of its view; library references are sent with it."
+            target.slots.length > 1
+              ? "Each map edits the base of its view and crop; library references are sent with every map."
+              : "The map edits the base of its view and crop; library references are sent with it."
           }
           disabled={anyBusy}
         />
@@ -386,6 +400,10 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
 
   const targets = useMemo(() => muscleMapBoardTargets(data), [data]);
   const target = targets.find((t) => sameMuscleMapTarget(t, ref)) ?? null;
+  // Only the bases this target has maps for are asked for.
+  const missingBases = (target?.slots ?? []).filter(
+    (slot) => !style?.muscle_bases.some((b) => sameMuscleMapSlot(b, slot)),
+  );
 
   // Previous / next browse the board list with the filters the board was left with.
   const filters = readMapBoardFilters(useSearchParams());
@@ -435,13 +453,10 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
         </div>
       </div>
 
-      {style && style.muscle_bases.length < MUSCLE_MAP_VIEWS.length && (
+      {style && missingBases.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          {style.name} has no{" "}
-          {MUSCLE_MAP_VIEWS.filter((v) => !style.muscle_bases.some((b) => b.view === v)).join(
-            " or ",
-          )}{" "}
-          base yet. Maps edit the base of their view:{" "}
+          {style.name} has no {missingBases.map(muscleMapSlotLabel).join(", ")} base yet. Maps
+          edit the base of their view and crop:{" "}
           <Link href="/images/styles?tab=assets" className="font-medium underline">
             add it on Styles → Assets
           </Link>
@@ -452,8 +467,11 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
       {target && (
         <JobFailures
           jobs={actions.failedFor(target)}
-          labelOf={(job) => (job.view ? `${VIEW_LABEL[job.view]} map` : "Map")}
-          canAct={!target.views.some((view) => actions.isBusy(target, view))}
+          labelOf={(job) => {
+            const slot = jobSlot(job);
+            return slot ? `${muscleMapSlotLabel(slot)} map` : "Map";
+          }}
+          canAct={!target.slots.some((slot) => actions.isBusy(target, slot))}
           onRetry={() => void actions.jobs.retryFailed()}
           onDismiss={() => void actions.jobs.dismissFinished()}
         />
@@ -480,9 +498,9 @@ export function MuscleMapWorkspace({ target: ref }: { target: MuscleMapTargetRef
           }
           bases={style?.muscle_bases ?? []}
           library={referencesData?.references ?? []}
-          isBusy={(view) => actions.isBusy(target, view)}
-          onGenerate={(view, run, variants) =>
-            void actions.generateOne(target, view, run, variants)
+          isBusy={(slot) => actions.isBusy(target, slot)}
+          onGenerate={(slot, run, variants) =>
+            void actions.generateOne(target, slot, run, variants)
           }
           onUpdate={(image, change) => void actions.update(target, image, change)}
           onEdit={(image, instruction) => void actions.editMap(target, image, instruction)}
