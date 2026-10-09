@@ -152,6 +152,27 @@ export function useCropSelection() {
   return [crops, setSorted] as const;
 }
 
+function parseStringList(raw: unknown): string[] | null {
+  return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string") : null;
+}
+
+const NO_GROUPS: string[] = [];
+
+/** Whether a Styles → Assets group is folded; remembered per browser, open by default. */
+export function useAssetGroupCollapsed(id: string) {
+  const [collapsed, setCollapsed] = useStoredChoice(
+    "twinfit.images.assets.collapsed",
+    NO_GROUPS,
+    parseStringList,
+  );
+  const isCollapsed = collapsed.includes(id);
+  const toggle = useCallback(
+    () => setCollapsed(isCollapsed ? collapsed.filter((g) => g !== id) : [...collapsed, id]),
+    [collapsed, id, isCollapsed, setCollapsed],
+  );
+  return [isCollapsed, toggle] as const;
+}
+
 export function useFrameCountChoice() {
   return useStoredChoice("twinfit.images.frame-count", DEFAULT_FRAME_COUNT, parseFrameCount);
 }

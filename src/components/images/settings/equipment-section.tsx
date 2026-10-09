@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/primitives";
 import type { LookupRowFull, TaxonomyData } from "@/components/catalog/taxonomy/types";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
 import type { ImageStyle } from "@/lib/images/types";
-import { AssetCard, AssetNote } from "./asset-card";
+import { AssetCard, AssetGroup, AssetNote } from "./asset-card";
 
 /** Load equipment (catalog.equipment) or support equipment (catalog.support_equipment). */
 export type EquipmentKind = "load" | "support";
@@ -102,12 +102,15 @@ export function EquipmentSection({
   );
   const fileById = useMemo(() => filesOf(style, kind), [style, kind]);
 
+  const filled = catalog.filter((item) => fileById.has(item.id)).length;
+
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">{meta.title}</p>
-        <p className="text-[11px] text-zinc-500">{meta.intro}</p>
-      </div>
+    <AssetGroup
+      id={`equipment-${kind}`}
+      title={meta.title}
+      summary={catalog.length ? `${filled} / ${catalog.length}` : undefined}
+    >
+      <p className="text-[11px] text-zinc-500">{meta.intro}</p>
       {isLoading && catalog.length === 0 ? (
         <Skeleton className="h-32 w-full rounded-lg" />
       ) : catalog.length === 0 ? (
@@ -127,6 +130,6 @@ export function EquipmentSection({
           ))}
         </div>
       )}
-    </div>
+    </AssetGroup>
   );
 }

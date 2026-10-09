@@ -4,7 +4,7 @@ import { INPUT_FIDELITIES, capabilitiesFor } from "@/lib/images/capabilities";
 import { referenceSheetDirective } from "@/lib/images/reference";
 import type { GenerationParams, ImageStyle, Subject } from "@/lib/images/types";
 import { SUBJECTS } from "@/lib/images/types";
-import { AssetCard, AssetNote } from "./asset-card";
+import { AssetCard, AssetGroup, AssetNote } from "./asset-card";
 import { Chip, Field } from "./form-ui";
 
 function LogoCard({
@@ -94,9 +94,11 @@ export function CharactersSection({
   const fileFor = (subject: Subject) =>
     style.characters.find((c) => c.subject === subject)?.file_id ?? null;
 
+  const filled =
+    SUBJECTS.filter((subject) => fileFor(subject)).length + (style.logo_file_id ? 1 : 0);
+
   return (
-    <div className="space-y-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Characters</p>
+    <AssetGroup id="characters" title="Characters" summary={`${filled} / ${SUBJECTS.length + 1}`}>
       <div className="grid gap-3 lg:grid-cols-2">
         {SUBJECTS.map((subject) => (
           <ReferenceCard
@@ -147,6 +149,6 @@ export function CharactersSection({
           </Chip>
         ))}
       </Field>
-    </div>
+    </AssetGroup>
   );
 }
