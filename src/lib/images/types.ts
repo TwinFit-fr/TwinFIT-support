@@ -19,7 +19,72 @@ export const SUBJECTS: readonly Subject[] = ["man", "woman"];
 
 /** Muscle maps are drawn on a front and a back body, each its own image. */
 export type MuscleMapView = "front" | "back";
-export const MUSCLE_MAP_VIEWS: readonly MuscleMapView[] = ["front", "back"];
+export const MUSCLE_MAP_VIEWS = ["front", "back"] as const satisfies readonly MuscleMapView[];
+export const MUSCLE_MAP_VIEW_LABEL: Record<MuscleMapView, string> = { front: "Front", back: "Back" };
+
+/** Framing of a map: each crop is its own image, drawn on the base of its view and crop. */
+export type MuscleMapCrop = "full" | "upper" | "lower";
+export const MUSCLE_MAP_CROPS = ["full", "upper", "lower"] as const satisfies readonly MuscleMapCrop[];
+export const MUSCLE_MAP_CROP_LABEL: Record<MuscleMapCrop, string> = {
+  full: "Full",
+  upper: "Upper",
+  lower: "Lower",
+};
+
+/** One map of a target: a view and a crop. */
+export type MuscleMapSlot = { view: MuscleMapView; crop: MuscleMapCrop };
+export type MuscleMapSlotKey = `${MuscleMapView}:${MuscleMapCrop}`;
+
+export function muscleMapSlotKey({ view, crop }: MuscleMapSlot): MuscleMapSlotKey {
+  return `${view}:${crop}`;
+}
+
+/** Every view × crop, views first, in canonical order. */
+export function muscleMapSlots(
+  views: readonly MuscleMapView[],
+  crops: readonly MuscleMapCrop[],
+): MuscleMapSlot[] {
+  return MUSCLE_MAP_VIEWS.filter((view) => views.includes(view)).flatMap((view) =>
+    MUSCLE_MAP_CROPS.filter((crop) => crops.includes(crop)).map((crop) => ({ view, crop })),
+  );
+}
+
+/** "Front", or "Front · Upper" for a crop other than full. */
+export function muscleMapSlotLabel({ view, crop }: MuscleMapSlot): string {
+  const label = MUSCLE_MAP_VIEW_LABEL[view];
+  return crop === "full" ? label : `${label} · ${MUSCLE_MAP_CROP_LABEL[crop]}`;
+}
+
+export function sameMuscleMapSlot(a: MuscleMapSlot, b: MuscleMapSlot): boolean {
+  return a.view === b.view && a.crop === b.crop;
+}
+
+/**
+ * Which maps a region, group or muscle has (catalog map_views / map_crops) and the one its
+ * card shows (map_view / map_crop; null on groups and muscles = inherited).
+ */
+export type MuscleMapChoices = {
+  map_views: MuscleMapView[];
+  map_crops: MuscleMapCrop[];
+  map_view: MuscleMapView | null;
+  map_crop: MuscleMapCrop | null;
+};
+
+/**
+ * The card map of an entity: its own choice, else the inherited one (region for a group, target
+ * group for a muscle), kept only when the entity has it, else its first allowed view / crop.
+ */
+export function muscleMapCardSlot(
+  choices: MuscleMapChoices,
+  inherited?: MuscleMapSlot | null,
+): MuscleMapSlot {
+  const pick = <T extends string>(own: T | null, parent: T | undefined, allowed: T[]): T =>
+    own ?? (parent && allowed.includes(parent) ? parent : allowed[0]);
+  return {
+    view: pick(choices.map_view, inherited?.view, choices.map_views),
+    crop: pick(choices.map_crop, inherited?.crop, choices.map_crops),
+  };
+}
 
 export type MuscleMapTargetKind = "muscle" | "muscle_group" | "body_region";
 
@@ -90,8 +155,8 @@ export type ImageStyle = {
   updated_at: string;
   updated_by: string | null;
   characters: { subject: Subject; file_id: string }[];
-  /** Blank body per view: the input image of every muscle map of that view. */
-  muscle_bases: { view: MuscleMapView; file_id: string }[];
+  /** Blank body per view and crop: the input image of every muscle map of that view and crop. */
+  muscle_bases: (MuscleMapSlot & { file_id: string })[];
   supports: {
     support_equipment_id: string;
     file_id: string;
@@ -179,6 +244,7 @@ export type MuscleMapImage = {
   muscle_group_id: string | null;
   body_region_id: string | null;
   view: MuscleMapView;
+  crop: MuscleMapCrop;
   file_id: string;
   image_url: string;
   active: boolean;
@@ -198,15 +264,14 @@ export type MuscleMapBoardTarget = MuscleMapTargetRef & {
   code: string;
   name: string;
   description: string | null;
-  /**
-   * The views this target is drawn in: both for muscles and groups, the card view
-   * (catalog.body_regions.map_view) for a region.
-   */
-  views: MuscleMapView[];
+  /** The maps this target has: its catalog views × crops. */
+  slots: MuscleMapSlot[];
+  /** The map its app card shows (own choice or inherited). */
+  card: MuscleMapSlot;
   /** Newest first. */
   images: MuscleMapImage[];
-  active: Partial<Record<MuscleMapView, MuscleMapImage>>;
-  /** Complete when every view of the target has an active map. */
+  active: Partial<Record<MuscleMapSlotKey, MuscleMapImage>>;
+  /** Complete when every slot of the target has an active map. */
   status: "complete" | "partial" | "inactive_only" | "empty";
 };
 

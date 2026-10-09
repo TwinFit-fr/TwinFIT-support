@@ -1,4 +1,4 @@
-import type { MuscleMapTargetKind, MuscleMapView } from "./types";
+import type { MuscleMapCrop, MuscleMapSlot, MuscleMapTargetKind } from "./types";
 
 type TemplateValues = {
   name: string;
@@ -56,13 +56,14 @@ export function exerciseDetails(exercise: ExerciseTaxonomy): string {
 export const PROMPT_PLACEHOLDERS = {
   exercise: ["{name}", "{description}", "{exo_id}", "{subject}", "{background_color}"],
   support: ["{support}", "{support_description}", "{background_color}"],
-  muscleBase: ["{view}", "{background_color}"],
+  muscleBase: ["{view}", "{crop}", "{background_color}"],
   muscleMap: [
     "{target}",
     "{target_kind}",
     "{target_description}",
     "{muscles}",
     "{view}",
+    "{crop}",
     "{background_color}",
   ],
 } as const;
@@ -157,14 +158,22 @@ function describedLine(item: { name: string; description: string | null }): stri
   return description ? `- ${item.name} — ${description}` : `- ${item.name}`;
 }
 
+/** What `{crop}` says: the part of the body the image frames. */
+export const MUSCLE_MAP_CROP_FRAMING: Record<MuscleMapCrop, string> = {
+  full: "full body, from head to feet",
+  upper: "upper body only, from the top of the head to the hips",
+  lower: "lower body only, from the hips to the feet",
+};
+
 /** Fill a muscle_base (no target) or muscle_map template. */
 export function fillMuscleMapTemplate(
   template: string,
-  values: { view: MuscleMapView; background_color?: string; target?: MuscleMapTarget },
+  values: MuscleMapSlot & { background_color?: string; target?: MuscleMapTarget },
 ): string {
   const target = values.target;
   return template
     .replaceAll("{view}", values.view)
+    .replaceAll("{crop}", MUSCLE_MAP_CROP_FRAMING[values.crop])
     .replaceAll("{background_color}", values.background_color ?? "")
     .replaceAll("{target}", target?.name ?? "")
     .replaceAll("{target_kind}", target ? TARGET_KIND_LABEL[target.kind] : "")

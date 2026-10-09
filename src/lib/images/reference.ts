@@ -1,4 +1,5 @@
-import type { MuscleMapTargetKind, MuscleMapView, Subject } from "./types";
+import { MUSCLE_MAP_CROP_FRAMING } from "./prompt";
+import type { MuscleMapSlot, MuscleMapTargetKind, Subject } from "./types";
 import { muscleMapKindSegment } from "./urls";
 
 /** Appended when a generation uses the style character reference as input image. */
@@ -25,9 +26,19 @@ Keep everything else EXACTLY the same: character, face, clothing, colors, illust
 /** Appended whenever the brand logo is one of the input images. */
 export const LOGO_DIRECTIVE = `BRAND LOGO: one of the input images is the brand symbol (on a transparent background). Print exactly this symbol — same shape and same colors, no added text or letters — small and centered on the chest of the character's shirt. Do not draw the symbol anywhere else and do not copy its background.`;
 
-/** Appended when a muscle map edits the style's blank body of that view. */
-export function muscleBaseDirective(view: MuscleMapView): string {
-  return `BODY MAP BASE: the first input image is this style's blank body map, ${view} view. Keep EXACTLY the same figure, pose, framing, scale, background, line work and colors. Change ONLY the fill of the muscles to highlight; never redraw or move the body.`;
+/** Appended when a muscle map edits the style's blank body of that view and crop. */
+export function muscleBaseDirective({ view, crop }: MuscleMapSlot): string {
+  return `BODY MAP BASE: the first input image is this style's blank body map, ${view} view, ${MUSCLE_MAP_CROP_FRAMING[crop]}. Keep EXACTLY the same figure, pose, framing, scale, background, line work and colors. Change ONLY the fill of the muscles to highlight; never redraw or move the body.`;
+}
+
+/**
+ * Appended when generating a cropped base, so a base prompt without `{crop}` (edited before
+ * crops existed) still frames the right part of the body.
+ */
+export function muscleBaseCropDirective({ crop }: MuscleMapSlot): string | null {
+  return crop === "full"
+    ? null
+    : `FRAMING: draw ${MUSCLE_MAP_CROP_FRAMING[crop]}, filling the canvas; the rest of the body is out of frame.`;
 }
 
 /** Appended for each library reference sent; `inputNumber` is its 1-based input position. */
@@ -59,25 +70,34 @@ export function supportFileName(styleCode: string, supportCode: string, extensio
   );
 }
 
+/** "front" for a full crop, "front_upper" otherwise (full keeps the names it had before crops). */
+function slotFileSegment({ view, crop }: MuscleMapSlot): string {
+  return crop === "full" ? view : `${view}_${crop}`;
+}
+
 export function muscleBaseFileName(
   styleCode: string,
-  view: MuscleMapView,
+  slot: MuscleMapSlot,
   extension: string,
 ): string {
-  return styleAssetPath(styleCode, "muscles", `base_${view}_${Date.now()}.${extension}`);
+  return styleAssetPath(
+    styleCode,
+    "muscles",
+    `base_${slotFileSegment(slot)}_${Date.now()}.${extension}`,
+  );
 }
 
 export function muscleMapFileName(
   styleCode: string,
   target: { kind: MuscleMapTargetKind; code: string },
-  view: MuscleMapView,
+  slot: MuscleMapSlot,
   extension: string,
 ): string {
   const prefix = muscleMapKindSegment(target.kind);
   return styleAssetPath(
     styleCode,
     "muscles",
-    `${prefix}_${target.code.toLowerCase()}_${view}_${Date.now()}.${extension}`,
+    `${prefix}_${target.code.toLowerCase()}_${slotFileSegment(slot)}_${Date.now()}.${extension}`,
   );
 }
 

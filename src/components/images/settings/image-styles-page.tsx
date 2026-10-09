@@ -10,8 +10,14 @@ import { useToast } from "@/components/ui/toast";
 import { useStyleChoice } from "@/hooks/use-image-preferences";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { validateGenerationParams } from "@/lib/images/capabilities";
-import type { GenerationParams, ImageStyle, MuscleMapView, Subject } from "@/lib/images/types";
-import { MUSCLE_MAP_VIEWS, SUBJECTS } from "@/lib/images/types";
+import type {
+  GenerationParams,
+  ImageStyle,
+  MuscleMapSlot,
+  MuscleMapSlotKey,
+  Subject,
+} from "@/lib/images/types";
+import { SUBJECTS, muscleMapSlotKey, sameMuscleMapSlot } from "@/lib/images/types";
 import { StylePromptsEditor } from "@/components/images/prompt-editor";
 import { CharactersSection } from "./characters-section";
 import { Section, readAsBase64, selectClass } from "./form-ui";
@@ -91,7 +97,12 @@ export function ImageStylesPage() {
   const [savingStyle, setSavingStyle] = useState(false);
   const [characterBusy, setCharacterBusy] = useState<Subject | null>(null);
   const [supportBusy, setSupportBusy] = useState<string | null>(null);
-  const [muscleBaseBusy, setMuscleBaseBusy] = useState<MuscleMapView | null>(null);
+  const [muscleBaseBusy, setMuscleBaseBusy] = useState<MuscleMapSlotKey | null>(null);
+  // The bases the catalog's maps need (view × crop of active regions, groups and muscles).
+  const { data: usedSlotsData } = useStaffSWR<{ slots: MuscleMapSlot[] }>(
+    "/api/images/muscle-maps/slots",
+  );
+  const usedSlots = usedSlotsData?.slots ?? [];
   const [logoBusy, setLogoBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -324,12 +335,12 @@ export function ImageStylesPage() {
     }
   }
 
-  async function muscleBaseAction(view: MuscleMapView, action: "generate" | "remove" | File) {
+  async function muscleBaseAction(slot: MuscleMapSlot, action: "generate" | "remove" | File) {
     if (!selectedStyleId) return;
-    setMuscleBaseBusy(view);
+    setMuscleBaseBusy(muscleMapSlotKey(slot));
     try {
       const result = await assetRequest(
-        `/api/images/styles/${selectedStyleId}/muscle-bases/${view}`,
+        `/api/images/styles/${selectedStyleId}/muscle-bases/${slot.view}?crop=${slot.crop}`,
         action,
       );
       await refreshStyle(result.style);
@@ -380,7 +391,7 @@ export function ImageStylesPage() {
 
   const missingAssets =
     SUBJECTS.filter((s) => !style.characters.some((c) => c.subject === s)).length +
-    MUSCLE_MAP_VIEWS.filter((v) => !style.muscle_bases.some((b) => b.view === v)).length;
+    usedSlots.filter((slot) => !style.muscle_bases.some((b) => sameMuscleMapSlot(b, slot))).length;
   const tabs: TabItem<StyleTab>[] = [
     { id: "prompts", label: "Prompts" },
     {
@@ -575,8 +586,9 @@ export function ImageStylesPage() {
           <MuscleBasesSection
             style={style}
             dirty={styleDirty}
-            busyView={muscleBaseBusy}
-            onAction={(view, action) => void muscleBaseAction(view, action)}
+            usedSlots={usedSlots}
+            busySlot={muscleBaseBusy}
+            onAction={(slot, action) => void muscleBaseAction(slot, action)}
           />
         </TabPanel>
 

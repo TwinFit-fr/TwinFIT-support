@@ -10,17 +10,18 @@ import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import type {
   MuscleMapBoardTarget,
   MuscleMapImage,
+  MuscleMapSlot,
   MuscleMapTargetRef,
-  MuscleMapView,
 } from "@/lib/images/types";
 import type { GenerationJob, JobSpec, MuscleMapJobOptions } from "@/lib/images/job-types";
-import { isActiveJob, jobTarget } from "@/lib/images/job-types";
-import { sameMuscleMapTarget } from "@/lib/images/types";
+import { isActiveJob, jobSlot, jobTarget } from "@/lib/images/job-types";
+import { muscleMapSlotLabel, sameMuscleMapSlot, sameMuscleMapTarget } from "@/lib/images/types";
 
 /** One-off edits for a single generation: a prompt text and/or library references. */
 export type MuscleMapRun = MuscleMapJobOptions;
 
-const VIEW_LABEL: Record<MuscleMapView, string> = { front: "Front", back: "Back" };
+/** One map to make: a target and one of its view × crop slots. */
+export type MuscleMapPick = { target: MuscleMapTargetRef; slot: MuscleMapSlot };
 
 export function muscleMapBoardKey(styleId: string | null): string | null {
   return styleId ? `/api/images/muscle-maps?style=${styleId}` : null;
@@ -46,48 +47,42 @@ export function useMuscleMapActions(styleId: string | null) {
   const jobs = useGenerationJobs(styleId, { kind: "muscle_map" }, () => void refresh());
 
   /**
-   * Queues targets × views (only the views a target is drawn in, when it says); returns how
-   * many maps were queued. With `variants` > 1 each gets that many inactive candidates and the
-   * active maps stay.
+   * Queues one map per pick; returns how many maps were queued. With `variants` > 1 each gets
+   * that many inactive candidates and the active maps stay.
    */
   async function enqueue(
-    targets: (MuscleMapTargetRef & { views?: MuscleMapView[] })[],
-    views: MuscleMapView[],
+    picks: MuscleMapPick[],
     run?: MuscleMapRun,
     variants = 1,
   ): Promise<number> {
-    const specs: JobSpec[] = targets.flatMap((target) =>
-      views
-        .filter((view) => !target.views || target.views.includes(view))
-        .flatMap((view) =>
-        Array.from({ length: variants }, () => ({
-          kind: "muscle_map" as const,
-          target: { kind: target.kind, id: target.id },
-          view,
-          options: variants > 1 ? { ...run, candidate: true } : run,
-        })),
-      ),
+    const specs: JobSpec[] = picks.flatMap(({ target, slot }) =>
+      Array.from({ length: variants }, () => ({
+        kind: "muscle_map" as const,
+        target: { kind: target.kind, id: target.id },
+        slot: { view: slot.view, crop: slot.crop },
+        options: variants > 1 ? { ...run, candidate: true } : run,
+      })),
     );
     await jobs.enqueue(specs);
     return specs.length;
   }
 
-  /** One view of one target, with this page's prompt edit and references (and candidates). */
+  /** One slot of one target, with this page's prompt edit and references (and candidates). */
   async function generateOne(
     target: MuscleMapTargetRef,
-    view: MuscleMapView,
+    slot: MuscleMapSlot,
     run: MuscleMapRun,
     variants = 1,
   ) {
     if (!(await confirmGeneration.run(variants))) return;
     try {
-      await enqueue([target], [view], run, variants);
+      await enqueue([{ target, slot }], run, variants);
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
     }
   }
 
-  /** Queues an edit of a map; the result lands in the view's history as a candidate. */
+  /** Queues an edit of a map; the result lands in its slot's history as a candidate. */
   async function editMap(target: MuscleMapTargetRef, image: MuscleMapImage, instruction: string) {
     if (!(await confirmGeneration.run(1))) return;
     try {
@@ -95,11 +90,11 @@ export function useMuscleMapActions(styleId: string | null) {
         {
           kind: "muscle_map",
           target: { kind: target.kind, id: target.id },
-          view: image.view,
+          slot: { view: image.view, crop: image.crop },
           options: { editOf: image.id, instruction },
         },
       ]);
-      success("Edit queued: it will appear in the view's history");
+      success("Edit queued: it will appear in the map's history");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Failed", "Could not queue");
     }
@@ -128,10 +123,13 @@ export function useMuscleMapActions(styleId: string | null) {
     }
   }
 
-  const matches = (job: GenerationJob, target: MuscleMapTargetRef, view?: MuscleMapView) =>
-    sameMuscleMapTarget(jobTarget(job), target) && (!view || job.view === view);
+  const matches = (job: GenerationJob, target: MuscleMapTargetRef, slot?: MuscleMapSlot) => {
+    if (!sameMuscleMapTarget(jobTarget(job), target)) return false;
+    const ofJob = jobSlot(job);
+    return !slot || (ofJob != null && sameMuscleMapSlot(ofJob, slot));
+  };
 
-  /** Activating a map deactivates the one active for its target and view (server side). */
+  /** Activating a map deactivates the one active for its target, view and crop (server side). */
   async function setMapActive(id: string, active: boolean) {
     await staffFetch(`/api/images/muscle-maps/items/${id}`, {
       method: "PATCH",
@@ -164,13 +162,13 @@ export function useMuscleMapActions(styleId: string | null) {
         });
         if (!remove) return;
         await staffFetch(`/api/images/muscle-maps/items/${image.id}`, { method: "DELETE" });
-        success(`${VIEW_LABEL[image.view]} map deleted`);
+        success(`${muscleMapSlotLabel(image)} map deleted`);
       } else {
         const activate = change === "activate";
         // The way back: reactivate the map this one displaces, or flip this one back.
         const displaced = activate
           ? target.images.find(
-              (img) => img.view === image.view && img.active && img.id !== image.id,
+              (img) => sameMuscleMapSlot(img, image) && img.active && img.id !== image.id,
             )
           : undefined;
         const undo = displaced
@@ -178,7 +176,7 @@ export function useMuscleMapActions(styleId: string | null) {
           : { id: image.id, active: !activate };
         await setMapActive(image.id, activate);
         const done = activate ? "set as active" : "deactivated";
-        success(`${VIEW_LABEL[image.view]} map ${done}`, undefined, {
+        success(`${muscleMapSlotLabel(image)} map ${done}`, undefined, {
           label: "Undo",
           onClick: () => void restore(undo.id, undo.active),
         });
@@ -196,9 +194,9 @@ export function useMuscleMapActions(styleId: string | null) {
     editMap,
     saveMapPrompt,
     update,
-    /** A map of this target and view is queued or being made. */
-    isBusy: (target: MuscleMapTargetRef, view: MuscleMapView) =>
-      jobs.jobs.some((job) => isActiveJob(job) && matches(job, target, view)),
+    /** A map of this target and slot is queued or being made. */
+    isBusy: (target: MuscleMapTargetRef, slot: MuscleMapSlot) =>
+      jobs.jobs.some((job) => isActiveJob(job) && matches(job, target, slot)),
     /** This target's maps that failed, newest runs last. */
     failedFor: (target: MuscleMapTargetRef) =>
       jobs.jobs.filter((job) => job.status === "error" && matches(job, target)),

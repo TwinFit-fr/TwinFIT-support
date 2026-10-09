@@ -6,12 +6,12 @@ import { generateExerciseFrame } from "./generate-frame";
 import { generateMuscleMap } from "./generate-muscle-map";
 import { errorMessage, isRetryable } from "./generation-error";
 import type { GenerationJob, JobSpec } from "./job-types";
-import { jobTarget } from "./job-types";
+import { jobSlot, jobTarget } from "./job-types";
 import { getUserIdFromToken } from "./queries";
 import { muscleMapTargetColumns } from "./types";
 
 const JOB_FIELDS = `
-  id seq batch_id style_id kind exo_id subject position muscle_id muscle_group_id body_region_id view options
+  id seq batch_id style_id kind exo_id subject position muscle_id muscle_group_id body_region_id view crop options
   depends_on status attempts max_attempts not_before error result_exercise_image_id
   result_muscle_map_id inserted_at started_at finished_at
 `;
@@ -53,7 +53,8 @@ export async function enqueueJobs(
     if (spec.kind === "muscle_map") {
       return {
         ...common,
-        view: spec.view,
+        view: spec.slot.view,
+        crop: spec.slot.crop,
         ...muscleMapTargetColumns(spec.target),
       };
     }
@@ -196,11 +197,12 @@ async function runJob(token: string, job: GenerationJob): Promise<Record<string,
   }
   if (job.kind === "muscle_map") {
     const target = jobTarget(job);
-    if (!target || !job.view) throw new Error("Muscle map job without a target or view");
+    const slot = jobSlot(job);
+    if (!target || !slot) throw new Error("Muscle map job without a target or view");
     const image = await generateMuscleMap(token, {
       styleId: job.style_id,
       target,
-      view: job.view,
+      slot,
       promptOverride: job.options.promptOverride,
       referenceIds: job.options.referenceIds,
       candidate: job.options.candidate,

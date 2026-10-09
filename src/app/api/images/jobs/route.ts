@@ -3,7 +3,12 @@ import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import { assetErrorResponse } from "@/lib/images/asset-request";
 import { drainJobs, enqueueJobs, listJobs } from "@/lib/images/jobs";
-import { MAX_RUN_REFERENCES, MUSCLE_MAP_TARGET_KINDS } from "@/lib/images/types";
+import {
+  MAX_RUN_REFERENCES,
+  MUSCLE_MAP_CROPS,
+  MUSCLE_MAP_TARGET_KINDS,
+  MUSCLE_MAP_VIEWS,
+} from "@/lib/images/types";
 
 export const maxDuration = 300;
 
@@ -37,7 +42,7 @@ const jobSpec = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("muscle_map"),
     target: z.object({ kind: z.enum(MUSCLE_MAP_TARGET_KINDS), id: z.string().uuid() }),
-    view: z.enum(["front", "back"]),
+    slot: z.object({ view: z.enum(MUSCLE_MAP_VIEWS), crop: z.enum(MUSCLE_MAP_CROPS) }),
     options: z
       .object({
         promptOverride: promptText.optional(),
