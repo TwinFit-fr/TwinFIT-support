@@ -27,6 +27,8 @@ export type ExercisePayload = {
   logging_mode?: Code;
   target_muscle_code?: Code;
   secondary_muscle_codes?: string[];
+  /** True: the exercise uses its pair's muscles; false: its own (custom). */
+  muscles_inherited?: boolean;
   taxonomy_status?: string;
   taxonomy_notes?: string | null;
   body_mass_coefficient?: number | string | null;

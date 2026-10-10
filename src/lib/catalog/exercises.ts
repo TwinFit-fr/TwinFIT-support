@@ -67,6 +67,8 @@ export function listLibrary(token: string) {
         taxonomy_notes
         primary_muscle_group { code name }
         target_muscle { code name }
+        muscles_inherited
+        resolved_muscles(order_by: { sort_order: asc }) { role source muscle { code name } }
         movement_type { code name }
         equipment { code name }
         support_equipment { code name }
@@ -116,7 +118,18 @@ function requireDisplayName(payload: ExercisePayload): string {
 
 const trimmedOrNull = (value: unknown) => (value ? String(value).trim() || null : null);
 
-/** Inserts the exercise with its localizations and secondary muscles in one nested mutation. */
+/** `muscles_inherited` of a payload: undefined when left out. */
+function inheritedOf(payload: ExercisePayload): boolean | undefined {
+  return typeof payload.muscles_inherited === "boolean" ? payload.muscles_inherited : undefined;
+}
+
+/**
+ * Inserts the exercise with its localizations and muscles in one mutation document. New
+ * exercises inherit their pair's muscles unless the payload says otherwise. The row is inserted
+ * custom with its own muscles, then switched to inherited: the database then copies the pair's
+ * muscles onto it, or gives them to a pair that has none yet (writes to an inherited exercise's
+ * secondaries are ignored, so they must land before the switch).
+ */
 export async function composeExercise(token: string, payload: ExercisePayload) {
   const displayName = requireDisplayName(payload);
   const dup = await staffGql<{ catalog_exercises: { exo_id: number; display_name: string }[] }>(
@@ -136,6 +149,7 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
   const biomechanics = parseBiomechanicalFields(payload);
   const { columns, secondaryIds = [] } = await resolveExerciseColumns(token, payload, "create");
   const exoId = payload.exo_id ? Number(payload.exo_id) : await nextExoId(token);
+  const inherit = inheritedOf(payload) ?? true;
   const { status, requested, gaps } = resolveTaxonomyStatus(payload, payload.taxonomy_status);
   if (gaps.length && requested === "migrated") {
     // Keep the save, but never allow migrated when incomplete.
@@ -149,10 +163,19 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
 
   const data = await staffGql<{ insert_catalog_exercises_one: unknown }>(
     token,
-    `mutation($o: catalog_exercises_insert_input!) {
+    `mutation($o: catalog_exercises_insert_input!${inherit ? ", $exo_id: Int!" : ""}) {
       insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }
+      ${
+        inherit
+          ? `update_catalog_exercises(
+              where: { exo_id: { _eq: $exo_id } }
+              _set: { muscles_inherited: true }
+            ) { affected_rows }`
+          : ""
+      }
     }`,
     {
+      ...(inherit ? { exo_id: exoId } : {}),
       o: {
         exo_id: exoId,
         display_name: localizations[0].display_name,
@@ -161,6 +184,7 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
         taxonomy_status: status,
         taxonomy_notes: payload.taxonomy_notes || null,
         active: true,
+        muscles_inherited: false,
         localizations: { data: localizations },
         secondary_muscles: {
           data: secondaryIds.map((muscle_id, sort_order) => ({ muscle_id, sort_order })),
@@ -175,6 +199,11 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
  * Updates the exercise in one mutation document, which Hasura runs as a single transaction:
  * fields, localizations (upsert per locale) and, when the payload lists them, the secondary
  * muscles (replaced). Fields missing from the payload keep their current values.
+ *
+ * Fields go first so a switch to custom lands before the secondaries are written (the database
+ * ignores writes to an inherited exercise's secondaries). An inherited payload that lists
+ * secondaries (its pair has no muscles yet) is saved custom, then switched to inherited at the
+ * end so the pair takes them.
  */
 export async function updateExercise(token: string, payload: ExercisePayload) {
   const displayName = requireDisplayName(payload);
@@ -193,12 +222,16 @@ export async function updateExercise(token: string, payload: ExercisePayload) {
 
   const biomechanics = providedBiomechanicalFields(payload);
   const { columns, secondaryIds } = await resolveExerciseColumns(token, payload, "update");
+  const replaceSecondary = secondaryIds !== undefined;
+  const inherited = inheritedOf(payload);
+  const inheritAtEnd = inherited === true && replaceSecondary;
   const set = {
     display_name: displayName,
     ...columns,
     ...biomechanics,
     taxonomy_status: status,
     ...("taxonomy_notes" in payload ? { taxonomy_notes: payload.taxonomy_notes || null } : {}),
+    ...(inherited !== undefined ? { muscles_inherited: inherited && !inheritAtEnd } : {}),
   };
   const localizations = buildExerciseLocalizationRows(
     payload,
@@ -206,7 +239,6 @@ export async function updateExercise(token: string, payload: ExercisePayload) {
     trimmedOrNull(payload.description),
   ).map((row) => ({ ...row, exercise_id: current.id }));
 
-  const replaceSecondary = secondaryIds !== undefined;
   const data = await staffGql<{
     update_catalog_exercises_by_pk: { id: string; exo_id: number; taxonomy_status: string };
   }>(
@@ -217,8 +249,9 @@ export async function updateExercise(token: string, payload: ExercisePayload) {
       $localizations: [catalog_exercise_localizations_insert_input!]!
       ${replaceSecondary ? "$secondary: [catalog_exercise_secondary_muscles_insert_input!]!" : ""}
     ) {
-      ${replaceSecondary ? "delete_catalog_exercise_secondary_muscles(where: { exercise_id: { _eq: $id } }) { affected_rows }" : ""}
       update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: $set) { id exo_id taxonomy_status }
+      ${replaceSecondary ? "delete_catalog_exercise_secondary_muscles(where: { exercise_id: { _eq: $id } }) { affected_rows }" : ""}
+      ${replaceSecondary ? "insert_catalog_exercise_secondary_muscles(objects: $secondary) { affected_rows }" : ""}
       insert_catalog_exercise_localizations(
         objects: $localizations
         on_conflict: {
@@ -226,7 +259,7 @@ export async function updateExercise(token: string, payload: ExercisePayload) {
           update_columns: [display_name, description]
         }
       ) { affected_rows }
-      ${replaceSecondary ? "insert_catalog_exercise_secondary_muscles(objects: $secondary) { affected_rows }" : ""}
+      ${inheritAtEnd ? "inherit: update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { muscles_inherited: true }) { id }" : ""}
     }`,
     {
       id: current.id,

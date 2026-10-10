@@ -126,7 +126,14 @@ export async function editImage(
   prompt: string,
   params: GenerationParams,
   inputs: { bytes: Buffer; mimeType: string }[],
-  options: { useFidelity?: boolean } = {},
+  options: {
+    useFidelity?: boolean;
+    /**
+     * Also send the params' moderation. The SDK types only list it for generate, but the edit
+     * endpoint accepts it; off by default so existing edits keep their requests.
+     */
+    moderation?: boolean;
+  } = {},
 ): Promise<GeneratedImageResult> {
   const client = createOpenAIClient();
   const request = buildImageRequest(prompt, params);
@@ -151,6 +158,7 @@ export async function editImage(
       ? { output_compression: request.output_compression }
       : {}),
     ...(request.background ? { background: request.background as "auto" } : {}),
+    ...(options.moderation ? ({ moderation: request.moderation } as object) : {}),
   });
   const first = response.data?.[0];
   if (!first?.b64_json) {

@@ -101,6 +101,10 @@ export type MuscleGroupRow = Partial<MuscleMapChoices> & {
     };
     /** Custom name of this group + movement pair ("Chest Press"), per locale. */
     localizations?: LocalizationRow[];
+    /** Default muscles of the pair; inheriting exercises use them. */
+    target_muscle?: { code: string; name: string } | null;
+    secondary_muscles?: Array<{ muscle: { code: string; name: string } }>;
+    exercises?: Array<{ muscles_inherited: boolean }>;
   }>;
 };
 

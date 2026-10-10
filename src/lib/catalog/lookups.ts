@@ -590,23 +590,18 @@ export async function manageRelation(token: string, payload: RelationPayload) {
   );
 }
 
-export type GroupMovementLabelsPayload = {
-  muscle_group_code?: unknown;
-  movement_type_code?: unknown;
-  labels?: Partial<Record<CatalogLocale, unknown>>;
-};
+type PairKey = { muscle_group_id: string; movement_type_id: string };
 
-/**
- * Custom names for a linked group + movement pair ("Chest Press" instead of "Chest - Press").
- * Filled locales are upserted and emptied ones deleted, in one mutation; no locale is required.
- */
-export async function setGroupMovementLabels(token: string, payload: GroupMovementLabelsPayload) {
-  const groupCode = normalizeTaxonomy(payload.muscle_group_code);
-  const movementCode = normalizeTaxonomy(payload.movement_type_code);
+/** A linked group + movement pair by codes; unknown pair → error. */
+async function requirePair(
+  token: string,
+  rawGroup: unknown,
+  rawMovement: unknown,
+): Promise<PairKey> {
+  const groupCode = normalizeTaxonomy(rawGroup);
+  const movementCode = normalizeTaxonomy(rawMovement);
   if (!groupCode || !movementCode) throw new Error("muscle_group_code and movement_type_code required");
-  const found = await staffGql<{
-    catalog_muscle_group_movement_types: { muscle_group_id: string; movement_type_id: string }[];
-  }>(
+  const found = await staffGql<{ catalog_muscle_group_movement_types: PairKey[] }>(
     token,
     `query($g: String!, $m: String!) {
       catalog_muscle_group_movement_types(
@@ -618,7 +613,21 @@ export async function setGroupMovementLabels(token: string, payload: GroupMoveme
   );
   const pair = found.catalog_muscle_group_movement_types[0];
   if (!pair) throw new Error(`${movementCode} is not linked to ${groupCode}; link it first`);
+  return pair;
+}
 
+export type GroupMovementLabelsPayload = {
+  muscle_group_code?: unknown;
+  movement_type_code?: unknown;
+  labels?: Partial<Record<CatalogLocale, unknown>>;
+};
+
+/**
+ * Custom names for a linked group + movement pair ("Chest Press" instead of "Chest - Press").
+ * Filled locales are upserted and emptied ones deleted, in one mutation; no locale is required.
+ */
+export async function setGroupMovementLabels(token: string, payload: GroupMovementLabelsPayload) {
+  const pair = await requirePair(token, payload.muscle_group_code, payload.movement_type_code);
   const labels = payload.labels ?? {};
   const filled = CATALOG_LOCALES.flatMap((locale) => {
     const display_name = String(labels[locale] || "").trim();
@@ -648,6 +657,81 @@ export async function setGroupMovementLabels(token: string, payload: GroupMoveme
   );
 }
 
+export type PairMusclesPayload = {
+  muscle_group_code?: unknown;
+  movement_type_code?: unknown;
+  target_muscle_code?: unknown;
+  secondary_muscle_codes?: unknown;
+};
+
+/**
+ * Default muscles of a group + movement pair: exactly one target and ordered secondaries.
+ * Muscles must exist (no new codes from here). One mutation, in this order: the target first
+ * (the database drops a new target from the secondaries), then the secondaries are replaced.
+ * Inheriting exercises follow through database triggers.
+ */
+export async function setPairMuscles(token: string, payload: PairMusclesPayload) {
+  const pair = await requirePair(token, payload.muscle_group_code, payload.movement_type_code);
+  const targetCode = normalizeMuscleCode(payload.target_muscle_code);
+  if (!targetCode) throw new Error("A pair needs a target muscle");
+  const rawSecondary = Array.isArray(payload.secondary_muscle_codes)
+    ? payload.secondary_muscle_codes
+    : [];
+  const secondaryCodes: string[] = [];
+  for (const raw of rawSecondary) {
+    const code = normalizeMuscleCode(raw);
+    if (code && code !== targetCode && !secondaryCodes.includes(code)) secondaryCodes.push(code);
+  }
+
+  const codes = [targetCode, ...secondaryCodes];
+  const found = await staffGql<{ catalog_muscles: LookupRef[] }>(
+    token,
+    `query($codes: [String!]!) { catalog_muscles(where: { code: { _in: $codes } }) { id code } }`,
+    { codes },
+  );
+  const idOf = new Map(found.catalog_muscles.map((row) => [row.code, row.id]));
+  const unknown = codes.filter((code) => !idOf.has(code));
+  if (unknown.length) throw new Error(`Unknown muscle code: ${unknown.join(", ")}`);
+  const secondaryIds = secondaryCodes.map((code) => idOf.get(code)!);
+
+  await staffGql(
+    token,
+    `mutation(
+      $g: uuid!
+      $m: uuid!
+      $target: uuid!
+      $keep: [uuid!]!
+      $secondary: [catalog_muscle_group_movement_type_secondary_muscles_insert_input!]!
+    ) {
+      update_catalog_muscle_group_movement_types_by_pk(
+        pk_columns: { muscle_group_id: $g, movement_type_id: $m }
+        _set: { target_muscle_id: $target }
+      ) { muscle_group_id }
+      delete_catalog_muscle_group_movement_type_secondary_muscles(
+        where: {
+          muscle_group_id: { _eq: $g }
+          movement_type_id: { _eq: $m }
+          muscle_id: { _nin: $keep }
+        }
+      ) { affected_rows }
+      insert_catalog_muscle_group_movement_type_secondary_muscles(
+        objects: $secondary
+        on_conflict: {
+          constraint: muscle_group_movement_type_secondary_muscles_pkey
+          update_columns: [sort_order]
+        }
+      ) { affected_rows }
+    }`,
+    {
+      g: pair.muscle_group_id,
+      m: pair.movement_type_id,
+      target: idOf.get(targetCode)!,
+      keep: secondaryIds,
+      secondary: secondaryIds.map((muscle_id, sort_order) => ({ ...pair, muscle_id, sort_order })),
+    },
+  );
+}
+
 export function fetchTaxonomy(token: string) {
   return staffGql(
     token,
@@ -663,6 +747,9 @@ export function fetchTaxonomy(token: string) {
         group_movement_types {
           movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } }
           localizations(order_by: { locale: asc }) { locale display_name }
+          target_muscle { code name }
+          secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }
+          exercises { muscles_inherited }
         }
       }
       catalog_muscles(order_by: { code: asc }) {
