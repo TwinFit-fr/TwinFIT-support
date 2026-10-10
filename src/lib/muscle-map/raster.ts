@@ -23,13 +23,17 @@ export async function decodeRgba(
   return { data: new Uint8Array(data.buffer, data.byteOffset, data.length), width: info.width, height: info.height };
 }
 
-/** PNG of a mask: white pixels whose alpha is the muscle. */
+/** PNG of a mask: alpha is the muscle, RGB (gray) its volume shade. */
 export async function encodeMaskPng(
   alpha: Uint8ClampedArray,
+  shade: Uint8ClampedArray,
   width: number,
   height: number,
 ): Promise<Buffer> {
-  const rgba = Buffer.alloc(width * height * 4, 255);
-  for (let i = 0; i < alpha.length; i++) rgba[i * 4 + 3] = alpha[i];
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let i = 0; i < alpha.length; i++) {
+    rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = shade[i];
+    rgba[i * 4 + 3] = alpha[i];
+  }
   return sharp(rgba, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }

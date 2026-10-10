@@ -38,12 +38,13 @@ export function parsePaintColor(hex: string): [number, number, number, number] {
 }
 
 /**
- * Blends `color` over `pixels` (RGBA, in place) where the mask is: tint = mask alpha × color
- * alpha. Pixels the base leaves transparent take the tint as they are.
+ * Paints a mask over `pixels` (RGBA base, in place) the way clients do: the base multiplied by
+ * the color and by the mask's volume shade, weighted by mask alpha × color alpha.
  */
-export function tintInPlace(
+export function paintInPlace(
   pixels: Uint8ClampedArray,
   mask: ArrayLike<number>,
+  shade: ArrayLike<number>,
   color: string,
 ) {
   const [r, g, b, a] = parsePaintColor(color);
@@ -51,12 +52,10 @@ export function tintInPlace(
     const t = (mask[i] / 255) * a;
     if (t <= 0) continue;
     const p = i * 4;
-    const under = pixels[p + 3] / 255;
-    const out = t + under * (1 - t);
-    pixels[p] = (r * t + pixels[p] * under * (1 - t)) / out;
-    pixels[p + 1] = (g * t + pixels[p + 1] * under * (1 - t)) / out;
-    pixels[p + 2] = (b * t + pixels[p + 2] * under * (1 - t)) / out;
-    pixels[p + 3] = out * 255;
+    const k = shade[i] / 255 / 255;
+    pixels[p] += (pixels[p] * r * k - pixels[p]) * t;
+    pixels[p + 1] += (pixels[p + 1] * g * k - pixels[p + 1]) * t;
+    pixels[p + 2] += (pixels[p + 2] * b * k - pixels[p + 2]) * t;
   }
 }
 
