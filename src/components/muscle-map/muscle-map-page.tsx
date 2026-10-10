@@ -1,18 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { TableSkeleton } from "@/components/ui/primitives";
 import { TabList, TabPanel } from "@/components/ui/tabs";
 import { BasesPanel } from "./bases-panel";
 import { MasksPanel } from "./masks-panel";
+import { PreviewPanel } from "./preview-panel";
 import { SettingsPanel } from "./settings-panel";
 import { useMuscleMap } from "./use-muscle-map";
 
-type TabId = "bases" | "masks" | "settings";
+type TabId = "bases" | "masks" | "preview" | "settings";
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "bases", label: "Bases" },
   { id: "masks", label: "Masks" },
+  { id: "preview", label: "Preview vs A" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -22,7 +25,9 @@ const TABS: Array<{ id: TabId; label: string }> = [
  */
 export function MuscleMapPage() {
   const api = useMuscleMap();
-  const [tab, setTab] = useState<TabId>("bases");
+  const params = useSearchParams();
+  // Opening a shared pilot link (`?exo=`) lands on the preview.
+  const [tab, setTab] = useState<TabId>(() => (params.has("exo") ? "preview" : "bases"));
 
   return (
     <div className="space-y-4">
@@ -44,6 +49,9 @@ export function MuscleMapPage() {
           </TabPanel>
           <TabPanel id="masks" selected={tab === "masks"}>
             <MasksPanel api={api} />
+          </TabPanel>
+          <TabPanel id="preview" selected={tab === "preview"}>
+            {tab === "preview" && <PreviewPanel api={api} />}
           </TabPanel>
           <TabPanel id="settings" selected={tab === "settings"}>
             <SettingsPanel api={api} />

@@ -97,3 +97,42 @@ export function formatDate(iso: string): string {
 export function errorText(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
+
+/**
+ * `MaskedBase` cropped to a normalized box (the painted masks plus a margin), the way the app
+ * would show it on a card.
+ */
+export function CroppedMaskedBase({
+  base,
+  layers,
+  rect,
+  width = 320,
+}: {
+  base: MapBase;
+  layers: Array<{ mask: MapMask; color: string }>;
+  rect: { x: number; y: number; w: number; h: number };
+  width?: number;
+}) {
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-md"
+      style={{ aspectRatio: `${rect.w * base.width} / ${rect.h * base.height}` }}
+    >
+      <div
+        className="absolute"
+        style={{
+          left: `${(-rect.x / rect.w) * 100}%`,
+          top: `${(-rect.y / rect.h) * 100}%`,
+          width: `${100 / rect.w}%`,
+        }}
+      >
+        <MaskedBase
+          base={base}
+          layers={layers}
+          width={Math.min(1024, Math.round(width / rect.w))}
+          className="rounded-none"
+        />
+      </div>
+    </div>
+  );
+}

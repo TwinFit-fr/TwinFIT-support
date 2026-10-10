@@ -71,3 +71,20 @@ export function drawPixels(
   canvas.height = height;
   canvas.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(pixels), width, height), 0, 0);
 }
+
+/** Margin around the painted masks when cropping a preview (fraction of the base side). */
+export const CROP_MARGIN = 0.04;
+
+/** Union of the painted masks' boxes plus a margin, inside the image; null when none. */
+export function cropRect(
+  rects: Array<{ x: number; y: number; w: number; h: number } | null>,
+  margin = CROP_MARGIN,
+): { x: number; y: number; w: number; h: number } | null {
+  const boxes = rects.filter((r): r is NonNullable<typeof r> => r !== null);
+  if (boxes.length === 0) return null;
+  const x0 = Math.max(0, Math.min(...boxes.map((r) => r.x)) - margin);
+  const y0 = Math.max(0, Math.min(...boxes.map((r) => r.y)) - margin);
+  const x1 = Math.min(1, Math.max(...boxes.map((r) => r.x + r.w)) + margin);
+  const y1 = Math.min(1, Math.max(...boxes.map((r) => r.y + r.h)) + margin);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
