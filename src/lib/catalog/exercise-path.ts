@@ -380,6 +380,8 @@ export function formCreateFingerprint(form: {
   variation_code: string;
   load_modality_code: string;
   target_muscle_code: string;
+  secondary_muscle_codes: string[];
+  muscles_inherited: boolean;
   taxonomy_status: string;
 }): string {
   return JSON.stringify({
@@ -398,7 +400,8 @@ export function formCreateFingerprint(form: {
     load_modality_code: normTaxonomy(form.load_modality_code),
     target_muscle_code: normTaxonomy(form.target_muscle_code),
     taxonomy_status: form.taxonomy_status || "migrated",
-    secondary_muscle_codes: [] as string[],
+    secondary_muscle_codes: form.secondary_muscle_codes.map(normTaxonomy),
+    muscles_inherited: form.muscles_inherited,
   });
 }
 
@@ -414,6 +417,8 @@ export function exerciseFingerprintFromCatalog(ex: {
   variation?: { code: string };
   load_modality?: { code: string };
   target_muscle?: { code: string };
+  muscles_inherited?: boolean;
+  resolved_muscles?: Array<{ role: string; muscle: { code: string } }>;
   localizations?: Array<{
     locale: string;
     display_name?: string | null;
@@ -441,6 +446,9 @@ export function exerciseFingerprintFromCatalog(ex: {
     load_modality_code: normTaxonomy(ex.load_modality?.code),
     target_muscle_code: normTaxonomy(ex.target_muscle?.code),
     taxonomy_status: ex.taxonomy_status || "migrated",
-    secondary_muscle_codes: [] as string[],
+    secondary_muscle_codes: (ex.resolved_muscles ?? [])
+      .filter((m) => m.role === "secondary")
+      .map((m) => normTaxonomy(m.muscle.code)),
+    muscles_inherited: ex.muscles_inherited ?? false,
   });
 }

@@ -17,6 +17,11 @@ import {
   emptyLocaleFields,
   type CatalogLocale,
 } from "@/lib/catalog/locales";
+import {
+  MuscleSetChips,
+  MuscleSetEditor,
+  type MuscleSet,
+} from "@/components/catalog/muscle-set-editor";
 import { useIsAdmin } from "@/hooks/use-is-staff";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
@@ -25,7 +30,14 @@ export type LookupRow = { code: string; name: string };
 type MuscleGroup = {
   code: string;
   group_muscles: Array<{ role: string; muscle: { code: string } }>;
+  group_movement_types: Array<{
+    movement_type: { code: string };
+    target_muscle?: { code: string } | null;
+    secondary_muscles?: Array<{ muscle: { code: string } }>;
+  }>;
 };
+
+const pairKey = (groupCode: string, movementCode: string) => `${groupCode}::${movementCode}`;
 
 type CatalogExerciseRow = {
   exo_id: number;
@@ -40,6 +52,8 @@ type CatalogExerciseRow = {
   variation?: { code: string };
   load_modality?: { code: string };
   target_muscle?: { code: string };
+  muscles_inherited?: boolean;
+  resolved_muscles?: Array<{ role: string; muscle: { code: string } }>;
   localizations?: Array<{
     locale: string;
     display_name?: string | null;
@@ -58,6 +72,9 @@ export type ExerciseFormState = {
   variation_code: string;
   load_modality_code: string;
   target_muscle_code: string;
+  /** Custom muscles only; an inherited exercise shows its pair's. */
+  secondary_muscle_codes: string[];
+  muscles_inherited: boolean;
   taxonomy_status: string;
   localizations: Record<
     CatalogLocale,
@@ -76,6 +93,8 @@ const DEFAULT_FORM: ExerciseFormState = {
   variation_code: "STANDARD",
   load_modality_code: "",
   target_muscle_code: "",
+  secondary_muscle_codes: [],
+  muscles_inherited: true,
   taxonomy_status: "migrated",
   localizations: emptyLocaleFields(),
 };
@@ -121,6 +140,7 @@ export function ExerciseComposeForm({
     muscles: [],
   });
   const [form, setForm] = useState<ExerciseFormState>(DEFAULT_FORM);
+  const [pairMuscles, setPairMuscles] = useState<Map<string, MuscleSet>>(new Map());
   const [allExercises, setAllExercises] = useState<ExerciseWithPath[]>([]);
   const [copySource, setCopySource] = useState<CatalogExerciseRow | null>(null);
   const [nextExoId, setNextExoId] = useState<number | null>(null);
@@ -169,6 +189,17 @@ export function ExerciseComposeForm({
         load_modalities: taxRes.data.catalog_load_modalities ?? [],
         muscles: libRes.data.catalog_muscles ?? [],
       });
+
+      const pairs = new Map<string, MuscleSet>();
+      for (const group of taxRes.data.catalog_muscle_groups ?? []) {
+        for (const pair of group.group_movement_types ?? []) {
+          pairs.set(pairKey(group.code, pair.movement_type.code), {
+            target: pair.target_muscle?.code ?? "",
+            secondary: (pair.secondary_muscles ?? []).map((s) => s.muscle.code),
+          });
+        }
+      }
+      setPairMuscles(pairs);
 
       if (editExoId) {
         const ex = libRes.data.catalog_exercises.find((row) => row.exo_id === editExoId);
@@ -274,6 +305,23 @@ export function ExerciseComposeForm({
     return { warnings, canCreate };
   }, [isCopy, copySource, form, allExercises]);
 
+  /** The pair's muscles when the exercise inherits them; null when it picks its own. */
+  const pair = pairMuscles.get(pairKey(form.primary_muscle_group_code, form.movement_type_code));
+  const inheritedFromPair = form.muscles_inherited && pair?.target ? pair : null;
+
+  function setMusclesInherited(inherited: boolean) {
+    if (inherited === form.muscles_inherited) return;
+    // Going custom starts from the pair's muscles, as the database keeps them.
+    const start = !inherited && pair?.target ? pair : null;
+    setForm({
+      ...form,
+      muscles_inherited: inherited,
+      ...(start
+        ? { target_muscle_code: start.target, secondary_muscle_codes: start.secondary }
+        : {}),
+    });
+  }
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (isCopy && !copyValidation.canCreate) {
@@ -289,8 +337,12 @@ export function ExerciseComposeForm({
         display_name: form.localizations.en.display_name.trim(),
         description: form.localizations.en.description.trim() || null,
         localizations: form.localizations,
-        // No secondary_muscle_codes: the form does not edit them, so an update keeps them.
       };
+      if (inheritedFromPair) {
+        // Muscles come from the pair; the target keeps validation and status as before.
+        payload.target_muscle_code = inheritedFromPair.target;
+        delete payload.secondary_muscle_codes;
+      }
       if (form.load_modality_code) {
         payload.load_modality_code = form.load_modality_code;
       }
@@ -474,12 +526,55 @@ export function ExerciseComposeForm({
           onChange={(value) => setForm({ ...form, load_modality_code: value })}
           allowEmpty
         />
-        <LookupSelect
-          label="Target muscle"
-          value={form.target_muscle_code}
-          options={lookups.muscles}
-          onChange={(value) => setForm({ ...form, target_muscle_code: value })}
-        />
+        <div className="space-y-3 md:col-span-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium">Muscles</span>
+            <div className="flex gap-1">
+              {([true, false] as const).map((inherited) => (
+                <button
+                  key={String(inherited)}
+                  type="button"
+                  onClick={() => setMusclesInherited(inherited)}
+                  className={`rounded-md px-3 py-1 text-sm ${
+                    form.muscles_inherited === inherited
+                      ? "bg-zinc-900 text-white"
+                      : "border border-zinc-300 hover:bg-zinc-50"
+                  }`}
+                >
+                  {inherited ? "Inherited" : "Custom"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {inheritedFromPair ? (
+            <div className="space-y-1">
+              <MuscleSetChips muscles={lookups.muscles} value={inheritedFromPair} />
+              <p className="text-xs text-zinc-500">
+                From the pair {form.primary_muscle_group_code} + {form.movement_type_code}. Edit
+                them in Taxonomy → Group movements.
+              </p>
+            </div>
+          ) : (
+            <>
+              {form.muscles_inherited && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  This pair has no muscles yet; it will take these.
+                </p>
+              )}
+              <MuscleSetEditor
+                muscles={lookups.muscles}
+                value={{ target: form.target_muscle_code, secondary: form.secondary_muscle_codes }}
+                onChange={(value) =>
+                  setForm({
+                    ...form,
+                    target_muscle_code: value.target,
+                    secondary_muscle_codes: value.secondary,
+                  })
+                }
+              />
+            </>
+          )}
+        </div>
       </Card>
       {message && <p className="text-sm text-red-600">{message}</p>}
       <div className="flex flex-wrap gap-2">
@@ -523,9 +618,22 @@ function formFromExercise(ex: CatalogExerciseRow): ExerciseFormState {
     grip_code: ex.grip?.code ?? "STANDARD",
     variation_code: ex.variation?.code ?? "STANDARD",
     load_modality_code: ex.load_modality?.code ?? "",
-    target_muscle_code: ex.target_muscle?.code ?? "",
+    ...musclesFromExercise(ex),
     taxonomy_status: ex.taxonomy_status,
     localizations,
+  };
+}
+
+/** The exercise's resolved muscles (its pair's when inherited) and its mode. */
+function musclesFromExercise(ex: CatalogExerciseRow) {
+  const resolved = ex.resolved_muscles ?? [];
+  return {
+    target_muscle_code:
+      resolved.find((m) => m.role === "target")?.muscle.code ?? ex.target_muscle?.code ?? "",
+    secondary_muscle_codes: resolved
+      .filter((m) => m.role === "secondary")
+      .map((m) => m.muscle.code),
+    muscles_inherited: ex.muscles_inherited ?? false,
   };
 }
 
