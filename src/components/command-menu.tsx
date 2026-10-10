@@ -139,6 +139,14 @@ export function CommandMenu({
         perform: () => router.push("/images/muscle-maps"),
       },
       {
+        id: "nav-muscle-map",
+        title: "Muscle map (prototype B)",
+        subtitle: "Base bodies and one mask per muscle, painted with the exercise's muscles",
+        category: "Navigation",
+        icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
+        perform: () => router.push("/muscle-map"),
+      },
+      {
         id: "nav-images-prompts",
         title: "Image Prompts",
         subtitle: "Edit exercise, support and muscle map prompts per style",
