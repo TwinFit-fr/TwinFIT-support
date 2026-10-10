@@ -9,9 +9,17 @@ import { imageThumbUrl } from "@/lib/images/urls";
 import type { MapBase, MapMask } from "@/lib/muscle-map/types";
 import type { Upload } from "./use-muscle-map";
 
+/** `#RRGGBB[AA]` → the opaque color and its alpha (0..1). */
+function splitColor(color: string): { rgb: string; alpha: number } {
+  const match = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(color.trim());
+  if (!match) return { rgb: color, alpha: 1 };
+  return { rgb: `#${match[1]}`, alpha: match[2] ? parseInt(match[2], 16) / 255 : 1 };
+}
+
 /**
- * A base with masks tinted over it (CSS masks on the public files; Storage serves CORS). Masks
- * are drawn in order, so put the target last.
+ * A base with masks painted over it as clients paint them: base × color × the mask's volume
+ * shade (multiply), weighted by mask alpha × color alpha. Masks are drawn in order, so put the
+ * target last. CSS masks read the public files (Storage serves CORS).
  */
 export function MaskedBase({
   base,
@@ -30,24 +38,33 @@ export function MaskedBase({
       className={`relative w-full overflow-hidden rounded-md ${className ?? ""}`}
       style={{ ...CHECKER_STYLE, aspectRatio: `${base.width} / ${base.height}` }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={baseUrl} alt="" className="absolute inset-0 h-full w-full object-contain" />
-      {layers.map(({ mask, color }) => {
-        const url = `url("${imageThumbUrl(mask.image_url, width) ?? mask.image_url}")`;
-        return (
-          <div
-            key={mask.id}
-            className="absolute inset-0"
-            style={{
-              backgroundColor: color,
-              maskImage: url,
-              WebkitMaskImage: url,
-              maskSize: "100% 100%",
-              WebkitMaskSize: "100% 100%",
-            }}
-          />
-        );
-      })}
+      <div className="absolute inset-0 isolate">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={baseUrl} alt="" className="absolute inset-0 h-full w-full object-contain" />
+        {layers.map(({ mask, color }) => {
+          const url = `url("${imageThumbUrl(mask.image_url, width) ?? mask.image_url}")`;
+          const { rgb, alpha } = splitColor(color);
+          return (
+            <div
+              key={mask.id}
+              className="absolute inset-0"
+              style={{
+                // color × shade inside the mask, then multiplied onto the base.
+                backgroundColor: rgb,
+                backgroundImage: url,
+                backgroundSize: "100% 100%",
+                backgroundBlendMode: "multiply",
+                mixBlendMode: "multiply",
+                opacity: alpha,
+                maskImage: url,
+                WebkitMaskImage: url,
+                maskSize: "100% 100%",
+                WebkitMaskSize: "100% 100%",
+              }}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

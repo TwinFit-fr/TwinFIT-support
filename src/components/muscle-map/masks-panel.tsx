@@ -54,6 +54,23 @@ export function MasksPanel({ api }: { api: MuscleMapApi }) {
     return `${done}/${vMuscles.length}`;
   }
 
+  // Masks made before volume shading: re-extract them from their source to add it.
+  const flat = board.masks.filter(
+    (m) => m.active && m.source_file_id && m.params.adjust?.volume === undefined,
+  );
+  const [reshading, setReshading] = useState(false);
+
+  async function reshade() {
+    setReshading(true);
+    try {
+      const failed = await api.reshadeMasks(flat);
+      if (failed) toast.error(`${failed} of ${flat.length} mask(s) failed`);
+      else toast.success(`Volume added to ${flat.length} mask(s)`);
+    } finally {
+      setReshading(false);
+    }
+  }
+
   async function generateMissing() {
     setBatchRunning(true);
     try {
@@ -92,6 +109,18 @@ export function MasksPanel({ api }: { api: MuscleMapApi }) {
           <Sparkles className="h-3.5 w-3.5" />
           {batchRunning ? "Generating…" : `Generate missing (${missing.length})`}
         </Button>
+        {flat.length > 0 && (
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-8 px-2 text-xs"
+            disabled={reshading || batchRunning}
+            onClick={() => void reshade()}
+            title="Re-extracts from the stored sources with the default volume; no generation"
+          >
+            {reshading ? "Adding volume…" : `Add volume to older masks (${flat.length})`}
+          </Button>
+        )}
         <AddMuscle api={api} />
       </div>
 
@@ -128,6 +157,7 @@ export function MasksPanel({ api }: { api: MuscleMapApi }) {
           base={base}
           muscleName={adjusting.muscle.muscle.name}
           keyColor={board.settings.key_color}
+          paintColor={board.settings.target_color}
           onClose={() => setAdjusting(null)}
         />
       )}

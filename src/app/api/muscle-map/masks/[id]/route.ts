@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
-import { normalizeAdjust } from "@/lib/muscle-map/mask-ops";
+import { DEFAULT_ADJUST, UPLOAD_ADJUST, normalizeAdjust } from "@/lib/muscle-map/mask-ops";
 import { getBase, getMask, setMaskActive } from "@/lib/muscle-map/queries";
 import { errorResponse } from "@/lib/muscle-map/request";
 import { deleteMask, readjustMask } from "@/lib/muscle-map/service";
@@ -27,7 +27,9 @@ export async function PATCH(request: Request, context: Ctx) {
     if (body.action === "adjust") {
       const base = await getBase(token, mask.base_id);
       if (!base) return NextResponse.json({ error: "Base not found" }, { status: 404 });
-      const adjust = normalizeAdjust(body.adjust, mask.params.adjust);
+      // Older masks miss newer fields (e.g. volume): those take the defaults.
+      const defaults = mask.method === "uploaded" ? UPLOAD_ADJUST : DEFAULT_ADJUST;
+      const adjust = normalizeAdjust(body.adjust, { ...defaults, ...mask.params.adjust });
       return NextResponse.json({ mask: await readjustMask(token, mask, base, adjust) });
     }
     await setMaskActive(token, mask, body.action === "activate");

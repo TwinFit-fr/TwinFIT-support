@@ -10,17 +10,18 @@ import {
   DEFAULT_ADJUST,
   UPLOAD_ADJUST,
   buildMask,
+  buildShade,
   normalizeAdjust,
   rectOf,
   type AdjustParams,
   type Raster,
 } from "@/lib/muscle-map/mask-ops";
-import { drawPixels, loadRaster, tintInPlace } from "@/lib/muscle-map/paint";
+import { drawPixels, loadRaster, paintInPlace } from "@/lib/muscle-map/paint";
 import type { MapBase, MapMask, Rect } from "@/lib/muscle-map/types";
 import { errorText } from "./shared";
 import type { MuscleMapApi } from "./use-muscle-map";
 
-const PREVIEW_TINT = "#E53935CC";
+/** Target color while adjusting (the settings' one). */
 
 const SLIDERS: Array<{ key: keyof typeof ADJUST_LIMITS; label: string; unit: string }> = [
   { key: "tolerance", label: "Color tolerance", unit: "%" },
@@ -29,6 +30,8 @@ const SLIDERS: Array<{ key: keyof typeof ADJUST_LIMITS; label: string; unit: str
   { key: "min_area", label: "Remove islands and holes under", unit: "% of image" },
   { key: "offset_x", label: "Offset x", unit: "px" },
   { key: "offset_y", label: "Offset y", unit: "px" },
+  { key: "volume", label: "Volume (darker edge)", unit: "%" },
+  { key: "volume_depth", label: "Volume depth", unit: "px" },
 ];
 
 /**
@@ -41,6 +44,7 @@ export function MaskAdjustDialog({
   base,
   muscleName,
   keyColor,
+  paintColor,
   onClose,
 }: {
   api: MuscleMapApi;
@@ -48,6 +52,7 @@ export function MaskAdjustDialog({
   base: MapBase;
   muscleName: string;
   keyColor: string;
+  paintColor: string;
   onClose: () => void;
 }) {
   const token = useAccessToken();
@@ -89,13 +94,14 @@ export function MaskAdjustDialog({
         return;
       }
       const alpha = buildMask(rasters.source, rasters.base, keyColor, params);
+      const shade = buildShade(alpha, width, height, params);
       const pixels = new Uint8ClampedArray(rasters.base.data);
-      tintInPlace(pixels, alpha, PREVIEW_TINT);
+      paintInPlace(pixels, alpha, shade, paintColor);
       drawPixels(target, pixels, width, height);
       setRect(rectOf(alpha, width, height));
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [rasters, params, show, keyColor]);
+  }, [rasters, params, show, keyColor, paintColor]);
 
   async function save() {
     setSaving(true);

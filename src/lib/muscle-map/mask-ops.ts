@@ -4,6 +4,10 @@
  *
  * Pipeline: select (key color or alpha) → drop small islands and fill small holes → grow /
  * shrink → smooth → offset → soft 1 px edge → clip to the base's silhouette.
+ *
+ * Shading (`buildShade`): the mask file's RGB holds a volume shade, white at the core and darker
+ * towards the edge, so a muscle painted with it looks rounded. Clients paint
+ * `base × color × shade` (multiply) weighted by the mask alpha.
  */
 
 export type AdjustParams = {
@@ -22,6 +26,10 @@ export type AdjustParams = {
   offset_y: number;
   /** Keep the mask inside the base's silhouette (its alpha). */
   clip_to_body: boolean;
+  /** How much darker the edge is than the core, in % (0 = flat). */
+  volume: number;
+  /** Pixels from the edge over which the shade goes from edge to core. */
+  volume_depth: number;
 };
 
 export const DEFAULT_ADJUST: AdjustParams = {
@@ -33,6 +41,8 @@ export const DEFAULT_ADJUST: AdjustParams = {
   offset_x: 0,
   offset_y: 0,
   clip_to_body: true,
+  volume: 35,
+  volume_depth: 22,
 };
 
 /** Uploaded masks are taken as drawn. */
@@ -51,6 +61,8 @@ export const ADJUST_LIMITS = {
   min_area: { min: 0, max: 2, step: 0.01 },
   offset_x: { min: -60, max: 60, step: 1 },
   offset_y: { min: -60, max: 60, step: 1 },
+  volume: { min: 0, max: 80, step: 1 },
+  volume_depth: { min: 2, max: 80, step: 1 },
 } as const;
 
 function clampNumber(raw: unknown, fallback: number, min: number, max: number): number {
@@ -74,6 +86,8 @@ export function normalizeAdjust(raw: unknown, defaults: AdjustParams = DEFAULT_A
     offset_y: Math.round(num("offset_y")),
     clip_to_body:
       typeof input.clip_to_body === "boolean" ? input.clip_to_body : defaults.clip_to_body,
+    volume: Math.round(num("volume")),
+    volume_depth: Math.round(num("volume_depth")),
   };
 }
 
@@ -158,6 +172,32 @@ export function buildMask(
     alpha[i] = clip ? (edge[i] * base!.data[i * 4 + 3]) / 255 : edge[i];
   }
   return alpha;
+}
+
+/**
+ * The volume shade of a mask (one byte per pixel): 255 at the core, down to
+ * `255 × (1 − volume)` at the edge, eased over `volume_depth` pixels.
+ */
+export function buildShade(
+  alpha: ArrayLike<number>,
+  width: number,
+  height: number,
+  params: Pick<AdjustParams, "volume" | "volume_depth">,
+): Uint8ClampedArray {
+  const n = width * height;
+  const shade = new Uint8ClampedArray(n).fill(255);
+  if (params.volume <= 0) return shade;
+  const inside = new Uint8Array(n);
+  for (let i = 0; i < n; i++) inside[i] = alpha[i] >= 128 ? 1 : 0;
+  const depth = distanceTo(inside, width, height, 0);
+  const strength = params.volume / 100;
+  for (let i = 0; i < n; i++) {
+    if (alpha[i] === 0) continue;
+    const t = Math.min(1, depth[i] / params.volume_depth);
+    const eased = t * t * (3 - 2 * t);
+    shade[i] = 255 * (1 - strength * (1 - eased));
+  }
+  return shade;
 }
 
 /** Normalized bounding box of the visible part of a mask; null when it is empty. */

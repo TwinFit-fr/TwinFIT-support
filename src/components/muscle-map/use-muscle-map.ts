@@ -2,9 +2,9 @@
 
 import { useCallback, useState } from "react";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
-import type { AdjustParams } from "@/lib/muscle-map/mask-ops";
+import { DEFAULT_ADJUST, UPLOAD_ADJUST, type AdjustParams } from "@/lib/muscle-map/mask-ops";
 import { mapLimit } from "@/lib/muscle-map/pool";
-import type { MapView, MuscleMapBoard, MuscleMapSettings } from "@/lib/muscle-map/types";
+import type { MapMask, MapView, MuscleMapBoard, MuscleMapSettings } from "@/lib/muscle-map/types";
 
 export type Upload = { mimeType: string; data: string };
 
@@ -108,6 +108,26 @@ export function useMuscleMap() {
     },
     adjustMask: (id: string, adjust: AdjustParams) =>
       send(`/api/muscle-map/masks/${id}`, "PATCH", { action: "adjust", adjust }),
+    /**
+     * Re-extracts masks from their sources with their own settings, filling the ones they miss
+     * (e.g. volume) with the defaults; no generation. Resolves how many failed.
+     */
+    reshadeMasks: async (masks: MapMask[]) => {
+      const results = await mapLimit(masks, BATCH_CONCURRENCY, (mask) =>
+        staffFetch(`/api/muscle-map/masks/${mask.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            action: "adjust",
+            adjust: {
+              ...(mask.method === "uploaded" ? UPLOAD_ADJUST : DEFAULT_ADJUST),
+              ...mask.params.adjust,
+            },
+          }),
+        }),
+      );
+      await mutate();
+      return results.filter((r) => !r.ok).length;
+    },
     setMaskActive: (id: string, active: boolean) =>
       send(`/api/muscle-map/masks/${id}`, "PATCH", {
         action: active ? "activate" : "deactivate",

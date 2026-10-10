@@ -1,6 +1,6 @@
 import { editImage, generateImage } from "@/lib/images/openai";
 import { deleteImageFile, downloadImageFile, uploadImageFile } from "@/lib/images/storage";
-import { buildMask, rectOf, type AdjustParams } from "./mask-ops";
+import { buildMask, buildShade, rectOf, type AdjustParams } from "./mask-ops";
 import { baseFileName, maskFileName, sourceFileName } from "./paths";
 import { mapLimit } from "./pool";
 import { basePrompt, generationParams, maskPrompt } from "./prompt";
@@ -77,8 +77,9 @@ async function extractMask(
     decodeRgba(baseFile.bytes, size),
   ]);
   const alpha = buildMask(sourceRaster, baseRaster, keyColor, adjust);
+  const shade = buildShade(alpha, base.width, base.height, adjust);
   return {
-    png: await encodeMaskPng(alpha, base.width, base.height),
+    png: await encodeMaskPng(alpha, shade, base.width, base.height),
     rect: rectOf(alpha, base.width, base.height),
   };
 }
