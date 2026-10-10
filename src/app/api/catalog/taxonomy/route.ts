@@ -4,6 +4,7 @@ import {
   fetchTaxonomy,
   manageRelation,
   setGroupMovementLabels,
+  setPairMuscles,
   updateLookup,
   upsertLookup,
 } from "@/lib/catalog";
@@ -52,6 +53,10 @@ export async function POST(request: Request) {
     }
     if (kind === "group_movement_labels") {
       await setGroupMovementLabels(token, body);
+      return NextResponse.json({ ok: true });
+    }
+    if (kind === "pair_muscles") {
+      await setPairMuscles(token, body);
       return NextResponse.json({ ok: true });
     }
     if (kind === "update") {

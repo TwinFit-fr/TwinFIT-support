@@ -3,6 +3,13 @@
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
 import { useConfirm } from "@/components/ui/confirm";
+import { Modal } from "@/components/ui/modal";
+import {
+  MuscleSetChips,
+  MuscleSetEditor,
+  type MuscleOption,
+  type MuscleSet,
+} from "@/components/catalog/muscle-set-editor";
 import { resolveLocalizedName, type LocalizedLookup } from "@/lib/catalog/locales";
 import type { LookupRowFull, MuscleGroupRow } from "./types";
 
@@ -12,21 +19,41 @@ type PairRow = {
   groupName: string;
   movementCode: string;
   movementName: string;
+  muscles: MuscleSet;
+  exerciseCount: number;
+  inheritingCount: number;
 };
 
 type Props = {
   groups: MuscleGroupRow[];
   movements: LookupRowFull[];
+  muscles: LookupRowFull[];
   onLink: (groupCode: string, movementCode: string) => Promise<void>;
   onUnlink: (groupCode: string, movementCode: string) => Promise<void>;
+  /** Resolves null when saved, else the error; the editor stays open on error. */
+  onSaveMuscles: (
+    groupCode: string,
+    movementCode: string,
+    muscles: MuscleSet,
+  ) => Promise<string | null>;
 };
 
 function selectClass(extra = "") {
   return `rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm ${extra}`;
 }
 
-/** Which movement types each muscle group can use; pair names are on Catalog → Localizations. */
-export function TaxonomyGroupMovementsPanel({ groups, movements, onLink, onUnlink }: Props) {
+/**
+ * Which movement types each muscle group can use, and each pair's default muscles (inherited by
+ * its exercises). Pair names are on Catalog → Localizations.
+ */
+export function TaxonomyGroupMovementsPanel({
+  groups,
+  movements,
+  muscles,
+  onLink,
+  onUnlink,
+  onSaveMuscles,
+}: Props) {
   const [filter, setFilter] = useState("");
   const confirm = useConfirm();
   const [groupFilter, setGroupFilter] = useState("");
@@ -34,6 +61,19 @@ export function TaxonomyGroupMovementsPanel({ groups, movements, onLink, onUnlin
   const [linkGroup, setLinkGroup] = useState(groups[0]?.code ?? "");
   const [linkMovement, setLinkMovement] = useState("");
   const [linking, setLinking] = useState(false);
+  const [editing, setEditing] = useState<PairRow | null>(null);
+  const [draft, setDraft] = useState<MuscleSet>({ target: "", secondary: [] });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const muscleOptions = useMemo(
+    (): MuscleOption[] =>
+      muscles
+        .filter((m) => m.active !== false)
+        .map((m) => ({ code: m.code, name: resolveLocalizedName(m as LocalizedLookup, "en") }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [muscles],
+  );
 
   const pairs = useMemo((): PairRow[] => {
     const rows: PairRow[] = [];
@@ -45,6 +85,12 @@ export function TaxonomyGroupMovementsPanel({ groups, movements, onLink, onUnlin
           groupName: resolveLocalizedName(group as LocalizedLookup, "en"),
           movementCode: x.movement_type.code,
           movementName: resolveLocalizedName(x.movement_type as LocalizedLookup, "en"),
+          muscles: {
+            target: x.target_muscle?.code ?? "",
+            secondary: (x.secondary_muscles ?? []).map((s) => s.muscle.code),
+          },
+          exerciseCount: x.exercises?.length ?? 0,
+          inheritingCount: (x.exercises ?? []).filter((e) => e.muscles_inherited).length,
         });
       }
     }
@@ -98,6 +144,24 @@ export function TaxonomyGroupMovementsPanel({ groups, movements, onLink, onUnlin
     }
   }
 
+  function openMuscles(row: PairRow) {
+    setDraft(row.muscles);
+    setSaveError(null);
+    setEditing(row);
+  }
+
+  async function saveMuscles() {
+    if (!editing || !draft.target) return;
+    setSaving(true);
+    try {
+      const error = await onSaveMuscles(editing.groupCode, editing.movementCode, draft);
+      setSaveError(error);
+      if (!error) setEditing(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function linkPair() {
     if (!linkGroup || !linkMovement) return;
     setLinking(true);
@@ -115,8 +179,9 @@ export function TaxonomyGroupMovementsPanel({ groups, movements, onLink, onUnlin
         <div>
           <h2 className="text-sm font-semibold text-zinc-900">Group movements</h2>
           <p className="text-xs text-zinc-500">
-            Which movement types each muscle group can use. Pair names per language (e.g.
-            Chest Press instead of Chest - Press) are on Catalog → Localizations.
+            Which movement types each muscle group can use, and each pair&apos;s default muscles
+            (exercises that inherit follow them). Pair names per language (e.g. Chest Press
+            instead of Chest - Press) are on Catalog → Localizations.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -192,13 +257,15 @@ export function TaxonomyGroupMovementsPanel({ groups, movements, onLink, onUnlin
             <tr>
               <th className="px-3 py-2 font-medium">Group</th>
               <th className="px-3 py-2 font-medium">Movement</th>
+              <th className="px-3 py-2 font-medium">Muscles</th>
+              <th className="px-3 py-2 font-medium">Exercises</th>
               <th className="px-3 py-2 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-3 py-6 text-zinc-500">
+                <td colSpan={5} className="px-3 py-6 text-zinc-500">
                   No group–movement pairs yet. Link one above.
                 </td>
               </tr>
@@ -216,7 +283,24 @@ export function TaxonomyGroupMovementsPanel({ groups, movements, onLink, onUnlin
                       <div className="text-xs text-zinc-500">{row.movementName}</div>
                     </td>
                     <td className="px-3 py-2">
+                      <MuscleSetChips muscles={muscleOptions} value={row.muscles} />
+                    </td>
+                    <td className="px-3 py-2 text-xs text-zinc-600">
+                      {row.exerciseCount === 0
+                        ? "None"
+                        : `${row.inheritingCount} / ${row.exerciseCount} inherit`}
+                    </td>
+                    <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy}
+                          className="h-8 px-2 text-xs"
+                          onClick={() => openMuscles(row)}
+                        >
+                          Muscles
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
@@ -235,6 +319,53 @@ export function TaxonomyGroupMovementsPanel({ groups, movements, onLink, onUnlin
           </tbody>
         </table>
       </div>
+
+      {editing && (
+        <Modal
+          onClose={() => setEditing(null)}
+          labelledBy="pair-muscles-title"
+          dismissible={!saving}
+          className="max-w-lg"
+        >
+          <div className="space-y-4 p-6">
+            <div>
+              <h2 id="pair-muscles-title" className="text-lg font-semibold">
+                {editing.groupName} + {editing.movementName}
+              </h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                Default muscles of this pair.{" "}
+                {editing.inheritingCount > 0
+                  ? `${editing.inheritingCount} inheriting exercise(s) follow these muscles.`
+                  : "No exercise inherits them yet."}
+              </p>
+            </div>
+            <MuscleSetEditor
+              muscles={muscleOptions}
+              value={draft}
+              onChange={setDraft}
+              disabled={saving}
+            />
+            {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={saving}
+                onClick={() => setEditing(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={saving || !draft.target}
+                onClick={() => void saveMuscles()}
+              >
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@ export {
   fetchTaxonomy,
   manageRelation,
   setGroupMovementLabels,
+  setPairMuscles,
   updateLookup,
   upsertLookup,
 } from "./lookups";
