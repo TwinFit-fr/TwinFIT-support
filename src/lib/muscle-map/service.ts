@@ -116,7 +116,7 @@ export async function createMask(
       prompt,
       params,
       [{ bytes: baseFile.bytes, mimeType: baseFile.contentType }],
-      { useFidelity: true },
+      { useFidelity: true, moderation: true },
     );
     source = result;
     made = { model: params.model, prompt, usage: result.usage, generation: params };
