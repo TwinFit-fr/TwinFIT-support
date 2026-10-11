@@ -8,6 +8,9 @@ export const REFERENCE_USE_DIRECTIVE = `CHARACTER REFERENCE: the input image is 
 /** Appended when a Start generation also receives a support-equipment reference. */
 export const SUPPORT_REFERENCE_DIRECTIVE = `SUPPORT EQUIPMENT REFERENCE: one of the input images is the official support equipment for this style (bench, machine, bars, etc.). Draw exactly this same equipment — same shape, proportions, colors and illustration style. Place it where the exercise requires it. Do not invent a different bench or machine.`;
 
+/** Appended when a Start generation also receives the exercise's load-equipment reference. */
+export const EQUIPMENT_REFERENCE_DIRECTIVE = `LOAD EQUIPMENT REFERENCE: one of the input images is the official load equipment of this exercise (dumbbell, barbell, kettlebell, cable machine, etc.). Draw exactly this same equipment — same shape, proportions, colors and illustration style. The athlete uses it as the exercise requires; do not invent a different one.`;
+
 /** Appended to the system prompt when generating a character reference sheet. */
 export function referenceSheetDirective(subject: Subject): string {
   return `CHARACTER REFERENCE SHEET: a single ${subject}, full body, standing upright in a neutral relaxed pose, front view, arms relaxed at the sides, feet hip-width apart, no equipment, centered with the whole body visible. This image will be reused as the reference for every exercise illustration, so keep the design clean and distinctive.`;

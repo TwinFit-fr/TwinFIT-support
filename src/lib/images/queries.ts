@@ -74,7 +74,7 @@ const EXERCISE_FIELDS = `
   display_name
   active
   primary_muscle_group { id name }
-  equipment { id code name }
+  equipment { id code name description }
   support_equipment { id code name description }
   position { code name }
   grip { code name description }
@@ -102,7 +102,8 @@ type RawExercise = ExerciseTaxonomy & {
   localizations: { locale: string; display_name: string; description: string | null }[];
 };
 
-function englishDescription(localizations: RawExercise["localizations"]): string {
+/** The English description, else the first localized one; the text frame prompts use as {description}. */
+export function englishDescription(localizations: RawExercise["localizations"]): string {
   const en = localizations.find((item) => item.locale === "en");
   return (
     en?.description?.trim() || localizations.find((item) => item.description)?.description || ""
