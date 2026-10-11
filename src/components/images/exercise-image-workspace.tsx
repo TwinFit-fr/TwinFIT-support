@@ -1075,41 +1075,56 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   }
 
   const plannedCount = subjects.length * runPositions.length * variants;
-  // Start is the only frame built from references; Mid/End edit it.
+  // Start is drawn from the character and library references; Mid/End edit a Start. Support and
+  // equipment images go with every frame.
   const startInRun = runPositions.includes(0);
+  // Mid/End edit the subject's active Start unless this run draws a single new one.
+  const editsActiveStart =
+    runPositions.some((p) => p !== 0) && (!startInRun || variants > 1);
   const support = exercise.support_equipment;
-  const automaticInputs: AutomaticInput[] = startInRun
-    ? [
-        ...subjects.map((subject) => ({
+  const automaticInputs: AutomaticInput[] = [
+    ...(startInRun
+      ? subjects.map((subject) => ({
           label: `Character · ${SUBJECT_LABEL[subject]}`,
+          detail: "For Start",
           skip: "character" as const,
           fileId: style?.characters.find((c) => c.subject === subject)?.file_id ?? null,
-        })),
-        ...(support
-          ? [
-              {
-                label: "Support",
-                skip: "support" as const,
-                detail: support.name,
-                fileId:
-                  style?.supports.find((s) => s.support_equipment_id === support.id)?.file_id ??
-                  null,
-              },
-            ]
-          : []),
-        ...(exercise.equipment
-          ? [
-              {
-                label: "Equipment",
-                detail: exercise.equipment.name,
-                fileId:
-                  style?.equipment.find((e) => e.equipment_id === exercise.equipment?.id)
-                    ?.file_id ?? null,
-              },
-            ]
-          : []),
-      ]
-    : [];
+        }))
+      : []),
+    ...(editsActiveStart
+      ? subjects.map((subject) => ({
+          label: `Start · ${SUBJECT_LABEL[subject]}`,
+          detail: "Active Start, edited by Mid and End",
+          fileId:
+            exercise.images.find(
+              (img) => img.subject === subject && img.active && img.position === 0,
+            )?.file_id ?? null,
+        }))
+      : []),
+    ...(support
+      ? [
+          {
+            label: "Support",
+            skip: "support" as const,
+            detail: support.name,
+            fileId:
+              style?.supports.find((s) => s.support_equipment_id === support.id)?.file_id ??
+              null,
+          },
+        ]
+      : []),
+    ...(exercise.equipment
+      ? [
+          {
+            label: "Equipment",
+            detail: exercise.equipment.name,
+            fileId:
+              style?.equipment.find((e) => e.equipment_id === exercise.equipment?.id)?.file_id ??
+              null,
+          },
+        ]
+      : []),
+  ];
   const logoInputs: AutomaticInput[] =
     style?.logo_in_exercises && style.logo_file_id
       ? [{ label: "Logo", fileId: style.logo_file_id, skip: "logo" as const }]
@@ -1260,10 +1275,11 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           onSkippedChange={(value) => setSkipFor({ exoId, value })}
           note={
             startInRun
-              ? "Sent with Start. Mid and End edit that Start, so they only add the logo."
-              : "This run has no Start: Mid and End edit the active Start, so library references are not sent."
+              ? "Support and equipment go with every frame; character and library references only with Start, which Mid and End then edit."
+              : "Mid and End edit the active Start and also get support and equipment; library references are only sent with Start."
           }
-          disabled={running || !startInRun}
+          referencesDisabled={!startInRun}
+          disabled={running}
         />
       )}
 

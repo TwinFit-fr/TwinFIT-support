@@ -115,13 +115,13 @@ export async function generateExerciseFrame(
       ? null
       : (style.characters.find((c) => c.subject === subject)?.file_id ?? null);
   const supportId = exercise.support_equipment?.id ?? null;
+  // Support and load equipment images go with every frame: Mid/End move the equipment too.
   const supportFileId =
-    !usableGuide && supportId && !skip.has("support")
+    supportId && !skip.has("support")
       ? (style.supports.find((s) => s.support_equipment_id === supportId)?.file_id ?? null)
       : null;
-  // Load equipment image (the style's filter card), sent with Start like the support one.
   const equipmentFileId =
-    !usableGuide && exercise.equipment
+    exercise.equipment
       ? (style.equipment.find((e) => e.equipment_id === exercise.equipment?.id)?.file_id ?? null)
       : null;
 
