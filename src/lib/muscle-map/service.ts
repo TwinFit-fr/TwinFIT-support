@@ -11,6 +11,7 @@ import {
   getMapMuscle,
   getSettings,
   insertActiveBase,
+  listMapMusclesOfView,
   insertActiveMask,
   listMasksOfBase,
   updateMaskFile,
@@ -34,9 +35,12 @@ export async function createBase(
     image = upload;
     made = { model: "", prompt: "", params: {}, usage: null };
   } else {
-    const settings = await getSettings(token);
+    const [settings, muscles] = await Promise.all([
+      getSettings(token),
+      listMapMusclesOfView(token, view),
+    ]);
     const params = generationParams(settings);
-    const prompt = basePrompt(settings, view);
+    const prompt = basePrompt(settings, view, muscles);
     const result = await generateImage(prompt, params);
     image = result;
     made = { model: params.model, prompt, params: { generation: params }, usage: result.usage };

@@ -77,7 +77,7 @@ export function SettingsPanel({ api }: { api: MuscleMapApi }) {
 
       <Section title="Prompts" description="Placeholders are replaced when generating.">
         <label className="block text-xs font-medium text-zinc-600">
-          Base prompt · {"{view}"}
+          Base prompt · {"{view} {muscles}"}
           <textarea
             className="mt-1 min-h-40 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs"
             value={draft.base_prompt}
