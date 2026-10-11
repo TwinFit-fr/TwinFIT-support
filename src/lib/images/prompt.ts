@@ -3,6 +3,8 @@ import type { MuscleMapCrop, MuscleMapSlot, MuscleMapTargetKind } from "./types"
 type TemplateValues = {
   name: string;
   description: string;
+  /** Exact pose of the frame being drawn; falls back to the description when missing. */
+  pose?: string;
   exo_id: number;
   id?: string;
   subject?: string;
@@ -54,7 +56,7 @@ export function exerciseDetails(exercise: ExerciseTaxonomy): string {
 
 /** Placeholders each group of prompt slots understands. */
 export const PROMPT_PLACEHOLDERS = {
-  exercise: ["{name}", "{description}", "{exo_id}", "{subject}", "{background_color}"],
+  exercise: ["{name}", "{description}", "{pose}", "{exo_id}", "{subject}", "{background_color}"],
   support: ["{support}", "{support_description}", "{background_color}"],
   equipment: ["{equipment}", "{equipment_description}", "{background_color}"],
   muscleBase: ["{view}", "{crop}", "{background_color}"],
@@ -82,6 +84,7 @@ export function fillPromptTemplate(
     .replaceAll("{name}", values.name)
     .replaceAll("{technical_description}", values.description)
     .replaceAll("{description}", values.description)
+    .replaceAll("{pose}", values.pose?.trim() || values.description)
     .replaceAll("{exo_id}", String(values.exo_id))
     .replaceAll("{id}", values.id ?? String(values.exo_id))
     .replaceAll("{subject}", values.subject ?? "person")
