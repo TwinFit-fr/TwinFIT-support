@@ -188,6 +188,8 @@ export function ImageMetadataPanel({
         p.position_prompt_saved_at,
       ),
     ],
+    ["Support image", p.support_reference_file_id ? "Sent" : "—"],
+    ["Equipment image", p.equipment_reference_file_id ? "Sent" : "—"],
     ["References", referencesLabel(p.reference_ids, references)],
     ["Logo", p.logo_sent == null ? "—" : p.logo_sent ? "Yes" : "No"],
     ["Left out", p.skipped_inputs?.length ? p.skipped_inputs.join(", ") : "—"],

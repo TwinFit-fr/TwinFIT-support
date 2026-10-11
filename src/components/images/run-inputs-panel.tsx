@@ -58,6 +58,7 @@ export function RunInputsPanel({
   onSkippedChange,
   note,
   disabled,
+  referencesDisabled,
 }: {
   automatic: AutomaticInput[];
   /** Automatic inputs sent after the library references (the logo). */
@@ -71,6 +72,8 @@ export function RunInputsPanel({
   onSkippedChange?: (next: SkippableInput[]) => void;
   note?: string;
   disabled?: boolean;
+  /** Library references are not sent by this run (no Start in it). */
+  referencesDisabled?: boolean;
 }) {
   const chosen = effectiveReferenceIds(value, linked);
   const linkedIds = new Set(linked.map((r) => r.id));
@@ -80,6 +83,7 @@ export function RunInputsPanel({
     skipped.length > 0 ||
     (value !== undefined && value.join(",") !== linkedReferenceIds(linked).join(","));
   const full = chosen.length >= MAX_RUN_REFERENCES;
+  const libraryDisabled = disabled || referencesDisabled;
 
   function toggle(id: string) {
     onChange(chosen.includes(id) ? chosen.filter((c) => c !== id) : [...chosen, id]);
@@ -164,13 +168,13 @@ export function RunInputsPanel({
                   <label
                     className={cn(
                       "flex items-center gap-2",
-                      (missing || disabled) && "cursor-not-allowed opacity-50",
+                      (missing || libraryDisabled) && "cursor-not-allowed opacity-50",
                     )}
                   >
                     <input
                       type="checkbox"
                       checked={on}
-                      disabled={disabled || missing || (!on && full)}
+                      disabled={libraryDisabled || missing || (!on && full)}
                       onChange={() => toggle(reference.id)}
                       className="h-4 w-4 rounded border-zinc-300"
                     />
@@ -196,7 +200,7 @@ export function RunInputsPanel({
           <select
             className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700 disabled:opacity-50"
             value=""
-            disabled={disabled || full}
+            disabled={libraryDisabled || full}
             onChange={(e) => e.target.value && onChange([...chosen, e.target.value])}
           >
             <option value="">Add from library for this run…</option>

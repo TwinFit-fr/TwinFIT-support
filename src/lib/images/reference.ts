@@ -5,10 +5,10 @@ import { muscleMapKindSegment } from "./urls";
 /** Appended when a generation uses the style character reference as input image. */
 export const REFERENCE_USE_DIRECTIVE = `CHARACTER REFERENCE: the input image is the official character for this style. Draw exactly this same person — same face, hair, body type, skin tone, clothing, colors and illustration style. Do NOT copy the pose, framing or camera angle of the reference: use only the pose described above, and show any equipment it requires.`;
 
-/** Appended when a Start generation also receives a support-equipment reference. */
+/** Appended when a frame also receives a support-equipment reference. */
 export const SUPPORT_REFERENCE_DIRECTIVE = `SUPPORT EQUIPMENT REFERENCE: one of the input images is the official support equipment for this style (bench, machine, bars, etc.). Draw exactly this same equipment — same shape, proportions, colors and illustration style. Place it where the exercise requires it. Do not invent a different bench or machine.`;
 
-/** Appended when a Start generation also receives the exercise's load-equipment reference. */
+/** Appended when a frame also receives the exercise's load-equipment reference. */
 export const EQUIPMENT_REFERENCE_DIRECTIVE = `LOAD EQUIPMENT REFERENCE: one of the input images is the official load equipment of this exercise (dumbbell, barbell, kettlebell, cable machine, etc.). Draw exactly this same equipment — same shape, proportions, colors and illustration style. The athlete uses it as the exercise requires; do not invent a different one.`;
 
 /** Appended to the system prompt when generating a character reference sheet. */

@@ -209,6 +209,7 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   target_position?: number;
   reference_file_id?: string | null;
   support_reference_file_id?: string | null;
+  equipment_reference_file_id?: string | null;
   /** Automatic inputs the run left out (character, support, logo). */
   skipped_inputs?: string[];
   /** Made by editing this image with an instruction. */
