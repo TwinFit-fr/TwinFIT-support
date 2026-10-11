@@ -7,6 +7,8 @@ import type {
   ExerciseImage,
   ExerciseImageBoardItem,
   ExerciseImageDetail,
+  ExercisePose,
+  PoseStatus,
   GenerationSnapshot,
   ImagePrompt,
   ImageSettings,
@@ -868,6 +870,56 @@ export async function deleteExerciseImageRow(token: string, id: string): Promise
   if (!data.delete_images_exercise_images_by_pk) {
     throw new Error("Image was not deleted (only images without a position can be deleted)");
   }
+}
+
+const POSE_FIELDS = "exo_id position pose status model updated_at updated_by";
+
+/** The Start / Mid / End poses of an exercise (fewer than three when some are missing). */
+export async function listExercisePoses(token: string, exoId: number): Promise<ExercisePose[]> {
+  const data = await staffGql<{ images_exercise_poses: ExercisePose[] }>(
+    token,
+    `query($exoId: Int!) {
+      images_exercise_poses(where: { exo_id: { _eq: $exoId } }, order_by: { position: asc }) {
+        ${POSE_FIELDS}
+      }
+    }`,
+    { exoId },
+  );
+  return data.images_exercise_poses ?? [];
+}
+
+/** Saves a hand-edited or generated pose; an edit by hand clears the model that wrote it. */
+export async function upsertExercisePoses(
+  token: string,
+  exoId: number,
+  poses: { position: number; pose: string; status: PoseStatus; model?: string | null }[],
+): Promise<ExercisePose[]> {
+  const updatedAt = new Date().toISOString();
+  const updatedBy = getUserIdFromToken(token);
+  await staffGql(
+    token,
+    `mutation($objects: [images_exercise_poses_insert_input!]!) {
+      insert_images_exercise_poses(
+        objects: $objects
+        on_conflict: {
+          constraint: exercise_poses_pkey
+          update_columns: [pose, status, model, updated_at, updated_by]
+        }
+      ) { affected_rows }
+    }`,
+    {
+      objects: poses.map((item) => ({
+        exo_id: exoId,
+        position: item.position,
+        pose: item.pose,
+        status: item.status,
+        model: item.model ?? null,
+        updated_at: updatedAt,
+        updated_by: updatedBy,
+      })),
+    },
+  );
+  return listExercisePoses(token, exoId);
 }
 
 export function getUserIdFromToken(token: string): string | null {

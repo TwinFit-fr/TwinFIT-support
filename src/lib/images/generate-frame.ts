@@ -9,6 +9,7 @@ import {
   getStyle,
   getUserIdFromToken,
   insertExerciseImage,
+  listExercisePoses,
   listImagePrompts,
 } from "@/lib/images/queries";
 import { alignFeetBaseline } from "@/lib/images/align";
@@ -56,9 +57,10 @@ export async function generateExerciseFrame(
 ): Promise<ExerciseImage> {
   const { exoId, styleId, position, systemOverride, positionOverride } = body;
 
-  const [exercise, style] = await Promise.all([
+  const [exercise, style, poses] = await Promise.all([
     getExerciseSummary(token, exoId),
     getStyle(token, styleId),
+    listExercisePoses(token, exoId),
   ]);
   if (!exercise) {
     throw new GenerationError("Exercise not found", 404);
@@ -125,6 +127,8 @@ export async function generateExerciseFrame(
     positionContent: positionOverride ?? chosen.position.content,
     name: exercise.display_name,
     description,
+    // Mid/End are edits of the Start image and still get their own pose.
+    pose: poses.find((item) => item.position === position)?.pose,
     exo_id: exercise.exo_id,
     id: exercise.id,
     subject,

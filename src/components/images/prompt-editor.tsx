@@ -16,6 +16,7 @@ import {
   selectedPrompts,
 } from "@/lib/images/prompt";
 import type {
+  ExercisePose,
   ImagePrompt,
   ImageStyle,
   MuscleMapTargetKind,
@@ -215,6 +216,9 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
     previewMode === "muscle_map" ? "/api/catalog/taxonomy" : null,
   );
   const sample = exercisesData?.exercises?.[0];
+  const { data: posesData } = useStaffSWR<{ poses: ExercisePose[] }>(
+    sample ? `/api/images/exercises/${sample.exo_id}/poses` : null,
+  );
 
   const sampleTarget = useMemo(() => {
     const groups = taxonomy?.data?.catalog_muscle_groups ?? [];
@@ -253,6 +257,7 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
       positionContent: chosen.position.content,
       name: sample.display_name,
       description: sample.description ?? "",
+      pose: posesData?.poses.find((item) => item.position === previewPosition)?.pose,
       exo_id: sample.exo_id,
       subject: previewSubject,
       background_color: style.params.background_color,
@@ -262,6 +267,7 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
     data,
     style,
     sample,
+    posesData,
     sampleTarget,
     previewMode,
     previewPosition,

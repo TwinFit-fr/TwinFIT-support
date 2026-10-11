@@ -32,6 +32,7 @@ import {
 } from "@/hooks/use-image-preferences";
 import { ExerciseComposeDialog } from "@/components/catalog/exercise-compose-dialog";
 import { useElapsedSeconds } from "@/components/images/generation-progress";
+import { ExercisePosesPanel } from "@/components/images/exercise-poses-panel";
 import { FramePlayer } from "@/components/images/frame-player";
 import { NeighbourLink } from "@/components/images/board-ui";
 import { CHECKER_STYLE } from "@/components/images/checker";
@@ -1207,6 +1208,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           disabled={running || !startInRun}
         />
       )}
+
+      <ExercisePosesPanel exoId={exoId} twoFrames={exercise.two_frames} />
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4">

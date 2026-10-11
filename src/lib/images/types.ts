@@ -413,6 +413,19 @@ export type ExerciseImageDetail = ExerciseImageBoardItem & {
   localizations: { locale: string; display_name: string; description: string | null }[];
 };
 
+export type PoseStatus = "generated" | "approved";
+
+/** The exact body pose of one frame of an exercise, injected as `{pose}` into frame prompts. */
+export type ExercisePose = {
+  exo_id: number;
+  position: number;
+  pose: string;
+  status: PoseStatus;
+  model: string | null;
+  updated_at: string;
+  updated_by: string | null;
+};
+
 /** Positions for a 0→1→2→1→0 GIF sequence. */
 export const FRAME_POSITIONS = [
   { id: 0, label: "Start" },
