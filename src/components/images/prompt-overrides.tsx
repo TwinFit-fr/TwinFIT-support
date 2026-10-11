@@ -1,6 +1,5 @@
 "use client";
 
-import { PROMPT_PLACEHOLDERS } from "@/lib/images/prompt";
 import { framePositionLabel } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 
@@ -103,6 +102,7 @@ export function PromptOverridesPanel({
   onChange,
   disabled,
   startThumbUrl,
+  details,
   onSaveToStyle,
 }: {
   positions: number[];
@@ -113,6 +113,8 @@ export function PromptOverridesPanel({
   disabled?: boolean;
   /** Thumbnail of the exercise's active Start frame, if any. */
   startThumbUrl: string | null;
+  /** EXERCISE DETAILS block sent with every frame (equipment, support, grip...). */
+  details: string;
   /** Saves a run edit as the style's prompt of that slot. */
   onSaveToStyle?: (slot: "system" | number, text: string) => void;
 }) {
@@ -187,8 +189,20 @@ export function PromptOverridesPanel({
           />
         ))}
       </div>
+      {details && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-zinc-600">
+            Added to every prompt
+            <span className="ml-2 font-normal text-zinc-400">from the catalog, not editable here</span>
+          </p>
+          <pre className="whitespace-pre-wrap rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-600">
+            {details}
+          </pre>
+        </div>
+      )}
       <p className="text-[11px] text-zinc-400">
-        Placeholders: {PROMPT_PLACEHOLDERS.exercise.join(", ")}
+        Placeholders left for each run: {"{subject}"}, {"{background_color}"}, and {"{pose}"} in the
+        System prompt.
       </p>
     </div>
   );

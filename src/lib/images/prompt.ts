@@ -95,6 +95,43 @@ export function fillPromptTemplate(
     .replaceAll("{equipment_description}", values.equipment_description ?? "");
 }
 
+/** The catalog text a frame prompt takes from the exercise, and the pose of its frame. */
+export type ExerciseText = {
+  id: string;
+  exo_id: number;
+  name: string;
+  description: string;
+  pose: string;
+};
+
+/**
+ * Fills a frame template with the exercise's own text, so it reads as the prompt that is sent.
+ * `{subject}` and `{background_color}` stay: a run may draw several subjects, and the style sets
+ * the color.
+ */
+export function fillExerciseText(template: string, exercise: ExerciseText): string {
+  return fillPromptTemplate(template, {
+    ...exercise,
+    subject: "{subject}",
+    background_color: "{background_color}",
+  });
+}
+
+/** Puts the exercise's placeholders back into a run's text, so it can be saved as a style template. */
+export function unfillExerciseText(text: string, exercise: ExerciseText): string {
+  const replacements: [string, string][] = [
+    [exercise.pose, "{pose}"],
+    [exercise.description, "{description}"],
+    [exercise.name, "{name}"],
+    [exercise.id, "{id}"],
+  ];
+  let result = text;
+  for (const [value, placeholder] of replacements) {
+    if (value.trim()) result = result.replaceAll(value, placeholder);
+  }
+  return result.replace(new RegExp(`\\b${exercise.exo_id}\\b`, "g"), "{exo_id}");
+}
+
 export function assembleImagePrompt(
   input: TemplateValues & { systemContent: string; positionContent: string },
 ): string {

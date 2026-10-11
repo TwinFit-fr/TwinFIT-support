@@ -2,6 +2,7 @@ import { editImage, generateImage } from "@/lib/images/openai";
 import { assembleImagePrompt, exerciseDetails, selectedPrompts } from "@/lib/images/prompt";
 import {
   clearActivePosition,
+  englishDescription,
   ensureTwoFramesDefault,
   getActiveImageAtPosition,
   getExerciseImage,
@@ -15,6 +16,7 @@ import {
 import { alignFeetBaseline } from "@/lib/images/align";
 import { loadLogoInput } from "@/lib/images/logo";
 import {
+  EQUIPMENT_REFERENCE_DIRECTIVE,
   LOGO_DIRECTIVE,
   REFERENCE_USE_DIRECTIVE,
   START_GUIDE_DIRECTIVE,
@@ -117,11 +119,13 @@ export async function generateExerciseFrame(
     !usableGuide && supportId && !skip.has("support")
       ? (style.supports.find((s) => s.support_equipment_id === supportId)?.file_id ?? null)
       : null;
+  // Load equipment image (the style's filter card), sent with Start like the support one.
+  const equipmentFileId =
+    !usableGuide && exercise.equipment
+      ? (style.equipment.find((e) => e.equipment_id === exercise.equipment?.id)?.file_id ?? null)
+      : null;
 
-  const description =
-    exercise.localizations.find((l) => l.locale === "en")?.description ??
-    exercise.localizations.find((l) => l.description)?.description ??
-    "";
+  const description = englishDescription(exercise.localizations);
   const basePrompt = assembleImagePrompt({
     systemContent: systemOverride ?? chosen.system.content,
     positionContent: positionOverride ?? chosen.position.content,
@@ -147,7 +151,7 @@ export async function generateExerciseFrame(
   const logo =
     style.logo_in_exercises && !skip.has("logo") ? await loadLogoInput(token, style) : null;
 
-  // Input order: guide or character, support, library references, logo.
+  // Input order: guide or character, support, equipment, library references, logo.
   const inputs = [];
   const primaryFileId = usableGuide?.file_id ?? characterFileId;
   if (primaryFileId) {
@@ -164,6 +168,16 @@ export async function generateExerciseFrame(
       /* missing support ref must not block generation */
     }
   }
+  let equipmentSent = false;
+  if (equipmentFileId) {
+    try {
+      const equipment = await downloadImageFile(token, equipmentFileId);
+      inputs.push({ bytes: equipment.bytes, mimeType: equipment.contentType });
+      equipmentSent = true;
+    } catch {
+      /* missing equipment ref must not block generation */
+    }
+  }
   const firstReferenceInput = inputs.length + 1;
   inputs.push(...(await loadReferenceInputs(token, references)));
   if (logo) inputs.push(logo);
@@ -171,6 +185,7 @@ export async function generateExerciseFrame(
   const directives = [
     usableGuide ? START_GUIDE_DIRECTIVE : characterFileId ? REFERENCE_USE_DIRECTIVE : null,
     supportSent ? SUPPORT_REFERENCE_DIRECTIVE : null,
+    equipmentSent ? EQUIPMENT_REFERENCE_DIRECTIVE : null,
     ...references.map((reference, i) =>
       libraryReferenceDirective(firstReferenceInput + i, reference),
     ),
@@ -202,6 +217,7 @@ export async function generateExerciseFrame(
     reference_file_id: characterFileId,
     skipped_inputs: [...skip],
     support_reference_file_id: supportSent ? supportFileId : null,
+    equipment_reference_file_id: equipmentSent ? equipmentFileId : null,
     reference_ids: references.map((r) => r.id),
     guide_image_id: usableGuide?.id ?? null,
     logo_sent: Boolean(logo),

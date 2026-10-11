@@ -50,7 +50,12 @@ import {
   type AutomaticInput,
   type RunReferences,
 } from "@/components/images/run-inputs-panel";
-import { selectedPrompts } from "@/lib/images/prompt";
+import {
+  fillExerciseText,
+  selectedPrompts,
+  unfillExerciseText,
+  type ExerciseText,
+} from "@/lib/images/prompt";
 import {
   frameJobSpecs,
   isActiveJob,
@@ -71,6 +76,7 @@ import type {
   ExerciseImage,
   ExerciseImageBoardItem,
   ExerciseImageDetail,
+  ExercisePose,
   ImagePrompt,
   ImageStyle,
   StyleReference,
@@ -563,6 +569,23 @@ function Inspector({
   );
 }
 
+/** The exercise text a frame prompt fills in: the frame's pose, else the description (as the server). */
+function exerciseTextOf(
+  exercise: ExerciseImageDetail,
+  poses: ExercisePose[],
+  position: number,
+): ExerciseText {
+  const description = exercise.description ?? "";
+  const pose = poses.find((item) => item.position === position)?.pose?.trim() || description;
+  return {
+    id: exercise.id,
+    exo_id: exercise.exo_id,
+    name: exercise.display_name,
+    description,
+    pose,
+  };
+}
+
 export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const router = useRouter();
   const staffFetch = useStaffFetch();
@@ -585,6 +608,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const previousHref = exerciseHref(neighbours.previous);
   const nextHref = exerciseHref(neighbours.next);
   const boardHref = `/images${filtersQuery}`;
+  const { data: posesData } = useStaffSWR<{ poses: ExercisePose[] }>(
+    `/api/images/exercises/${exoId}/poses`,
+  );
   const { data: promptsData } = useStaffSWR<{ system: ImagePrompt; prompts: ImagePrompt[] }>(
     styleId ? `/api/images/prompts?styleId=${styleId}` : null,
   );
@@ -634,16 +660,26 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   );
   const referenceCount = effectiveReferenceIds(runReferences, linkedReferences).length;
 
+  // The panel shows the exercise's own text already filled in. `{subject}` and `{background_color}`
+  // stay for each run, and `{pose}` stays in the system prompt, which every frame shares.
   const templates = useMemo(() => {
     const prompts = promptsData?.prompts ?? [];
     const byPosition = FRAME_POSITIONS.map((f) => selectedPrompts(prompts, f.id));
+    const fill = (template: string, position?: number) => {
+      if (!exercise) return template;
+      const text = exerciseTextOf(exercise, posesData?.poses ?? [], position ?? 0);
+      return fillExerciseText(template, position == null ? { ...text, pose: "{pose}" } : text);
+    };
     return {
-      system: byPosition[0].system?.content ?? "",
+      system: fill(byPosition[0].system?.content ?? ""),
       positions: Object.fromEntries(
-        byPosition.map((chosen, i) => [FRAME_POSITIONS[i].id, chosen.position?.content ?? ""]),
+        byPosition.map((chosen, i) => [
+          FRAME_POSITIONS[i].id,
+          fill(chosen.position?.content ?? "", FRAME_POSITIONS[i].id),
+        ]),
       ) as Record<number, string>,
     };
-  }, [promptsData]);
+  }, [promptsData, posesData, exercise]);
   const framePositions = exercise?.frame_positions ?? FRAME_POSITIONS.map((f) => f.id as number);
   const runPositions = runPositionsFor(positions, framePositions);
   const editedCount = countOverrides(overrides, runPositions);
@@ -740,10 +776,20 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       confirmLabel: "Save to style",
     });
     if (!ok) return;
+    // The text shows this exercise's values; the style's template keeps their placeholders.
+    const position = slot === "system" ? 0 : slot;
+    const content = exercise
+      ? unfillExerciseText(
+          text,
+          slot === "system"
+            ? { ...exerciseTextOf(exercise, posesData?.poses ?? [], position), pose: "{pose}" }
+            : exerciseTextOf(exercise, posesData?.poses ?? [], position),
+        )
+      : text;
     try {
       await staffFetch(`/api/images/prompts/${prompt.id}`, {
         method: "PUT",
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({ content }),
       });
       await mutate(`/api/images/prompts?styleId=${styleId}`);
       // The run text is now the template, so it is no longer an edit.
@@ -1051,6 +1097,17 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
               },
             ]
           : []),
+        ...(exercise.equipment
+          ? [
+              {
+                label: "Equipment",
+                detail: exercise.equipment.name,
+                fileId:
+                  style?.equipment.find((e) => e.equipment_id === exercise.equipment?.id)
+                    ?.file_id ?? null,
+              },
+            ]
+          : []),
       ]
     : [];
   const logoInputs: AutomaticInput[] =
@@ -1183,6 +1240,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           startThumbUrl={imageThumbUrl(startThumb, 160)}
           systemTemplate={templates.system}
           positionTemplates={templates.positions}
+          details={exercise.prompt_details}
           value={overrides}
           onChange={setOverrides}
           onSaveToStyle={(slot, text) => void saveOverrideToStyle(slot, text)}
