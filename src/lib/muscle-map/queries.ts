@@ -83,6 +83,19 @@ export async function getMapMuscle(token: string, muscleId: string): Promise<Map
   return data.muscle_map_muscles_by_pk;
 }
 
+export async function listMapMusclesOfView(token: string, view: MapView): Promise<MapMuscle[]> {
+  const data = await staffGql<{ muscle_map_muscles: MapMuscle[] }>(
+    token,
+    `query($view: String!) {
+      muscle_map_muscles(where: { view: { _eq: $view } }, order_by: { muscle: { code: asc } }) {
+        ${MUSCLE_FIELDS}
+      }
+    }`,
+    { view },
+  );
+  return data.muscle_map_muscles;
+}
+
 export async function insertMapMuscle(token: string, muscleId: string, view: MapView) {
   await staffGql(
     token,

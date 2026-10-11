@@ -15,8 +15,17 @@ export function fillTemplate(template: string, values: Record<string, string>): 
   return template.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match);
 }
 
-export function basePrompt(settings: MuscleMapSettings, view: MapView): string {
-  return fillTemplate(settings.base_prompt, { view });
+/** `{muscles}` is the view's paintable muscles, one per line, so the base draws their shapes. */
+export function basePrompt(
+  settings: MuscleMapSettings,
+  view: MapView,
+  muscles: MapMuscle[],
+): string {
+  const names = muscles
+    .filter((m) => m.muscle.active !== false)
+    .map((m) => `- ${m.muscle.name}`)
+    .join("\n");
+  return fillTemplate(settings.base_prompt, { view, muscles: names });
 }
 
 export function maskPrompt(settings: MuscleMapSettings, muscle: MapMuscle): string {
