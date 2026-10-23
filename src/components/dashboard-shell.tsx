@@ -6,6 +6,7 @@ import { useSignOut, useUserData } from "@nhost/react";
 import { useState } from "react";
 import { Search, Menu, X, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsAdmin } from "@/hooks/use-is-staff";
 import { CommandMenu } from "@/components/command-menu";
 import { GenerationIndicator } from "@/components/images/generation-indicator";
 import { ConfirmProvider } from "@/components/ui/confirm";
@@ -85,6 +86,8 @@ function NavLinks({
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isAdmin = useIsAdmin();
+  const nav = isAdmin ? [...topNav, { href: "/coach", label: "Coach" }] : topNav;
   const user = useUserData();
   const { signOut } = useSignOut();
   const [commandOpen, setCommandOpen] = useState(false);
@@ -123,7 +126,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 </Link>
 
                 <div className="hidden md:block">
-                  <NavLinks items={topNav} />
+                  <NavLinks items={nav} />
                 </div>
               </div>
 
@@ -165,7 +168,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Menu
                 </div>
-                <NavLinks items={topNav} onClick={() => setMobileMenuOpen(false)} />
+                <NavLinks items={nav} onClick={() => setMobileMenuOpen(false)} />
                 {subNav && (
                   <div className="pt-2 border-t border-zinc-100">
                     <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
