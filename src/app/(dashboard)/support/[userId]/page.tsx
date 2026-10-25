@@ -14,6 +14,7 @@ import {
   LayoutTemplate,
   Route,
   Dumbbell,
+  MessageSquare,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RoleBadges } from "@/components/support/role-badges";
@@ -42,7 +43,32 @@ const SECTION_BY_TAB: Partial<Record<SupportUserTabId, SupportUserSectionData["s
   templates: "templates",
   routines: "routines",
   custom: "custom",
+  coach: "coach",
 };
+
+function formatTokens(value: number): string {
+  return value.toLocaleString();
+}
+
+function periodSpent(row: {
+  input_tokens: number;
+  output_tokens: number;
+  embed_tokens: number;
+}): number {
+  return row.input_tokens + row.output_tokens + row.embed_tokens;
+}
+
+/** Percent of limit used; null when there is no limit (e.g. free / no LLM). */
+function usagePercent(used: number, limit: number | null): number | null {
+  if (limit == null || limit <= 0) return null;
+  return Math.min(999, (used / limit) * 100);
+}
+
+function formatPercent(used: number, limit: number | null): string {
+  const pct = usagePercent(used, limit);
+  if (pct == null) return "—";
+  return `${pct < 10 ? pct.toFixed(1) : Math.round(pct)}%`;
+}
 
 export default function SupportUserPage() {
   const params = useParams<{ userId: string }>();
@@ -647,16 +673,154 @@ export default function SupportUserPage() {
             )}
           </div>
         )}
+
+        {activeTab === "coach" && (
+          <div className="space-y-4">
+            <SectionHeader
+              icon={<MessageSquare className="h-5 w-5" />}
+              title="Coach usage"
+              subtitle="30-day token cycles (read-only)"
+              badge={
+                sectionData?.section === "coach" ? sectionData.tierCode : undefined
+              }
+            />
+            {sectionLoading && !sectionData && <Skeleton className="h-40 w-full" />}
+            {sectionData?.section === "coach" && (
+              <CoachUsagePanel data={sectionData} />
+            )}
+          </div>
+        )}
       </Card>
     </div>
   );
 }
 
-function QuickStat({ label, value }: { label: string; value: string }) {
+function CoachUsagePanel({
+  data,
+}: {
+  data: Extract<SupportUserSectionData, { section: "coach" }>;
+}) {
+  const [now] = useState(() => Date.now());
+  const openPeriod =
+    data.periods.find((p) => {
+      const start = new Date(p.period_start).getTime();
+      const end = new Date(p.period_end).getTime();
+      return start <= now && now < end;
+    }) ?? null;
+  const openSpent = openPeriod ? periodSpent(openPeriod) : 0;
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <QuickStat
+          label="Period used"
+          value={
+            data.monthlyTokenLimit == null
+              ? "No LLM"
+              : `${formatTokens(openSpent)} / ${formatTokens(data.monthlyTokenLimit)}`
+          }
+        />
+        <QuickStat
+          label="Period %"
+          value={formatPercent(openSpent, data.monthlyTokenLimit)}
+        />
+        <QuickStat
+          label="Daily burst limit"
+          value={
+            data.dailyBurstLimit == null ? "No cap" : formatTokens(data.dailyBurstLimit)
+          }
+        />
+        <QuickStat
+          label="Daily % (UTC)"
+          value="—"
+          hint="Needs staff read of today’s turns (backend)."
+        />
+      </div>
+      <SupportSectionTable
+        columns={[
+          {
+            key: "period",
+            header: "Cycle",
+            render: (p) => {
+              const start = new Date(p.period_start).getTime();
+              const end = new Date(p.period_end).getTime();
+              const open = start <= now && now < end;
+              return (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-600">
+                    {formatDate(p.period_start)} → {formatDate(p.period_end)}
+                  </span>
+                  {open && (
+                    <Badge className="border border-emerald-200 bg-emerald-50 text-emerald-700">
+                      Open
+                    </Badge>
+                  )}
+                </div>
+              );
+            },
+          },
+          {
+            key: "spent",
+            header: "Spent",
+            render: (p) => {
+              const spent = periodSpent(p);
+              const limit = data.monthlyTokenLimit;
+              return (
+                <span>
+                  {formatTokens(spent)}
+                  {limit != null ? ` / ${formatTokens(limit)}` : ""}
+                </span>
+              );
+            },
+          },
+          {
+            key: "pct",
+            header: "Period %",
+            render: (p) => formatPercent(periodSpent(p), data.monthlyTokenLimit),
+          },
+          {
+            key: "input",
+            header: "Input",
+            render: (p) => formatTokens(p.input_tokens),
+          },
+          {
+            key: "output",
+            header: "Output",
+            render: (p) => formatTokens(p.output_tokens),
+          },
+          {
+            key: "embed",
+            header: "Embed",
+            render: (p) => formatTokens(p.embed_tokens),
+          },
+          {
+            key: "reserved",
+            header: "Reserved",
+            render: (p) => formatTokens(p.reserved_tokens),
+          },
+        ]}
+        rows={data.periods}
+        rowKey={(p) => `${p.user_id}:${p.period_start}`}
+        emptyMessage="No Coach usage periods yet (no LLM turns recorded)."
+      />
+    </>
+  );
+}
+
+function QuickStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
       <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
       <p className="mt-1 text-lg font-semibold text-zinc-900">{value}</p>
+      {hint && <p className="mt-1 text-[11px] text-zinc-400">{hint}</p>}
     </div>
   );
 }

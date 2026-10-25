@@ -104,17 +104,35 @@ export type SupportUserCustomExerciseRow = {
   updated_at: string;
 };
 
+export type SupportUserCoachPeriodRow = {
+  user_id: string;
+  period_start: string;
+  period_end: string;
+  input_tokens: number;
+  output_tokens: number;
+  embed_tokens: number;
+  reserved_tokens: number;
+};
+
 export type SupportUserSection =
   | "sessions"
   | "templates"
   | "routines"
-  | "custom";
+  | "custom"
+  | "coach";
 
 export type SupportUserSectionData =
   | { section: "sessions"; openSession: SupportUserLookup["openSession"]; sessions: SupportUserSessionRow[] }
   | { section: "templates"; templates: SupportUserTemplateRow[] }
   | { section: "routines"; routines: SupportUserRoutineRow[] }
-  | { section: "custom"; customExercises: SupportUserCustomExerciseRow[] };
+  | { section: "custom"; customExercises: SupportUserCustomExerciseRow[] }
+  | {
+      section: "coach";
+      tierCode: string;
+      monthlyTokenLimit: number | null;
+      dailyBurstLimit: number | null;
+      periods: SupportUserCoachPeriodRow[];
+    };
 
 export type AdminAction =
   | { action: "verify-email"; userId: string }

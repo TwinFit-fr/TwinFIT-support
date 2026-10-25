@@ -6,7 +6,8 @@ export type SupportUserTabId =
   | "sessions"
   | "templates"
   | "routines"
-  | "custom";
+  | "custom"
+  | "coach";
 
 export const SUPPORT_USER_TABS: Array<{ id: SupportUserTabId; label: string }> = [
   { id: "account", label: "Account" },
@@ -15,6 +16,7 @@ export const SUPPORT_USER_TABS: Array<{ id: SupportUserTabId; label: string }> =
   { id: "templates", label: "Templates" },
   { id: "routines", label: "Routines" },
   { id: "custom", label: "Custom" },
+  { id: "coach", label: "Coach" },
 ];
 
 type SupportUserTabsProps = {
