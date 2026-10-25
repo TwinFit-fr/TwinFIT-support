@@ -6,6 +6,7 @@ import { useSignOut, useUserData } from "@nhost/react";
 import { useState } from "react";
 import { Search, Menu, X, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsStaff } from "@/hooks/use-is-staff";
 import { CommandMenu } from "@/components/command-menu";
 import { GenerationIndicator } from "@/components/images/generation-indicator";
 import { ConfirmProvider } from "@/components/ui/confirm";
@@ -43,6 +44,15 @@ const labSubNav: NavItem[] = [
   { href: "/lab", label: "Stats", match: "exact" },
   { href: "/lab/exercises", label: "Exercises" },
   { href: "/lab/sets", label: "Sets" },
+];
+
+const coachSubNav: NavItem[] = [
+  { href: "/coach", label: "Token budget", match: "exact" },
+  { href: "/coach/prompts", label: "Prompts" },
+  { href: "/coach/tiers", label: "Tiers" },
+  { href: "/coach/suggestions", label: "Suggestions" },
+  { href: "/coach/knowledge", label: "Knowledge" },
+  { href: "/coach/tool-calls", label: "Tool calls" },
 ];
 
 function navActive(pathname: string, item: NavItem): boolean {
@@ -85,6 +95,8 @@ function NavLinks({
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isStaff = useIsStaff();
+  const nav = isStaff ? [...topNav, { href: "/coach", label: "Coach" }] : topNav;
   const user = useUserData();
   const { signOut } = useSignOut();
   const [commandOpen, setCommandOpen] = useState(false);
@@ -96,7 +108,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       ? imagesSubNav
       : pathname.startsWith("/lab")
         ? labSubNav
-        : null;
+        : pathname.startsWith("/coach")
+          ? coachSubNav
+          : null;
 
   return (
     <ToastProvider>
@@ -123,7 +137,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 </Link>
 
                 <div className="hidden md:block">
-                  <NavLinks items={topNav} />
+                  <NavLinks items={nav} />
                 </div>
               </div>
 
@@ -165,7 +179,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Menu
                 </div>
-                <NavLinks items={topNav} onClick={() => setMobileMenuOpen(false)} />
+                <NavLinks items={nav} onClick={() => setMobileMenuOpen(false)} />
                 {subNav && (
                   <div className="pt-2 border-t border-zinc-100">
                     <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">

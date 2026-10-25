@@ -503,6 +503,62 @@ export async function fetchUserSection(
         customExercises: data.customExercises,
       };
     }
+    case "coach": {
+      const profile = await staffGql<{
+        profiles_by_pk: { subscription_tier: string } | null;
+      }>(
+        accessToken,
+        `query SupportUserCoachTier($id: uuid!) {
+          profiles_by_pk(id: $id) { subscription_tier }
+        }`,
+        { id: userId },
+      );
+      const tierCode = profile.profiles_by_pk?.subscription_tier ?? "free";
+      const data = await staffGql<{
+        periods: Array<{
+          user_id: string;
+          period_start: string;
+          period_end: string;
+          input_tokens: number;
+          output_tokens: number;
+          embed_tokens: number;
+          reserved_tokens: number;
+        }>;
+        policy: {
+          monthly_token_limit: number | null;
+          daily_burst_limit: number | null;
+        } | null;
+      }>(
+        accessToken,
+        `query SupportUserCoach($id: uuid!, $tier: String!) {
+          periods: assistant_usage_periods(
+            where: { user_id: { _eq: $id } }
+            order_by: { period_start: desc }
+            limit: 24
+          ) {
+            user_id
+            period_start
+            period_end
+            input_tokens
+            output_tokens
+            embed_tokens
+            reserved_tokens
+          }
+          policy: assistant_tier_policies_by_pk(tier_code: $tier) {
+            monthly_token_limit
+            daily_burst_limit
+          }
+        }`,
+        { id: userId, tier: tierCode },
+      );
+      return {
+        section: "coach",
+        tierCode,
+        monthlyTokenLimit: data.policy?.monthly_token_limit ?? null,
+        dailyBurstLimit: data.policy?.daily_burst_limit ?? null,
+        periods: data.periods,
+      };
+    }
     default: {
       const _exhaustive: never = section;
       throw new Error(`Unknown section: ${_exhaustive}`);

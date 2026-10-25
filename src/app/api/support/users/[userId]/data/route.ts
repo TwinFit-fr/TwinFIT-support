@@ -8,6 +8,7 @@ const SECTIONS = new Set<SupportUserSection>([
   "templates",
   "routines",
   "custom",
+  "coach",
 ]);
 
 export async function GET(
@@ -22,7 +23,7 @@ export async function GET(
 
     if (!section || !SECTIONS.has(section)) {
       return NextResponse.json(
-        { error: "section must be one of sessions, templates, routines, custom" },
+        { error: "section must be one of sessions, templates, routines, custom, coach" },
         { status: 400 },
       );
     }
