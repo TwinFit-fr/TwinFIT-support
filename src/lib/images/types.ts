@@ -1,10 +1,4 @@
-export type ImagePromptKind =
-  | "system"
-  | "position"
-  | "support"
-  | "equipment"
-  | "muscle_base"
-  | "muscle_map";
+export type ImagePromptKind = "system" | "position" | "support" | "equipment";
 
 /** OpenAI generation params stored on a style (no logo / concurrency). */
 export type GenerationParams = {
@@ -23,7 +17,7 @@ export type GenerationParams = {
 export type Subject = "man" | "woman";
 export const SUBJECTS: readonly Subject[] = ["man", "woman"];
 
-/** Muscle maps are drawn on a front and a back body, each its own image. */
+/** Catalog map views (front / back); used by taxonomy map choices and reference targets. */
 export type MuscleMapView = "front" | "back";
 export const MUSCLE_MAP_VIEWS = ["front", "back"] as const satisfies readonly MuscleMapView[];
 export const MUSCLE_MAP_VIEW_LABEL: Record<MuscleMapView, string> = { front: "Front", back: "Back" };
@@ -37,33 +31,8 @@ export const MUSCLE_MAP_CROP_LABEL: Record<MuscleMapCrop, string> = {
   lower: "Lower",
 };
 
-/** One map of a target: a view and a crop. */
+/** One map slot of a catalog entity: a view and a crop. */
 export type MuscleMapSlot = { view: MuscleMapView; crop: MuscleMapCrop };
-export type MuscleMapSlotKey = `${MuscleMapView}:${MuscleMapCrop}`;
-
-export function muscleMapSlotKey({ view, crop }: MuscleMapSlot): MuscleMapSlotKey {
-  return `${view}:${crop}`;
-}
-
-/** Every view × crop, views first, in canonical order. */
-export function muscleMapSlots(
-  views: readonly MuscleMapView[],
-  crops: readonly MuscleMapCrop[],
-): MuscleMapSlot[] {
-  return MUSCLE_MAP_VIEWS.filter((view) => views.includes(view)).flatMap((view) =>
-    MUSCLE_MAP_CROPS.filter((crop) => crops.includes(crop)).map((crop) => ({ view, crop })),
-  );
-}
-
-/** "Front", or "Front · Upper" for a crop other than full. */
-export function muscleMapSlotLabel({ view, crop }: MuscleMapSlot): string {
-  const label = MUSCLE_MAP_VIEW_LABEL[view];
-  return crop === "full" ? label : `${label} · ${MUSCLE_MAP_CROP_LABEL[crop]}`;
-}
-
-export function sameMuscleMapSlot(a: MuscleMapSlot, b: MuscleMapSlot): boolean {
-  return a.view === b.view && a.crop === b.crop;
-}
 
 /**
  * Which maps a region, group or muscle has (catalog map_views / map_crops) and the one its
@@ -94,7 +63,7 @@ export function muscleMapCardSlot(
 
 export type MuscleMapTargetKind = "muscle" | "muscle_group" | "body_region";
 
-/** Column of images.muscle_map_images / generation_jobs / style_reference_links per target kind. */
+/** Column of images.style_reference_links per target kind. */
 export const MUSCLE_MAP_TARGET_COLUMN = {
   muscle: "muscle_id",
   muscle_group: "muscle_group_id",
@@ -161,8 +130,6 @@ export type ImageStyle = {
   updated_at: string;
   updated_by: string | null;
   characters: { subject: Subject; file_id: string }[];
-  /** Blank body per view and crop: the input image of every muscle map of that view and crop. */
-  muscle_bases: (MuscleMapSlot & { file_id: string })[];
   /** Support equipment image: Start-frame reference and the app's filter card. */
   supports: {
     support_equipment_id: string;
@@ -200,8 +167,6 @@ export type StylePrompts = {
   end: ImagePrompt;
   support: ImagePrompt;
   equipment: ImagePrompt;
-  muscleBase: ImagePrompt;
-  muscleMap: ImagePrompt;
 };
 
 /** Snapshot stored on each generated image (subject lives on the row column). */
@@ -241,77 +206,7 @@ export type GenerationSnapshot = Partial<GenerationParams> & {
   subject?: Subject;
 };
 
-/** Snapshot stored on each generated muscle map. */
-export type MuscleMapSnapshot = Partial<GenerationParams> & {
-  base_file_id?: string | null;
-  prompt_id?: string | null;
-  prompt_edited?: boolean;
-  /** When the slot text used was saved (its version in images.prompt_versions). */
-  prompt_saved_at?: string | null;
-  reference_ids?: string[];
-  /** Made by editing this map with an instruction. */
-  edit_of?: string;
-  edit_instruction?: string;
-};
-
-export type MuscleMapImage = {
-  id: string;
-  style_id: string;
-  muscle_id: string | null;
-  muscle_group_id: string | null;
-  body_region_id: string | null;
-  view: MuscleMapView;
-  crop: MuscleMapCrop;
-  file_id: string;
-  image_url: string;
-  active: boolean;
-  model: string;
-  prompt: string;
-  params: MuscleMapSnapshot | null;
-  usage: Record<string, unknown> | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
 export type MuscleMapTargetRef = { kind: MuscleMapTargetKind; id: string };
-
-/** A muscle, muscle group or body region on the muscle map board, with its maps for one style. */
-export type MuscleMapBoardTarget = MuscleMapTargetRef & {
-  code: string;
-  name: string;
-  description: string | null;
-  /** The maps this target has: its catalog views × crops. */
-  slots: MuscleMapSlot[];
-  /** The map its app card shows (own choice or inherited). */
-  card: MuscleMapSlot;
-  /** Newest first. */
-  images: MuscleMapImage[];
-  active: Partial<Record<MuscleMapSlotKey, MuscleMapImage>>;
-  /** Complete when every slot of the target has an active map. */
-  status: "complete" | "partial" | "inactive_only" | "empty";
-};
-
-/** A group and the muscles whose home it is; group is null for muscles without one. */
-export type MuscleMapBoardRow = {
-  group: MuscleMapBoardTarget | null;
-  muscles: MuscleMapBoardTarget[];
-};
-
-/** The board: body regions (catalog carousel cards), then groups with their muscles. */
-export type MuscleMapBoard = {
-  regions: MuscleMapBoardTarget[];
-  rows: MuscleMapBoardRow[];
-};
-
-/** Every target of the board in board order. */
-export function muscleMapBoardTargets(board: MuscleMapBoard | undefined): MuscleMapBoardTarget[] {
-  if (!board) return [];
-  return [
-    ...board.regions,
-    ...board.rows.flatMap((row) => (row.group ? [row.group, ...row.muscles] : row.muscles)),
-  ];
-}
 
 export function muscleMapTargetKey(ref: MuscleMapTargetRef): string {
   return `${ref.kind}:${ref.id}`;

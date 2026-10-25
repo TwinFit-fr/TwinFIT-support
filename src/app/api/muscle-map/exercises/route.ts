@@ -3,7 +3,7 @@ import { requireStaffToken } from "@/lib/api-auth";
 import { getPilotData } from "@/lib/muscle-map/pilot";
 import { errorResponse } from "@/lib/muscle-map/request";
 
-/** Exercises with their resolved muscles, and option A's maps, for the B vs A comparison. */
+/** Active exercises with their resolved muscles, for the muscle map preview. */
 export async function GET(request: Request) {
   try {
     const token = requireStaffToken(request);

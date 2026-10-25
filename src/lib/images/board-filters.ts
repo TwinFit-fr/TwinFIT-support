@@ -1,4 +1,4 @@
-import type { ExerciseImageBoardItem, MuscleMapBoardTarget, MuscleMapTargetRef } from "./types";
+import type { ExerciseImageBoardItem } from "./types";
 
 type BoardStatus = ExerciseImageBoardItem["status"];
 type SearchParamsLike = { get(name: string): string | null };
@@ -8,7 +8,7 @@ const BOARD_STATUSES: readonly BoardStatus[] = ["empty", "partial", "complete", 
 /**
  * Board filters live in the URL, so a workspace browses the same filtered list as its board and
  * going back restores the board as it was. Exercises filter by text, status, muscle group and
- * equipment; Muscle maps by text and status.
+ * equipment.
  */
 export type BoardFilters = {
   q: string;
@@ -18,8 +18,6 @@ export type BoardFilters = {
   /** Equipment id, or "all". */
   equipment: string;
 };
-
-export type MapBoardFilters = Pick<BoardFilters, "q" | "status">;
 
 function readStatus(params: SearchParamsLike): BoardFilters["status"] {
   const status = params.get("status");
@@ -86,33 +84,4 @@ export function boardNeighbours(
     (ex) => matchesBoardFilters(ex, filters),
   );
   return { previous: previous?.exo_id ?? null, next: next?.exo_id ?? null };
-}
-
-export function readMapBoardFilters(params: SearchParamsLike): MapBoardFilters {
-  return { q: params.get("q") ?? "", status: readStatus(params) };
-}
-
-export function mapBoardFiltersQuery(filters: MapBoardFilters): string {
-  return toQuery(filters);
-}
-
-export function matchesMapBoardFilters(
-  target: MuscleMapBoardTarget,
-  filters: MapBoardFilters,
-): boolean {
-  if (filters.status !== "all" && target.status !== filters.status) return false;
-  return matchesText(filters.q, target.name, target.code);
-}
-
-/** The filtered targets before and after `ref` in board order (each group, then its muscles). */
-export function mapBoardNeighbours(
-  targets: MuscleMapBoardTarget[],
-  filters: MapBoardFilters,
-  ref: MuscleMapTargetRef,
-): { previous: MuscleMapBoardTarget | null; next: MuscleMapBoardTarget | null } {
-  return neighboursAt(
-    targets,
-    targets.findIndex((t) => t.kind === ref.kind && t.id === ref.id),
-    (t) => matchesMapBoardFilters(t, filters),
-  );
 }

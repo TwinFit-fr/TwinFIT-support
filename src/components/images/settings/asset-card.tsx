@@ -10,7 +10,7 @@ import { useAssetGroupCollapsed } from "@/hooks/use-image-preferences";
 import { cn } from "@/lib/utils";
 
 /**
- * One style asset (character, logo, equipment, support, muscle base, library reference): a
+ * One style asset (character, logo, equipment, support, library reference): a
  * compact preview on the left, what it is and its actions on the right. Every asset card on Styles uses this layout,
  * and asks the same way before generating over an image or removing one.
  */

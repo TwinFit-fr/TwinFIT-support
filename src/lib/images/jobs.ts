@@ -1,19 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { jwtSecondsLeft } from "@/lib/nhost/jwt";
 import { staffGql } from "@/lib/staff-gql";
-import { editExerciseFrame, editMuscleMap } from "./edit-image";
+import { editExerciseFrame } from "./edit-image";
 import { generateExerciseFrame } from "./generate-frame";
-import { generateMuscleMap } from "./generate-muscle-map";
 import { errorMessage, isRetryable } from "./generation-error";
 import type { GenerationJob, JobSpec } from "./job-types";
-import { jobSlot, jobTarget } from "./job-types";
 import { getUserIdFromToken } from "./queries";
-import { muscleMapTargetColumns } from "./types";
 
 const JOB_FIELDS = `
-  id seq batch_id style_id kind exo_id subject position muscle_id muscle_group_id body_region_id view crop options
+  id seq batch_id style_id kind exo_id subject position options
   depends_on status attempts max_attempts not_before error result_exercise_image_id
-  result_muscle_map_id inserted_at started_at finished_at
+  inserted_at started_at finished_at
 `;
 
 /** Requests stop claiming after this long and hand over to a fresh one (maxDuration is 300 s). */
@@ -38,30 +35,19 @@ export async function enqueueJobs(
   const idByKey = new Map<string, string>();
   const rows = specs.map((spec) => {
     const id = randomUUID();
-    if (spec.kind === "exercise_frame" && spec.key) idByKey.set(spec.key, id);
+    if (spec.key) idByKey.set(spec.key, id);
     return { id, spec };
   });
   const objects = rows.map(({ id, spec }) => {
-    const common = {
+    const dependsOn = spec.after ? idByKey.get(spec.after) : undefined;
+    if (spec.after && !dependsOn) throw new Error(`Unknown job key "${spec.after}"`);
+    return {
       id,
       batch_id: batchId,
       style_id: styleId,
       kind: spec.kind,
       options: spec.options ?? {},
       created_by: createdBy,
-    };
-    if (spec.kind === "muscle_map") {
-      return {
-        ...common,
-        view: spec.slot.view,
-        crop: spec.slot.crop,
-        ...muscleMapTargetColumns(spec.target),
-      };
-    }
-    const dependsOn = spec.after ? idByKey.get(spec.after) : undefined;
-    if (spec.after && !dependsOn) throw new Error(`Unknown job key "${spec.after}"`);
-    return {
-      ...common,
       exo_id: spec.exoId,
       subject: spec.subject,
       position: spec.position,
@@ -82,7 +68,7 @@ export async function enqueueJobs(
 
 /**
  * Jobs to show for a style: every active one plus those finished recently, oldest first.
- * Narrowed to one kind, exercise or target when given.
+ * Narrowed to one exercise when given.
  */
 export async function listJobs(
   token: string,
@@ -190,24 +176,15 @@ async function resultOf(token: string, jobId: string): Promise<string | undefine
 async function runJob(token: string, job: GenerationJob): Promise<Record<string, string>> {
   const { editOf, instruction } = job.options;
   if (editOf && instruction) {
-    const edit = { styleId: job.style_id, sourceId: editOf, instruction };
-    return job.kind === "muscle_map"
-      ? { result_muscle_map_id: (await editMuscleMap(token, edit)).id }
-      : { result_exercise_image_id: (await editExerciseFrame(token, edit)).id };
-  }
-  if (job.kind === "muscle_map") {
-    const target = jobTarget(job);
-    const slot = jobSlot(job);
-    if (!target || !slot) throw new Error("Muscle map job without a target or view");
-    const image = await generateMuscleMap(token, {
-      styleId: job.style_id,
-      target,
-      slot,
-      promptOverride: job.options.promptOverride,
-      referenceIds: job.options.referenceIds,
-      candidate: job.options.candidate,
-    });
-    return { result_muscle_map_id: image.id };
+    return {
+      result_exercise_image_id: (
+        await editExerciseFrame(token, {
+          styleId: job.style_id,
+          sourceId: editOf,
+          instruction,
+        })
+      ).id,
+    };
   }
   if (job.exo_id == null || !job.subject || job.position == null) {
     throw new Error("Exercise frame job without an exercise, subject or position");

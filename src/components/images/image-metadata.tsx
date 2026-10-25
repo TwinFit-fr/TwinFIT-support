@@ -7,14 +7,13 @@ import type {
   ExerciseImage,
   GenerationParams,
   ImagePrompt,
-  MuscleMapImage,
   StyleReference,
 } from "@/lib/images/types";
-import { framePositionLabel, muscleMapSlotLabel } from "@/lib/images/types";
+import { framePositionLabel } from "@/lib/images/types";
 
 type Row = [label: string, value: string];
 
-/** What every generated image records, exercise frame or muscle map. */
+/** What every generated exercise frame records. */
 type GeneratedImage = Pick<ExerciseImage, "model" | "prompt" | "usage" | "created_at"> & {
   params: (Partial<GenerationParams> & { reference_ids?: string[] }) | null;
 };
@@ -194,33 +193,6 @@ export function ImageMetadataPanel({
     ["Logo", p.logo_sent == null ? "—" : p.logo_sent ? "Yes" : "No"],
     ["Left out", p.skipped_inputs?.length ? p.skipped_inputs.join(", ") : "—"],
     ["Feet shift", p.feet_shift_px != null ? `${p.feet_shift_px}px` : "—"],
-    ["Tokens", usageLabel(image.usage)],
-    ["Created", new Date(image.created_at).toLocaleString()],
-  ];
-  return <MetadataList rows={rows} prompt={image.prompt} />;
-}
-
-export function MuscleMapMetadataPanel({
-  image,
-  references,
-}: {
-  image: MuscleMapImage;
-  /** The style's library, to name the references the map was made with. */
-  references?: StyleReference[];
-}) {
-  const p = image.params ?? {};
-  const rows: Row[] = [
-    [
-      "Method",
-      p.edit_of
-        ? `Edit: ${p.edit_instruction ?? ""}`
-        : p.base_file_id
-          ? `Edit of the ${muscleMapSlotLabel(image).toLowerCase()} base`
-          : "—",
-    ],
-    ...outputRows(image, Boolean(p.base_file_id)),
-    ["Prompt", p.prompt_id ? promptUse("Muscle map", p.prompt_edited, p.prompt_saved_at) : "—"],
-    ["References", referencesLabel(p.reference_ids, references)],
     ["Tokens", usageLabel(image.usage)],
     ["Created", new Date(image.created_at).toLocaleString()],
   ];

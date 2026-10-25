@@ -10,20 +10,13 @@ import { useToast } from "@/components/ui/toast";
 import { useStyleChoice } from "@/hooks/use-image-preferences";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { validateGenerationParams } from "@/lib/images/capabilities";
-import type {
-  GenerationParams,
-  ImageStyle,
-  MuscleMapSlot,
-  MuscleMapSlotKey,
-  Subject,
-} from "@/lib/images/types";
-import { SUBJECTS, muscleMapSlotKey, sameMuscleMapSlot } from "@/lib/images/types";
+import type { GenerationParams, ImageStyle, Subject } from "@/lib/images/types";
+import { SUBJECTS } from "@/lib/images/types";
 import { StylePromptsEditor } from "@/components/images/prompt-editor";
 import { CharactersSection } from "./characters-section";
 import { Section, readAsBase64, selectClass } from "./form-ui";
 import { ModelSection } from "./model-section";
 import { EquipmentSection, type EquipmentKind } from "./equipment-section";
-import { MuscleBasesSection } from "./muscle-bases-section";
 import { ReferencesLibrary } from "./references-library";
 import { StyleBar } from "./style-bar";
 
@@ -98,12 +91,6 @@ export function ImageStylesPage() {
   const [characterBusy, setCharacterBusy] = useState<Subject | null>(null);
   /** The load or support equipment whose image is being saved. */
   const [equipmentBusy, setEquipmentBusy] = useState<string | null>(null);
-  const [muscleBaseBusy, setMuscleBaseBusy] = useState<MuscleMapSlotKey | null>(null);
-  // The bases the catalog's maps need (view × crop of active regions, groups and muscles).
-  const { data: usedSlotsData } = useStaffSWR<{ slots: MuscleMapSlot[] }>(
-    "/api/images/muscle-maps/slots",
-  );
-  const usedSlots = usedSlotsData?.slots ?? [];
   const [logoBusy, setLogoBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -341,23 +328,6 @@ export function ImageStylesPage() {
     }
   }
 
-  async function muscleBaseAction(slot: MuscleMapSlot, action: "generate" | "remove" | File) {
-    if (!selectedStyleId) return;
-    setMuscleBaseBusy(muscleMapSlotKey(slot));
-    try {
-      const result = await assetRequest(
-        `/api/images/styles/${selectedStyleId}/muscle-bases/${slot.view}?crop=${slot.crop}`,
-        action,
-      );
-      await refreshStyle(result.style);
-      success(action === "remove" ? "Muscle map base removed" : "Muscle map base updated");
-    } catch (err) {
-      toastError(err instanceof Error ? err.message : "Muscle map base update failed");
-    } finally {
-      setMuscleBaseBusy(null);
-    }
-  }
-
   async function uploadLogo(file: File) {
     if (!selectedStyleId) return;
     if (file.size > MAX_LOGO_BYTES) {
@@ -395,9 +365,9 @@ export function ImageStylesPage() {
     }
   }
 
-  const missingAssets =
-    SUBJECTS.filter((s) => !style.characters.some((c) => c.subject === s)).length +
-    usedSlots.filter((slot) => !style.muscle_bases.some((b) => sameMuscleMapSlot(b, slot))).length;
+  const missingAssets = SUBJECTS.filter(
+    (s) => !style.characters.some((c) => c.subject === s),
+  ).length;
   const tabs: TabItem<StyleTab>[] = [
     { id: "prompts", label: "Prompts" },
     {
@@ -495,7 +465,7 @@ export function ImageStylesPage() {
               Copy params, prompts and flags from{" "}
               <span className="font-medium">{style.code}</span>
               <span className="block text-[11px] text-zinc-500">
-                Reference images (characters, supports, muscle bases) are not copied.
+                Reference images (characters, supports) are not copied.
               </span>
             </span>
           </label>
@@ -559,9 +529,8 @@ export function ImageStylesPage() {
 
         <TabPanel id="assets" selected={tab === "assets"}>
           <p className="text-xs text-zinc-500">
-            Character sheets, brand logo, load and support equipment and muscle map bases, each
-            used by its rule. Images save at once; the logo and fidelity settings save with the
-            style.
+            Character sheets, brand logo, and load and support equipment, each used by its rule.
+            Images save at once; the logo and fidelity settings save with the style.
           </p>
           <CharactersSection
             style={style}
@@ -593,13 +562,6 @@ export function ImageStylesPage() {
               onAction={(id, action) => void equipmentAction(kind, id, action)}
             />
           ))}
-          <MuscleBasesSection
-            style={style}
-            dirty={styleDirty}
-            usedSlots={usedSlots}
-            busySlot={muscleBaseBusy}
-            onAction={(slot, action) => void muscleBaseAction(slot, action)}
-          />
         </TabPanel>
 
         <TabPanel id="library" selected={tab === "library"}>
