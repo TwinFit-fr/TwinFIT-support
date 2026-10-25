@@ -7,7 +7,7 @@ import type { SkippableInput } from "@/lib/images/job-types";
 import { MAX_RUN_REFERENCES } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 
-/** An input the style sends by its own rules (character, support, logo, muscle base). */
+/** An input the style sends by its own rules (character, support, logo). */
 export type AutomaticInput = {
   label: string;
   detail?: string;

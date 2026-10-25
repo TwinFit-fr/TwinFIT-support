@@ -2,8 +2,8 @@ import type { GenerationParams } from "@/lib/images/types";
 import type { AdjustParams } from "./mask-ops";
 
 /**
- * Muscle map prototype B (schema `muscle_map`, staff only): one blank body per view and one
- * mask per muscle, painted by the client. Independent of `images` (own params, prompts, colors).
+ * Muscle map (schema `muscle_map`, staff only): one blank body per view and one mask per muscle,
+ * painted by the client. Independent of `images` (own params, prompts, colors).
  */
 export const MAP_VIEWS = ["front", "back", "side"] as const;
 export type MapView = (typeof MAP_VIEWS)[number];

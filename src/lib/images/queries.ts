@@ -1,6 +1,5 @@
 import { staffGql } from "@/lib/staff-gql";
 import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
-import { countStyleMuscleMaps } from "./muscle-maps";
 import { exerciseDetails, type ExerciseTaxonomy } from "./prompt";
 import { MID_POSITION, SUBJECTS, framePositionsFor, resolveTwoFrames } from "./types";
 import type {
@@ -59,7 +58,6 @@ const STYLE_FIELDS = `
   updated_at
   updated_by
   characters { subject file_id }
-  muscle_bases { view crop file_id }
   supports {
     support_equipment_id
     file_id
@@ -193,7 +191,6 @@ function normalizeStyle(row: ImageStyle): ImageStyle {
     ...row,
     params: { ...DEFAULT_GENERATION_PARAMS, ...(row.params ?? {}) },
     characters: row.characters ?? [],
-    muscle_bases: row.muscle_bases ?? [],
     supports: row.supports ?? [],
     equipment: row.equipment ?? [],
   };
@@ -249,12 +246,10 @@ export function getStylePrompts(prompts: ImagePrompt[]): StylePrompts {
   const end = prompts.find((p) => p.kind === "position" && p.position === 2);
   const support = prompts.find((p) => p.kind === "support");
   const equipment = prompts.find((p) => p.kind === "equipment");
-  const muscleBase = prompts.find((p) => p.kind === "muscle_base");
-  const muscleMap = prompts.find((p) => p.kind === "muscle_map");
-  if (!system || !start || !mid || !end || !support || !equipment || !muscleBase || !muscleMap) {
+  if (!system || !start || !mid || !end || !support || !equipment) {
     throw new Error("Style is missing one or more required prompt slots");
   }
-  return { system, start, mid, end, support, equipment, muscleBase, muscleMap };
+  return { system, start, mid, end, support, equipment };
 }
 
 export async function createStyle(
@@ -395,9 +390,6 @@ export async function deleteStyle(token: string, styleId: string): Promise<void>
   );
   if ((data.images_exercise_images_aggregate.aggregate?.count ?? 0) > 0) {
     throw new Error("Cannot delete a style that still has frames");
-  }
-  if ((await countStyleMuscleMaps(token, styleId)) > 0) {
-    throw new Error("Cannot delete a style that still has muscle maps");
   }
   await staffGql(token, `mutation($id: uuid!) { delete_images_styles_by_pk(id: $id) { id } }`, {
     id: styleId,

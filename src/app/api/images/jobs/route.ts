@@ -3,12 +3,7 @@ import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import { assetErrorResponse } from "@/lib/images/asset-request";
 import { drainJobs, enqueueJobs, listJobs } from "@/lib/images/jobs";
-import {
-  MAX_RUN_REFERENCES,
-  MUSCLE_MAP_CROPS,
-  MUSCLE_MAP_TARGET_KINDS,
-  MUSCLE_MAP_VIEWS,
-} from "@/lib/images/types";
+import { MAX_RUN_REFERENCES } from "@/lib/images/types";
 
 export const maxDuration = 300;
 
@@ -20,53 +15,38 @@ const edit = {
   instruction: z.string().trim().min(1).max(2000).optional(),
 };
 
-const jobSpec = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("exercise_frame"),
-    key: z.string().max(64).optional(),
-    after: z.string().max(64).optional(),
-    exoId: z.number().int().positive(),
-    subject: z.enum(["man", "woman"]),
-    position: z.number().int().min(0).max(2),
-    options: z
-      .object({
-        systemOverride: promptText.optional(),
-        positionOverride: promptText.optional(),
-        referenceIds,
-        skipInputs: z.array(z.enum(["character", "support", "logo"])).optional(),
-        candidate: z.boolean().optional(),
-        ...edit,
-      })
-      .optional(),
-  }),
-  z.object({
-    kind: z.literal("muscle_map"),
-    target: z.object({ kind: z.enum(MUSCLE_MAP_TARGET_KINDS), id: z.string().uuid() }),
-    slot: z.object({ view: z.enum(MUSCLE_MAP_VIEWS), crop: z.enum(MUSCLE_MAP_CROPS) }),
-    options: z
-      .object({
-        promptOverride: promptText.optional(),
-        referenceIds,
-        candidate: z.boolean().optional(),
-        ...edit,
-      })
-      .optional(),
-  }),
-]);
+const jobSpec = z.object({
+  kind: z.literal("exercise_frame"),
+  key: z.string().max(64).optional(),
+  after: z.string().max(64).optional(),
+  exoId: z.number().int().positive(),
+  subject: z.enum(["man", "woman"]),
+  position: z.number().int().min(0).max(2),
+  options: z
+    .object({
+      systemOverride: promptText.optional(),
+      positionOverride: promptText.optional(),
+      referenceIds,
+      skipInputs: z.array(z.enum(["character", "support", "logo"])).optional(),
+      candidate: z.boolean().optional(),
+      ...edit,
+    })
+    .optional(),
+});
 
 const enqueueSchema = z.object({
   styleId: z.string().uuid(),
   jobs: z.array(jobSpec).min(1).max(500),
 });
 
-/** Jobs of a style (active and recently finished), optionally one kind or one exercise. */
+/** Jobs of a style (active and recently finished), optionally one exercise. */
 export async function GET(request: Request) {
   try {
     const token = requireStaffToken(request);
     const url = new URL(request.url);
     const styleId = z.string().uuid().parse(url.searchParams.get("style"));
     const kind = z
-      .enum(["exercise_frame", "muscle_map"])
+      .literal("exercise_frame")
       .optional()
       .parse(url.searchParams.get("kind") ?? undefined);
     const exo = url.searchParams.get("exo");

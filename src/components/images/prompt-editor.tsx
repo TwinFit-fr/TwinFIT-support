@@ -2,37 +2,22 @@
 
 import { useMemo, useState } from "react";
 import { mutate } from "swr";
-import type { TaxonomyData } from "@/components/catalog/taxonomy/types";
 import { Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
   PROMPT_PLACEHOLDERS,
   assembleImagePrompt,
-  fillMuscleMapTemplate,
-  bodyRegionTarget,
-  muscleGroupTarget,
-  muscleTarget,
   selectedPrompts,
 } from "@/lib/images/prompt";
 import type {
   ExercisePose,
   ImagePrompt,
   ImageStyle,
-  MuscleMapTargetKind,
-  MuscleMapCrop,
-  MuscleMapView,
   StylePrompts,
   Subject,
 } from "@/lib/images/types";
-import {
-  FRAME_POSITIONS,
-  MUSCLE_MAP_CROPS,
-  MUSCLE_MAP_CROP_LABEL,
-  MUSCLE_MAP_VIEWS,
-  MUSCLE_MAP_VIEW_LABEL,
-  SUBJECTS,
-} from "@/lib/images/types";
+import { FRAME_POSITIONS, SUBJECTS } from "@/lib/images/types";
 import { SegmentedControl } from "@/components/images/generation-controls";
 import type { PromptVersion } from "@/lib/images/prompt-versions";
 import { cn } from "@/lib/utils";
@@ -50,8 +35,6 @@ type ListResponse = {
     prompt_details: string;
   }[];
 };
-
-type PreviewMode = "exercise" | "muscle_map";
 
 function PromptSlotEditor({
   title,
@@ -168,7 +151,7 @@ function PromptSlotEditor({
   );
 }
 
-/** One kind of output (exercise frames, support references, muscle maps) and its slots. */
+/** One kind of output (exercise frames, support / load equipment) and its slots. */
 function SlotGroup({
   title,
   description,
@@ -193,63 +176,22 @@ function SlotGroup({
   );
 }
 
-const PREVIEW_MODES = [
-  { value: "exercise" as const, label: "Exercise" },
-  { value: "muscle_map" as const, label: "Muscle map" },
-];
-
-/** The prompt slots of one style (exercise frames, supports, muscle maps) and a live preview. */
+/** The prompt slots of one style (exercise frames and equipment) and a live preview. */
 export function StylePromptsEditor({ style }: { style: ImageStyle }) {
   const styleId = style.id;
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("exercise");
   const [previewPosition, setPreviewPosition] = useState(0);
   const [previewSubject, setPreviewSubject] = useState<Subject>("man");
-  const [previewTargetKind, setPreviewTargetKind] = useState<MuscleMapTargetKind>("muscle_group");
-  const [previewView, setPreviewView] = useState<MuscleMapView>("front");
-  const [previewCrop, setPreviewCrop] = useState<MuscleMapCrop>("full");
 
   const { data } = useStaffSWR<StylePromptsResponse>(`/api/images/prompts?styleId=${styleId}`);
   const { data: exercisesData } = useStaffSWR<ListResponse>(
     `/api/images/exercises?style=${styleId}`,
-  );
-  const { data: taxonomy } = useStaffSWR<{ data: TaxonomyData }>(
-    previewMode === "muscle_map" ? "/api/catalog/taxonomy" : null,
   );
   const sample = exercisesData?.exercises?.[0];
   const { data: posesData } = useStaffSWR<{ poses: ExercisePose[] }>(
     sample ? `/api/images/exercises/${sample.exo_id}/poses` : null,
   );
 
-  const sampleTarget = useMemo(() => {
-    const groups = taxonomy?.data?.catalog_muscle_groups ?? [];
-    const group = groups.find(
-      (g) => g.active !== false && g.group_muscles.some((link) => link.role === "target"),
-    );
-    if (!group) return null;
-    if (previewTargetKind === "body_region") {
-      const region = taxonomy?.data?.catalog_body_regions.find((r) => r.id === group.body_region_id);
-      return region
-        ? bodyRegionTarget({
-            ...region,
-            muscle_groups: groups.filter((g) => g.body_region_id === region.id),
-          })
-        : null;
-    }
-    if (previewTargetKind === "muscle_group") return muscleGroupTarget(group);
-    const muscle = group.group_muscles.find((link) => link.role === "target")?.muscle;
-    return muscle ? muscleTarget(muscle) : null;
-  }, [taxonomy, previewTargetKind]);
-
   const preview = useMemo(() => {
-    if (previewMode === "muscle_map") {
-      if (!data?.muscleMap || !sampleTarget) return "";
-      return fillMuscleMapTemplate(data.muscleMap.content, {
-        view: previewView,
-        crop: previewCrop,
-        background_color: style.params.background_color,
-        target: sampleTarget,
-      });
-    }
     const chosen = selectedPrompts(data?.prompts ?? [], previewPosition);
     if (!chosen.system || !chosen.position || !sample) return "";
     return assembleImagePrompt({
@@ -263,21 +205,7 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
       background_color: style.params.background_color,
       details: sample.prompt_details,
     });
-  }, [
-    data,
-    style,
-    sample,
-    posesData,
-    sampleTarget,
-    previewMode,
-    previewPosition,
-    previewSubject,
-    previewView,
-    previewCrop,
-  ]);
-
-  const previewSubjectLabel =
-    previewMode === "muscle_map" ? sampleTarget?.name : sample?.display_name;
+  }, [data, style, sample, posesData, previewPosition, previewSubject]);
 
   return (
     <div className="space-y-6">
@@ -318,84 +246,28 @@ export function StylePromptsEditor({ style }: { style: ImageStyle }) {
         <PromptSlotEditor title="Equipment prompt" prompt={data?.equipment} styleId={styleId} />
       </SlotGroup>
 
-      <SlotGroup
-        title="Muscle maps"
-        description="The base draws the blank body once per view and crop ({crop}: full, upper or lower body); each map edits the base of its view and crop to highlight a muscle, group or region."
-        placeholders={PROMPT_PLACEHOLDERS.muscleMap}
-      >
-        <div className="grid gap-4 lg:grid-cols-2">
-          <PromptSlotEditor
-            title="Base body (front / back)"
-            prompt={data?.muscleBase}
-            styleId={styleId}
-          />
-          <PromptSlotEditor title="Muscle map" prompt={data?.muscleMap} styleId={styleId} />
-        </div>
-      </SlotGroup>
-
       <div className="rounded-xl border border-zinc-200 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-zinc-900">
             Live preview
-            {previewSubjectLabel ? ` · ${previewSubjectLabel}` : ""}
+            {sample?.display_name ? ` · ${sample.display_name}` : ""}
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             <SegmentedControl
-              label="Preview of"
-              value={previewMode}
-              onChange={setPreviewMode}
-              options={PREVIEW_MODES}
+              label="Preview subject"
+              value={previewSubject}
+              onChange={setPreviewSubject}
+              options={SUBJECTS.map((s) => ({
+                value: s,
+                label: s === "man" ? "Man" : "Woman",
+              }))}
             />
-            {previewMode === "exercise" ? (
-              <>
-                <SegmentedControl
-                  label="Preview subject"
-                  value={previewSubject}
-                  onChange={setPreviewSubject}
-                  options={SUBJECTS.map((s) => ({
-                    value: s,
-                    label: s === "man" ? "Man" : "Woman",
-                  }))}
-                />
-                <SegmentedControl
-                  label="Preview position"
-                  value={previewPosition}
-                  onChange={setPreviewPosition}
-                  options={FRAME_POSITIONS.map((f) => ({ value: f.id as number, label: f.label }))}
-                />
-              </>
-            ) : (
-              <>
-                <SegmentedControl
-                  label="Preview target"
-                  value={previewTargetKind}
-                  onChange={setPreviewTargetKind}
-                  options={[
-                    { value: "body_region", label: "Region" },
-                    { value: "muscle_group", label: "Group" },
-                    { value: "muscle", label: "Muscle" },
-                  ]}
-                />
-                <SegmentedControl
-                  label="Preview view"
-                  value={previewView}
-                  onChange={setPreviewView}
-                  options={MUSCLE_MAP_VIEWS.map((v) => ({
-                    value: v,
-                    label: MUSCLE_MAP_VIEW_LABEL[v],
-                  }))}
-                />
-                <SegmentedControl
-                  label="Preview crop"
-                  value={previewCrop}
-                  onChange={setPreviewCrop}
-                  options={MUSCLE_MAP_CROPS.map((c) => ({
-                    value: c,
-                    label: MUSCLE_MAP_CROP_LABEL[c],
-                  }))}
-                />
-              </>
-            )}
+            <SegmentedControl
+              label="Preview position"
+              value={previewPosition}
+              onChange={setPreviewPosition}
+              options={FRAME_POSITIONS.map((f) => ({ value: f.id as number, label: f.label }))}
+            />
           </div>
         </div>
         <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-50 p-3 text-xs text-zinc-700">

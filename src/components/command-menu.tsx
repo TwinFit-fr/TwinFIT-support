@@ -131,16 +131,8 @@ export function CommandMenu({
         perform: () => router.push("/images"),
       },
       {
-        id: "nav-images-muscle-maps",
-        title: "Muscle Maps",
-        subtitle: "Generate front and back maps per muscle and muscle group",
-        category: "Navigation",
-        icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
-        perform: () => router.push("/images/muscle-maps"),
-      },
-      {
         id: "nav-muscle-map",
-        title: "Muscle map (prototype B)",
+        title: "Muscle map",
         subtitle: "Base bodies and one mask per muscle, painted with the exercise's muscles",
         category: "Navigation",
         icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
@@ -149,7 +141,7 @@ export function CommandMenu({
       {
         id: "nav-images-prompts",
         title: "Image Prompts",
-        subtitle: "Edit exercise, support and muscle map prompts per style",
+        subtitle: "Edit exercise, support and equipment prompts per style",
         category: "Navigation",
         icon: <ImageIcon className="h-4 w-4 text-zinc-500" />,
         perform: () => router.push("/images/styles?tab=prompts"),

@@ -1,5 +1,4 @@
-import type { MuscleMapCrop, MuscleMapSlot, MuscleMapTargetRef, MuscleMapView, Subject } from "./types";
-import { muscleMapTargetOf } from "./types";
+import type { Subject } from "./types";
 
 /**
  * Server-side generation jobs (images.generation_jobs): a run enqueues one job per image and
@@ -28,30 +27,16 @@ export type FrameJobOptions = {
   candidate?: boolean;
 } & ImageEditOptions;
 
-/** Per-run edits of a muscle map: prompt text and library references. */
-export type MuscleMapJobOptions = {
-  promptOverride?: string;
-  /** Omitted = the references linked to the target. */
-  referenceIds?: string[];
-  /** Keep the result as an inactive candidate instead of replacing the active map. */
-  candidate?: boolean;
-} & ImageEditOptions;
-
 export type GenerationJob = {
   id: string;
   seq: number;
   batch_id: string;
   style_id: string;
-  kind: "exercise_frame" | "muscle_map";
+  kind: "exercise_frame";
   exo_id: number | null;
   subject: Subject | null;
   position: number | null;
-  muscle_id: string | null;
-  muscle_group_id: string | null;
-  body_region_id: string | null;
-  view: MuscleMapView | null;
-  crop: MuscleMapCrop | null;
-  options: FrameJobOptions & MuscleMapJobOptions;
+  options: FrameJobOptions;
   depends_on: string | null;
   status: JobStatus;
   attempts: number;
@@ -59,7 +44,6 @@ export type GenerationJob = {
   not_before: string | null;
   error: string | null;
   result_exercise_image_id: string | null;
-  result_muscle_map_id: string | null;
   inserted_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -69,22 +53,15 @@ export type GenerationJob = {
  * A job as a run asks for it. A frame with `after` waits for the run's frame with that `key`
  * and edits its result (Mid / End after the Start they are drawn from).
  */
-export type JobSpec =
-  | {
-      kind: "exercise_frame";
-      key?: string;
-      after?: string;
-      exoId: number;
-      subject: Subject;
-      position: number;
-      options?: FrameJobOptions;
-    }
-  | {
-      kind: "muscle_map";
-      target: MuscleMapTargetRef;
-      slot: MuscleMapSlot;
-      options?: MuscleMapJobOptions;
-    };
+export type JobSpec = {
+  kind: "exercise_frame";
+  key?: string;
+  after?: string;
+  exoId: number;
+  subject: Subject;
+  position: number;
+  options?: FrameJobOptions;
+};
 
 /**
  * The frame jobs of a run: per exercise and subject, the chosen positions its sequence has.
@@ -121,14 +98,16 @@ export function frameJobSpecs({
       }
       const key = `${exoId}:${subject}`;
       const withStart = run.includes(0);
-      return run.map((position): JobSpec => ({
-        kind: "exercise_frame",
-        exoId,
-        subject,
-        position,
-        ...(position === 0 ? { key } : withStart ? { after: key } : {}),
-        options: options?.(position),
-      }));
+      return run.map(
+        (position): JobSpec => ({
+          kind: "exercise_frame",
+          exoId,
+          subject,
+          position,
+          ...(position === 0 ? { key } : withStart ? { after: key } : {}),
+          options: options?.(position),
+        }),
+      );
     }),
   );
 }
@@ -142,13 +121,4 @@ export function isActiveJob(job: Pick<GenerationJob, "status">): boolean {
 /** A job that adds a candidate (variant or edit) instead of replacing the active image. */
 export function isCandidateJob(job: Pick<GenerationJob, "options">): boolean {
   return Boolean(job.options.candidate || job.options.editOf);
-}
-
-export function jobTarget(job: GenerationJob): MuscleMapTargetRef | null {
-  return muscleMapTargetOf(job);
-}
-
-/** The view and crop of a muscle map job (null for frames). */
-export function jobSlot(job: GenerationJob): MuscleMapSlot | null {
-  return job.view ? { view: job.view, crop: job.crop ?? "full" } : null;
 }

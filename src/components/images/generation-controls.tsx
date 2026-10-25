@@ -2,21 +2,8 @@
 
 import { useId } from "react";
 import { Check } from "lucide-react";
-import {
-  FRAME_POSITIONS,
-  MUSCLE_MAP_CROPS,
-  MUSCLE_MAP_CROP_LABEL,
-  MUSCLE_MAP_VIEWS,
-  MUSCLE_MAP_VIEW_LABEL,
-  SUBJECTS,
-} from "@/lib/images/types";
-import type {
-  FrameCountChoice,
-  ImageStyle,
-  MuscleMapCrop,
-  MuscleMapView,
-  Subject,
-} from "@/lib/images/types";
+import { FRAME_POSITIONS, SUBJECTS } from "@/lib/images/types";
+import type { FrameCountChoice, ImageStyle, Subject } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -198,52 +185,6 @@ export function SubjectToggles({
         disabled={disabled}
         onChange={onChange}
         options={SUBJECTS.map((s) => ({ value: s, label: SUBJECT_LABEL[s] }))}
-      />
-    </LabeledControl>
-  );
-}
-
-/** Front / back muscle map views to generate. */
-export function ViewToggles({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: MuscleMapView[];
-  onChange: (next: MuscleMapView[]) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <LabeledControl label="Views">
-      <ToggleChips
-        label="Views to generate"
-        value={value}
-        disabled={disabled}
-        onChange={onChange}
-        options={MUSCLE_MAP_VIEWS.map((v) => ({ value: v, label: MUSCLE_MAP_VIEW_LABEL[v] }))}
-      />
-    </LabeledControl>
-  );
-}
-
-/** Full / upper / lower muscle map crops to generate. */
-export function CropToggles({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: MuscleMapCrop[];
-  onChange: (next: MuscleMapCrop[]) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <LabeledControl label="Crops">
-      <ToggleChips
-        label="Crops to generate"
-        value={value}
-        disabled={disabled}
-        onChange={onChange}
-        options={MUSCLE_MAP_CROPS.map((c) => ({ value: c, label: MUSCLE_MAP_CROP_LABEL[c] }))}
       />
     </LabeledControl>
   );

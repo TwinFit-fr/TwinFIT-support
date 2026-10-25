@@ -15,18 +15,17 @@ type TabId = "bases" | "masks" | "preview" | "settings";
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "bases", label: "Bases" },
   { id: "masks", label: "Masks" },
-  { id: "preview", label: "Preview vs A" },
+  { id: "preview", label: "Preview" },
   { id: "settings", label: "Settings" },
 ];
 
 /**
- * Muscle map prototype B: blank bodies per view and one mask per muscle (schema `muscle_map`,
- * staff only). The app doesn't see any of it until an approach is chosen.
+ * Muscle map: blank bodies per view and one mask per muscle (schema `muscle_map`, staff only).
  */
 export function MuscleMapPage() {
   const api = useMuscleMap();
   const params = useSearchParams();
-  // Opening a shared pilot link (`?exo=`) lands on the preview.
+  // Opening a shared preview link (`?exo=`) lands on the preview.
   const [tab, setTab] = useState<TabId>(() => (params.has("exo") ? "preview" : "bases"));
 
   return (
@@ -34,8 +33,7 @@ export function MuscleMapPage() {
       <div>
         <h1 className="text-xl font-semibold">Muscle map</h1>
         <p className="text-sm text-zinc-500">
-          Prototype B: base bodies + one mask per muscle, painted with the exercise&apos;s
-          muscles. Not visible in the app.
+          Base bodies + one mask per muscle, painted with the exercise&apos;s muscles.
         </p>
       </div>
       <TabList label="Muscle map" tabs={TABS} value={tab} onChange={setTab} />

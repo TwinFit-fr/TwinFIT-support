@@ -1,5 +1,3 @@
-import type { MuscleMapCrop, MuscleMapSlot, MuscleMapTargetKind } from "./types";
-
 type TemplateValues = {
   name: string;
   description: string;
@@ -59,16 +57,6 @@ export const PROMPT_PLACEHOLDERS = {
   exercise: ["{name}", "{description}", "{pose}", "{exo_id}", "{subject}", "{background_color}"],
   support: ["{support}", "{support_description}", "{background_color}"],
   equipment: ["{equipment}", "{equipment_description}", "{background_color}"],
-  muscleBase: ["{view}", "{crop}", "{background_color}"],
-  muscleMap: [
-    "{target}",
-    "{target_kind}",
-    "{target_description}",
-    "{muscles}",
-    "{view}",
-    "{crop}",
-    "{background_color}",
-  ],
 } as const;
 
 export function fillPromptTemplate(
@@ -142,92 +130,6 @@ export function assembleImagePrompt(
   ]
     .filter(Boolean)
     .join("\n\n");
-}
-
-export type MuscleMapTarget = {
-  kind: MuscleMapTargetKind;
-  name: string;
-  description: string | null;
-  /** Muscles to highlight: the muscle itself, or the target muscles of the group / region. */
-  muscles: { name: string; description: string | null }[];
-};
-
-const TARGET_KIND_LABEL: Record<MuscleMapTargetKind, string> = {
-  muscle: "muscle",
-  muscle_group: "muscle group",
-  body_region: "body region",
-};
-
-type DescribedRow = { name: string; description?: string | null; active?: boolean };
-
-export function muscleTarget(muscle: DescribedRow): MuscleMapTarget {
-  const self = { name: muscle.name, description: muscle.description ?? null };
-  return { kind: "muscle", ...self, muscles: [self] };
-}
-
-type GroupRow = DescribedRow & { group_muscles: { role: string; muscle: DescribedRow }[] };
-
-/** The muscles whose canonical home is the group, not its secondary options. */
-function groupTargetMuscles(group: GroupRow): MuscleMapTarget["muscles"] {
-  return group.group_muscles
-    .filter((link) => link.role === "target" && link.muscle.active !== false)
-    .map((link) => ({ name: link.muscle.name, description: link.muscle.description ?? null }));
-}
-
-/** A group highlights its target muscles. */
-export function muscleGroupTarget(group: GroupRow): MuscleMapTarget {
-  return {
-    kind: "muscle_group",
-    name: group.name,
-    description: group.description ?? null,
-    muscles: groupTargetMuscles(group),
-  };
-}
-
-/**
- * A body region highlights the target muscles of its active groups. Its description steers
- * regions that are not muscles (CARDIO: heart and lungs).
- */
-export function bodyRegionTarget(
-  region: DescribedRow & { muscle_groups: GroupRow[] },
-): MuscleMapTarget {
-  return {
-    kind: "body_region",
-    name: region.name,
-    description: region.description ?? null,
-    muscles: region.muscle_groups
-      .filter((group) => group.active !== false)
-      .flatMap(groupTargetMuscles),
-  };
-}
-
-function describedLine(item: { name: string; description: string | null }): string {
-  const description = item.description?.trim();
-  return description ? `- ${item.name} — ${description}` : `- ${item.name}`;
-}
-
-/** What `{crop}` says: the part of the body the image frames. */
-export const MUSCLE_MAP_CROP_FRAMING: Record<MuscleMapCrop, string> = {
-  full: "full body, from head to feet",
-  upper: "upper body only, from the top of the head to the hips",
-  lower: "lower body only, from the hips to the feet",
-};
-
-/** Fill a muscle_base (no target) or muscle_map template. */
-export function fillMuscleMapTemplate(
-  template: string,
-  values: MuscleMapSlot & { background_color?: string; target?: MuscleMapTarget },
-): string {
-  const target = values.target;
-  return template
-    .replaceAll("{view}", values.view)
-    .replaceAll("{crop}", MUSCLE_MAP_CROP_FRAMING[values.crop])
-    .replaceAll("{background_color}", values.background_color ?? "")
-    .replaceAll("{target}", target?.name ?? "")
-    .replaceAll("{target_kind}", target ? TARGET_KIND_LABEL[target.kind] : "")
-    .replaceAll("{target_description}", target?.description?.trim() ?? "")
-    .replaceAll("{muscles}", target ? target.muscles.map(describedLine).join("\n") : "")
-    .trim();
 }
 
 /** Pick system + position prompts from a style's prompt list. */

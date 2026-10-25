@@ -6,8 +6,6 @@ import { X } from "lucide-react";
 import { Badge, Button, Card, Input } from "@/components/ui/primitives";
 import { CHECKER_STYLE } from "@/components/images/checker";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
-import { imageThumbUrl } from "@/lib/images/urls";
-import { pickMapA, type PickedA } from "@/lib/muscle-map/compare-a";
 import { cropRect } from "@/lib/muscle-map/paint";
 import type { PilotData, PilotExercise } from "@/lib/muscle-map/pilot";
 import {
@@ -53,11 +51,11 @@ type PaintedView = {
 };
 
 /**
- * How B paints an exercise: per view with painted muscles, its active base, the secondary
+ * How the map paints an exercise: per view with painted muscles, its active base, the secondary
  * masks, then the target mask on top; cropped to the union of the painted masks. Also lists
  * muscles that can't be painted yet.
  */
-function paintB(board: MuscleMapBoard, exercise: PilotExercise) {
+function paintExercise(board: MuscleMapBoard, exercise: PilotExercise) {
   const { target_color, secondary_color } = board.settings;
   const views = new Map<MapView, PaintedView>();
   const issues: string[] = [];
@@ -98,7 +96,7 @@ function paintB(board: MuscleMapBoard, exercise: PilotExercise) {
   return { painted, issues };
 }
 
-/** Exercises painted with B next to their A map; the selection lives in the URL (`?exo=`). */
+/** Exercises painted from bases + masks; the selection lives in the URL (`?exo=`). */
 export function PreviewPanel({ api }: { api: MuscleMapApi }) {
   const board = api.data!;
   const pilot = useStaffSWR<PilotData>("/api/muscle-map/exercises");
@@ -125,7 +123,7 @@ export function PreviewPanel({ api }: { api: MuscleMapApi }) {
 
   if (pilot.error) return <p className="text-sm text-red-600">{pilot.error.message}</p>;
   if (!pilot.data) return <p className="text-sm text-zinc-500">Loading exercises…</p>;
-  const { exercises, a } = pilot.data;
+  const { exercises } = pilot.data;
   const byExoId = new Map(exercises.map((ex) => [ex.exo_id, ex]));
   const q = query.trim().toLowerCase();
   const matches = q
@@ -183,32 +181,24 @@ export function PreviewPanel({ api }: { api: MuscleMapApi }) {
           </Button>
         )}
         <p className="basis-full text-xs text-zinc-500">
-          A: the default style&apos;s map of the target muscle, else its group, else its region,
-          at the card view and crop (as the app picks it). B: the resolved muscles painted on the
-          bases, target over secondaries, cropped to them.
+          Resolved muscles painted on the bases, target over secondaries, cropped to them.
         </p>
       </div>
 
       {selected.length === 0 ? (
         <Card className="text-sm text-zinc-500">
-          Pick exercises, or press Pilot for the side-by-side pilot.
+          Pick exercises, or press Pilot for a sample set.
         </Card>
       ) : (
         <div className="space-y-3">
           {selected.map((exoId) => {
             const exercise = byExoId.get(exoId);
             if (!exercise) return null;
-            const target = exercise.resolved_muscles.find((m) => m.role === "target");
-            const mapA = pickMapA(a, {
-              primary_muscle_group_id: exercise.primary_muscle_group_id,
-              target_muscle_id: target?.muscle_id ?? null,
-            });
             return (
-              <ComparisonRow
+              <ExercisePreviewRow
                 key={exoId}
                 exercise={exercise}
-                mapA={mapA}
-                b={paintB(board, exercise)}
+                paint={paintExercise(board, exercise)}
                 onRemove={() => select(selected.filter((id) => id !== exoId))}
               />
             );
@@ -219,19 +209,17 @@ export function PreviewPanel({ api }: { api: MuscleMapApi }) {
   );
 }
 
-function ComparisonRow({
+function ExercisePreviewRow({
   exercise,
-  mapA,
-  b,
+  paint,
   onRemove,
 }: {
   exercise: PilotExercise;
-  mapA: PickedA | null;
-  b: ReturnType<typeof paintB>;
+  paint: ReturnType<typeof paintExercise>;
   onRemove: () => void;
 }) {
   return (
-    <Card className="grid gap-4 p-3 md:grid-cols-[14rem_minmax(0,1fr)_minmax(0,2fr)]">
+    <Card className="grid gap-4 p-3 md:grid-cols-[14rem_minmax(0,1fr)]">
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -265,9 +253,9 @@ function ComparisonRow({
             </span>
           ))}
         </div>
-        {b.issues.length > 0 && (
+        {paint.issues.length > 0 && (
           <ul className="space-y-0.5 text-[11px] text-amber-700">
-            {b.issues.map((issue) => (
+            {paint.issues.map((issue) => (
               <li key={issue}>{issue}</li>
             ))}
           </ul>
@@ -275,33 +263,11 @@ function ComparisonRow({
       </div>
 
       <div className="space-y-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">A · generated</p>
-        {mapA ? (
-          <>
-            <div className="overflow-hidden rounded-md" style={CHECKER_STYLE}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imageThumbUrl(mapA.image_url, 480) ?? mapA.image_url}
-                alt=""
-                className="mx-auto max-h-72 w-full object-contain"
-              />
-            </div>
-            <p className="text-[11px] text-zinc-500">
-              {mapA.level} {mapA.code} · {mapA.view} / {mapA.crop}
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-zinc-500">No A map</p>
-        )}
-      </div>
-
-      <div className="space-y-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">B · base + masks</p>
-        {b.painted.length === 0 ? (
+        {paint.painted.length === 0 ? (
           <p className="text-sm text-zinc-500">Nothing painted yet</p>
         ) : (
           <div className="flex flex-wrap items-start gap-3">
-            {b.painted.map((p) => (
+            {paint.painted.map((p) => (
               <div key={p.view} className="w-full max-w-[16rem] flex-1 space-y-1">
                 {p.rect && (
                   <div

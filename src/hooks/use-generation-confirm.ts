@@ -11,7 +11,7 @@ export const CONFIRM_RUN_ABOVE = 6;
 
 /**
  * The one rule for confirming OpenAI generations. A run asks only when it is large; a style
- * asset (character, support, muscle base, library image) asks only when generating it replaces
+ * asset (character, support, library image) asks only when generating it replaces
  * the current image or ignores unsaved style edits.
  */
 export function useGenerationConfirm() {
