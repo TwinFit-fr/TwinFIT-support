@@ -59,7 +59,6 @@ export default function CatalogTaxonomyPage() {
           code,
           name,
           ...(extra?.body_region_code ? { body_region_code: extra.body_region_code } : {}),
-          ...extra?.map,
         }),
       });
       setMessage(`Added ${code}`);
@@ -92,7 +91,6 @@ export default function CatalogTaxonomyPage() {
           active: fields.active,
           ...(fields.description !== undefined ? { description: fields.description } : {}),
           ...(fields.body_region_code ? { body_region_code: fields.body_region_code } : {}),
-          ...fields.map,
         }),
       });
       setMessage("Saved");

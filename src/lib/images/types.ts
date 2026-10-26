@@ -17,50 +17,7 @@ export type GenerationParams = {
 export type Subject = "man" | "woman";
 export const SUBJECTS: readonly Subject[] = ["man", "woman"];
 
-/** Catalog map views (front / back); used by taxonomy map choices and reference targets. */
-export type MuscleMapView = "front" | "back";
-export const MUSCLE_MAP_VIEWS = ["front", "back"] as const satisfies readonly MuscleMapView[];
-export const MUSCLE_MAP_VIEW_LABEL: Record<MuscleMapView, string> = { front: "Front", back: "Back" };
-
-/** Framing of a map: each crop is its own image, drawn on the base of its view and crop. */
-export type MuscleMapCrop = "full" | "upper" | "lower";
-export const MUSCLE_MAP_CROPS = ["full", "upper", "lower"] as const satisfies readonly MuscleMapCrop[];
-export const MUSCLE_MAP_CROP_LABEL: Record<MuscleMapCrop, string> = {
-  full: "Full",
-  upper: "Upper",
-  lower: "Lower",
-};
-
-/** One map slot of a catalog entity: a view and a crop. */
-export type MuscleMapSlot = { view: MuscleMapView; crop: MuscleMapCrop };
-
-/**
- * Which maps a region, group or muscle has (catalog map_views / map_crops) and the one its
- * card shows (map_view / map_crop; null on groups and muscles = inherited).
- */
-export type MuscleMapChoices = {
-  map_views: MuscleMapView[];
-  map_crops: MuscleMapCrop[];
-  map_view: MuscleMapView | null;
-  map_crop: MuscleMapCrop | null;
-};
-
-/**
- * The card map of an entity: its own choice, else the inherited one (region for a group, target
- * group for a muscle), kept only when the entity has it, else its first allowed view / crop.
- */
-export function muscleMapCardSlot(
-  choices: MuscleMapChoices,
-  inherited?: MuscleMapSlot | null,
-): MuscleMapSlot {
-  const pick = <T extends string>(own: T | null, parent: T | undefined, allowed: T[]): T =>
-    own ?? (parent && allowed.includes(parent) ? parent : allowed[0]);
-  return {
-    view: pick(choices.map_view, inherited?.view, choices.map_views),
-    crop: pick(choices.map_crop, inherited?.crop, choices.map_crops),
-  };
-}
-
+/** Target kind for images.style_reference_links (exercise Start-frame references). */
 export type MuscleMapTargetKind = "muscle" | "muscle_group" | "body_region";
 
 /** Column of images.style_reference_links per target kind. */

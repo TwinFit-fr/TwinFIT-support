@@ -3,13 +3,10 @@
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
 import { resolveLocalizedName } from "@/lib/catalog/locales";
-import type { MuscleMapChoices } from "@/lib/images/types";
-import { MapChoicesEditor, mapChoicesOf } from "./taxonomy-map-choices";
 import type { LookupRowFull, TaxonomyTabId } from "./types";
 import {
   DESCRIBED_TAXONOMY_TABLES,
   LOCALIZED_TAXONOMY_TABLES,
-  MAP_CHOICE_TABLES,
   TAXONOMY_TABS,
 } from "./types";
 
@@ -19,13 +16,11 @@ type DraftFields = {
   sort_order: number;
   active: boolean;
   body_region_code: string;
-  map: MuscleMapChoices;
 };
 
-/** Fields only some tables have: a group's region; the muscle maps of regions, groups, muscles. */
+/** Fields only some tables have: a group's region. */
 export type LookupExtraFields = {
   body_region_code?: string;
-  map?: MuscleMapChoices;
 };
 
 type TaxonomyLookupTableProps = {
@@ -52,12 +47,11 @@ const TABLE_HINTS: Partial<Record<TaxonomyTabId, string>> = {
   catalog_support_equipment:
     "station / auxiliary (not the load); optional description feeds image-generation prompts",
   catalog_grips: "optional description feeds image-generation prompts",
-  catalog_muscles:
-    "maps: views × crops to draw, card map (inherit = home group's); optional description feeds muscle-map prompts",
+  catalog_muscles: "optional description feeds muscle-map mask prompts",
   catalog_muscle_groups:
-    "every group belongs to one region; maps: views × crops to draw, card map (inherit = region's); optional description feeds muscle-map prompts",
+    "every group belongs to one region; optional description feeds muscle-map prompts",
   catalog_body_regions:
-    "app catalog carousel; maps: views × crops to draw and the card map; optional description feeds muscle-map prompts",
+    "app catalog carousel; optional description feeds muscle-map prompts",
 };
 
 export function TaxonomyLookupTable({
@@ -70,9 +64,6 @@ export function TaxonomyLookupTable({
   const isLocalized = LOCALIZED_TAXONOMY_TABLES.has(table);
   const hasDescription = DESCRIBED_TAXONOMY_TABLES.has(table);
   const hasRegion = table === "catalog_muscle_groups";
-  const hasMap = MAP_CHOICE_TABLES.has(table);
-  // Groups and muscles may inherit the card map; a region has its own.
-  const inheritable = table !== "catalog_body_regions";
   const regionCodeOf = (id: string | undefined) => regions.find((r) => r.id === id)?.code ?? "";
   const [filter, setFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -80,7 +71,6 @@ export function TaxonomyLookupTable({
   const [newName, setNewName] = useState("");
   const emptyExtra = (): Required<LookupExtraFields> => ({
     body_region_code: "",
-    map: mapChoicesOf({}, inheritable),
   });
   const [newExtra, setNewExtra] = useState<Required<LookupExtraFields>>(emptyExtra);
   const [drafts, setDrafts] = useState<Record<string, DraftFields>>({});
@@ -111,7 +101,6 @@ export function TaxonomyLookupTable({
         sort_order: Number(row.sort_order) || 0,
         active: row.active !== false,
         body_region_code: regionCodeOf(row.body_region_id),
-        map: mapChoicesOf(row, inheritable),
       }
     );
   }
@@ -166,13 +155,6 @@ export function TaxonomyLookupTable({
               onChange={(code) => setNewExtra({ ...newExtra, body_region_code: code })}
             />
           )}
-          {hasMap && (
-            <MapChoicesEditor
-              value={newExtra.map}
-              inheritable={inheritable}
-              onChange={(map) => setNewExtra({ ...newExtra, map })}
-            />
-          )}
           <div className="flex gap-2">
             <Button
               type="button"
@@ -181,7 +163,6 @@ export function TaxonomyLookupTable({
                 // Empty name: the server derives a Title Case label from the code.
                 void onAdd(newCode, isLocalized ? "" : newName.trim(), {
                   ...(hasRegion ? { body_region_code: newExtra.body_region_code } : {}),
-                  ...(hasMap ? { map: newExtra.map } : {}),
                 }).then(() => {
                   setNewCode("");
                   setNewName("");
@@ -206,7 +187,6 @@ export function TaxonomyLookupTable({
               <th className="px-3 py-2">Code</th>
               {!isLocalized && <th className="px-3 py-2">Name</th>}
               {hasRegion && <th className="px-3 py-2">Region</th>}
-              {hasMap && <th className="px-3 py-2">Muscle maps</th>}
               {hasDescription && <th className="px-3 py-2">Description</th>}
               <th className="px-3 py-2">Sort</th>
               <th className="px-3 py-2">Active</th>
@@ -236,15 +216,6 @@ export function TaxonomyLookupTable({
                         regions={regions}
                         value={draft.body_region_code}
                         onChange={(code) => setDraft(row.id, { body_region_code: code })}
-                      />
-                    </td>
-                  )}
-                  {hasMap && (
-                    <td className="px-3 py-2 align-top">
-                      <MapChoicesEditor
-                        value={draft.map}
-                        inheritable={inheritable}
-                        onChange={(map) => setDraft(row.id, { map })}
                       />
                     </td>
                   )}
@@ -289,7 +260,6 @@ export function TaxonomyLookupTable({
                           active: draft.active,
                           description: hasDescription ? draft.description : undefined,
                           ...(hasRegion ? { body_region_code: draft.body_region_code } : {}),
-                          ...(hasMap ? { map: draft.map } : {}),
                         })
                       }
                     >
