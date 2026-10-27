@@ -34,3 +34,17 @@ export async function uploadCoachMediaFile(input: {
   }
   return { id: fileMetadata.id, url: publicFileUrl(fileMetadata.id) };
 }
+
+/** Deletes a coach-media file by id; a missing file is not an error. */
+export async function deleteCoachMediaFile(token: string, fileId: string): Promise<void> {
+  const res = await fetch(publicFileUrl(fileId), {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-hasura-role": resolveSupportHasuraRole(token),
+    },
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Storage delete failed (${res.status})`);
+  }
+}
