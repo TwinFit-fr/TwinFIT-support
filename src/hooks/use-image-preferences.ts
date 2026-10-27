@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback } from "react";
+import { useStoredChoice } from "@/hooks/use-stored-choice";
 import { FRAME_POSITIONS, SUBJECTS } from "@/lib/images/types";
 import type { FrameCountChoice, Subject } from "@/lib/images/types";
 
@@ -8,61 +9,6 @@ import type { FrameCountChoice, Subject } from "@/lib/images/types";
  * Choices the Images pages remember per browser (style, subjects, positions, frame count),
  * shared live across pages and tabs through localStorage.
  */
-
-const listeners = new Set<() => void>();
-const written = new Map<string, string>();
-
-function subscribeStorage(onChange: () => void) {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key) written.delete(event.key);
-    onChange();
-  };
-  listeners.add(onChange);
-  window.addEventListener("storage", onStorage);
-  return () => {
-    listeners.delete(onChange);
-    window.removeEventListener("storage", onStorage);
-  };
-}
-
-function readStorage(key: string): string | null {
-  if (written.has(key)) return written.get(key)!;
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function useStoredChoice<T>(key: string, fallback: T, parse: (raw: unknown) => T | null) {
-  const raw = useSyncExternalStore(
-    subscribeStorage,
-    () => readStorage(key),
-    () => null,
-  );
-  const value = useMemo(() => {
-    if (raw == null) return fallback;
-    try {
-      return parse(JSON.parse(raw)) ?? fallback;
-    } catch {
-      return fallback;
-    }
-  }, [raw, fallback, parse]);
-  const set = useCallback(
-    (next: T) => {
-      const json = JSON.stringify(next);
-      written.set(key, json);
-      try {
-        localStorage.setItem(key, json);
-      } catch {
-        /* preference only */
-      }
-      listeners.forEach((notify) => notify());
-    },
-    [key],
-  );
-  return [value, set] as const;
-}
 
 const ALL_POSITIONS = FRAME_POSITIONS.map((p) => p.id as number);
 const ALL_SUBJECTS = [...SUBJECTS];

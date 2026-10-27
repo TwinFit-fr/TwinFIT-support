@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
-import { uploadCoachMediaFile } from "@/lib/coach";
+import { deleteCoachMediaFile, uploadCoachMediaFile } from "@/lib/coach";
 
 const bodySchema = z.object({
   mimeType: z.string().min(1),
@@ -9,7 +9,11 @@ const bodySchema = z.object({
   slug: z.string().min(1),
   locale: z.string().min(1),
   fileName: z.string().min(1).optional(),
+  /** Alt text for the returned markdown; defaults to the file name. */
+  alt: z.string().max(200).optional(),
 });
+
+const fileIdSchema = z.string().uuid();
 
 export async function POST(request: Request) {
   try {
@@ -27,14 +31,29 @@ export async function POST(request: Request) {
       mimeType: parsed.mimeType,
       name,
     });
+    const alt = (parsed.alt ?? safeName).replace(/[[\]\n]/g, " ").trim() || safeName;
     return NextResponse.json({
       id: uploaded.id,
       url: uploaded.url,
-      markdown: `![${safeName}](${uploaded.url})`,
+      markdown: `![${alt}](${uploaded.url})`,
     });
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Upload failed";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+/** Removes a coach-media file the editor dropped from every lesson (`?id=<file id>`). */
+export async function DELETE(request: Request) {
+  try {
+    const token = requireStaffToken(request);
+    const id = fileIdSchema.parse(new URL(request.url).searchParams.get("id"));
+    await deleteCoachMediaFile(token, id);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (error instanceof Response) return error;
+    const message = error instanceof Error ? error.message : "Delete failed";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
