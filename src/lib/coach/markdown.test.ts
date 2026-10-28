@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   findImages,
   insertBlockAt,
+  isAllowedImageUrl,
   lintMarkdown,
   parseInline,
   parseMarkdown,
@@ -72,11 +73,44 @@ describe("parseInline", () => {
     assert.deepEqual(parseInline("snake_case_name"), [{ type: "text", value: "snake_case_name" }]);
   });
 
-  it("renders an image as a bang followed by a link, like the app", () => {
-    assert.deepEqual(parseInline("![alt](https://x/y.png)"), [
-      { type: "text", value: "!" },
+  it("turns an image inside text into a link to it, like the app", () => {
+    assert.deepEqual(parseInline("see ![alt](https://x/y.png) now"), [
+      { type: "text", value: "see " },
       { type: "link", label: "alt", url: "https://x/y.png" },
+      { type: "text", value: " now" },
     ]);
+    assert.deepEqual(parseInline("![](https://x/y.png)"), [
+      { type: "link", label: "https://x/y.png", url: "https://x/y.png" },
+    ]);
+    assert.deepEqual(parseInline("Wow! [no link"), [{ type: "text", value: "Wow! [no link" }]);
+  });
+});
+
+describe("images in the parser", () => {
+  it("makes an image on its own line a block", () => {
+    assert.deepEqual(parseMarkdown("Intro\n  ![Squat depth](https://h/v1/files/1)  \nAfter"), [
+      { type: "paragraph", inlines: [{ type: "text", value: "Intro" }] },
+      { type: "image", alt: "Squat depth", url: "https://h/v1/files/1" },
+      { type: "paragraph", inlines: [{ type: "text", value: "After" }] },
+    ]);
+  });
+
+  it("leaves an unfinished image literal while streaming", () => {
+    assert.deepEqual(parseMarkdown("![alt](https://h/a"), [
+      { type: "paragraph", inlines: [{ type: "text", value: "![alt](https://h/a" }] },
+    ]);
+  });
+
+  it("allows https images on the listed hosts only", () => {
+    const hosts = ["abc.storage.eu-central-1.nhost.run"];
+    assert.equal(isAllowedImageUrl("https://abc.storage.eu-central-1.nhost.run/v1/files/1", hosts), true);
+    assert.equal(isAllowedImageUrl("HTTPS://ABC.storage.eu-central-1.nhost.run/v1/files/1", hosts), true);
+    assert.equal(isAllowedImageUrl("https://abc.storage.eu-central-1.nhost.run:443/v1/files/1", hosts), true);
+    assert.equal(isAllowedImageUrl("http://abc.storage.eu-central-1.nhost.run/v1/files/1", hosts), false);
+    assert.equal(isAllowedImageUrl("https://evil.example/abc.storage.eu-central-1.nhost.run", hosts), false);
+    assert.equal(isAllowedImageUrl("https://abc.storage.eu-central-1.nhost.run.evil.example/x", hosts), false);
+    assert.equal(isAllowedImageUrl("https://user@abc.storage.eu-central-1.nhost.run/x", hosts), false);
+    assert.equal(isAllowedImageUrl("https://abc.storage.eu-central-1.nhost.run/x", []), false);
   });
 });
 
@@ -85,13 +119,14 @@ describe("lintMarkdown", () => {
 
   it("is silent on the supported subset", () => {
     assert.deepEqual(
-      rulesOf("# H\n\n- a\n- b\n\n1. one\n\n**bold** *it* `code` [l](https://x)\n\n---\n\n```\nx | y\n```"),
+      rulesOf("# H\n\n- a\n- b\n\n1. one\n\n**bold** *it* `code` [l](https://x)\n\n![pic](https://x/p.png)\n\n---\n\n```\nx | y\n```"),
       [],
     );
   });
 
   it("flags markup the app renders differently", () => {
-    assert.deepEqual(rulesOf("![a](b)"), ["image"]);
+    assert.deepEqual(rulesOf("text ![a](b)"), ["inline-image"]);
+    assert.deepEqual(rulesOf("- ![a](b)"), ["inline-image"]);
     assert.deepEqual(rulesOf("| a | b |"), ["table"]);
     assert.deepEqual(rulesOf("<br>"), ["html"]);
     assert.deepEqual(rulesOf("#### deep"), ["heading-level"]);

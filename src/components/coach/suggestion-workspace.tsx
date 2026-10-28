@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { cn } from "@/lib/utils";
-import { findImages, replaceImage } from "@/lib/coach/markdown";
+import { findImages, isAllowedImageUrl, replaceImage } from "@/lib/coach/markdown";
 import {
   changedLocales,
   draftFromSuggestion,
@@ -51,6 +51,12 @@ type Props = {
 
 type Viewer = "premium" | "freemium";
 type Screen = "list" | "lesson";
+
+/** The app draws images from its own Storage only (`imageHosts` in CoachHost.kt); the preview does the same. */
+const APP_IMAGE_HOSTS: readonly string[] =
+  process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN && process.env.NEXT_PUBLIC_NHOST_REGION
+    ? [`${process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN}.storage.${process.env.NEXT_PUBLIC_NHOST_REGION}.nhost.run`]
+    : [];
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -143,6 +149,16 @@ export function SuggestionWorkspace({ suggestion, suggestions, onDirtyChange, on
   );
 
   const refreshPreview = useCallback(() => setPreview(draft), [draft]);
+
+  /** Pending uploads preview from their local copy; saved ones load like the app would. */
+  const resolvePreviewImage = useCallback(
+    (url: string) => {
+      const pendingId = pendingIdFromUrl(url);
+      if (pendingId) return pending.get(pendingId)?.objectUrl ?? null;
+      return isAllowedImageUrl(url, APP_IMAGE_HOSTS) ? url : null;
+    },
+    [pending],
+  );
 
   function addImages(files: File[]): string[] {
     const added: PendingImage[] = files.map((file) => ({
@@ -632,7 +648,11 @@ export function SuggestionWorkspace({ suggestion, suggestions, onDirtyChange, on
               Go Premium sheet.
             </div>
           ) : (
-            <LessonChatPreview text={previewLocalization.text} answerMd={previewLocalization.answer_md} />
+            <LessonChatPreview
+              text={previewLocalization.text}
+              answerMd={previewLocalization.answer_md}
+              resolveImage={resolvePreviewImage}
+            />
           )}
         </PhoneFrame>
       </div>

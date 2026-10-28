@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: [Sem
 
 ### Changed
 - Coach suggestions: lessons and prompts are edited as a local draft with a single Save, a phone preview of the Android rendering (several device sizes, locale switcher, Tutorials list and opened lesson), a toolbar limited to the app's markdown subset, warnings for unsupported markup, and images inserted at the cursor that are uploaded only on Save.
+- The phone preview draws images on a line of their own as the app now does (full width, alt text on a failed load, a link when not on Storage); the image warning now flags only images inside a line of text.
 
 ## [1.1.1] - 2026-10-26
 

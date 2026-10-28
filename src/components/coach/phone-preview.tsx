@@ -117,20 +117,67 @@ function ListRow({ marker, indent, children }: { marker: string; indent: number;
   );
 }
 
-/** Mirrors `CoachMarkdown.kt`: block gap 8 dp, headings 4 dp above, code in a 12 dp glass field. */
-export function AppMarkdown({ source }: { source: string }) {
+/**
+ * Where the preview loads an image from, or null when the app would show it as a link (it is not on
+ * the app's Storage). Pending uploads resolve to their local object URL.
+ */
+export type ResolveImage = (url: string) => string | null;
+
+/**
+ * Mirrors `CoachMarkdown.kt`: block gap 8 dp, headings 4 dp above, code in a 12 dp glass field,
+ * images full width in a 12 dp field.
+ */
+export function AppMarkdown({ source, resolveImage }: { source: string; resolveImage?: ResolveImage }) {
   const blocks = parseMarkdown(source);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
       {blocks.map((block, index) => (
-        <Block key={index} block={block} />
+        <Block key={index} block={block} resolveImage={resolveImage} />
       ))}
     </div>
   );
 }
 
-function Block({ block }: { block: MdBlock }) {
+/** `MarkdownImage` in the app: a glass placeholder while loading, the alt text if it fails. */
+function AppImage({ src, alt }: { src: string; alt: string }) {
+  const [load, setLoad] = useState<{ src: string; state: "loading" | "loaded" | "failed" }>({ src, state: "loading" });
+  const state = load.src === src ? load.state : "loading";
+  if (state === "failed") {
+    return alt ? <p style={{ ...type.caption, color: app.labelMuted, margin: 0 }}>{alt}</p> : null;
+  }
+  return (
+    <div
+      style={{
+        width: "100%",
+        minHeight: state === "loading" ? 160 : 0,
+        borderRadius: 12,
+        overflow: "hidden",
+        background: state === "loading" ? app.glass : "transparent",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- storage and blob URLs, no optimisation */}
+      <img
+        src={src}
+        alt={alt}
+        style={{ display: "block", width: "100%", height: "auto" }}
+        onLoad={() => setLoad({ src, state: "loaded" })}
+        onError={() => setLoad({ src, state: "failed" })}
+      />
+    </div>
+  );
+}
+
+function Block({ block, resolveImage }: { block: MdBlock; resolveImage?: ResolveImage }) {
   switch (block.type) {
+    case "image": {
+      const src = resolveImage?.(block.url) ?? null;
+      if (src) return <AppImage src={src} alt={block.alt} />;
+      return (
+        <p style={{ ...type.body, color: app.label, margin: 0, overflowWrap: "anywhere" }}>
+          <Inlines inlines={[{ type: "link", label: block.alt || block.url, url: block.url }]} />
+        </p>
+      );
+    }
     case "paragraph":
       return (
         <p style={{ ...type.body, color: app.label, margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
@@ -280,7 +327,15 @@ export function LessonsSheetPreview({ lessons, locale }: { lessons: PreviewLesso
 }
 
 /** A lesson opened from the list: the chip text as the user turn, the answer as Twin's reply. */
-export function LessonChatPreview({ text, answerMd }: { text: string; answerMd: string }) {
+export function LessonChatPreview({
+  text,
+  answerMd,
+  resolveImage,
+}: {
+  text: string;
+  answerMd: string;
+  resolveImage?: ResolveImage;
+}) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "16px 24px 24px" }}>
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -317,7 +372,7 @@ export function LessonChatPreview({ text, answerMd }: { text: string; answerMd: 
           <span style={{ ...type.caption, color: app.labelMuted }}>Twin</span>
         </div>
         {answerMd.trim() ? (
-          <AppMarkdown source={answerMd} />
+          <AppMarkdown source={answerMd} resolveImage={resolveImage} />
         ) : (
           <p style={{ ...type.caption, color: app.labelMuted, margin: 0, fontStyle: "italic" }}>
             No answer_md: the app sends the chip text to the Coach instead.

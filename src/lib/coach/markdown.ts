@@ -4,8 +4,9 @@
  * phone preview renders, so a divergence here shows staff something the app will not draw.
  *
  * Supported: paragraphs, `#`–`###` headings, `-` / `*` bullets (indent by two spaces), `1.`
- * numbered items, fenced code, rules, and inline `**bold**`, `*italic*`, `` `code` `` and
- * `[text](url)`. Everything else is literal text; `![alt](url)` renders as `!` followed by a link.
+ * numbered items, fenced code, rules, `![alt](url)` images on a line of their own, and inline
+ * `**bold**`, `*italic*`, `` `code` `` and `[text](url)`. An image inside a line of text renders as
+ * a link to it. Everything else is literal text.
  */
 
 export type MdInline =
@@ -21,8 +22,10 @@ export type MdBlock =
   | { type: "bullet"; indent: number; inlines: MdInline[] }
   | { type: "numbered"; number: number; inlines: MdInline[] }
   | { type: "code"; code: string }
-  | { type: "rule" };
+  | { type: "rule" }
+  | { type: "image"; alt: string; url: string };
 
+const imageLinePattern = /^\s*!\[([^\]\n]*)\]\(([^)\s]+)\)\s*$/;
 const bulletPattern = /^(\s*)([-*•])\s+(.*)$/;
 const numberedPattern = /^\s*(\d{1,3})[.)]\s+(.*)$/;
 const headingPattern = /^\s{0,3}(#{1,3})\s+(.*?)\s*#*\s*$/;
@@ -56,6 +59,9 @@ export function parseMarkdown(source: string): MdBlock[] {
       code = [];
     } else if (line.trim() === "") {
       flushParagraph();
+    } else if ((match = line.match(imageLinePattern))) {
+      flushParagraph();
+      blocks.push({ type: "image", alt: match[1].trim(), url: match[2] });
     } else if (rulePattern.test(line)) {
       flushParagraph();
       blocks.push({ type: "rule" });
@@ -130,17 +136,17 @@ export function parseInline(source: string): MdInline[] {
         text += c;
         i++;
       }
-    } else if (c === "[") {
-      const close = source.indexOf("]", i + 1);
-      if (close > i && source.startsWith("(", close + 1)) {
+    } else if (c === "[" || (c === "!" && source.startsWith("![", i))) {
+      const image = c === "!";
+      const open = image ? i + 1 : i;
+      const close = source.indexOf("]", open + 1);
+      if (close > open && source.startsWith("(", close + 1)) {
         const urlEnd = source.indexOf(")", close + 2);
         if (urlEnd > close + 2) {
           flushText();
-          out.push({
-            type: "link",
-            label: source.substring(i + 1, close),
-            url: source.substring(close + 2, urlEnd),
-          });
+          const label = source.substring(open + 1, close);
+          const url = source.substring(close + 2, urlEnd);
+          out.push({ type: "link", label: image && label.trim() === "" ? url : label, url });
           i = urlEnd + 1;
           continue;
         }
@@ -154,6 +160,19 @@ export function parseInline(source: string): MdInline[] {
   }
   flushText();
   return out;
+}
+
+/**
+ * True when `url` is an `https` URL on one of `hosts` (case-insensitive), as `isAllowedImageUrl` in
+ * the app: the app draws images from its own Storage only and shows any other image as a link.
+ */
+export function isAllowedImageUrl(url: string, hosts: readonly string[]): boolean {
+  if (!/^https:\/\//i.test(url)) return false;
+  const rest = url.slice("https://".length);
+  const end = rest.search(/[/:?#]/);
+  const host = end < 0 ? rest : rest.slice(0, end);
+  if (host === "" || host.includes("@")) return false;
+  return hosts.some((h) => h.toLowerCase() === host.toLowerCase());
 }
 
 function isWordBoundaryBefore(source: string, index: number): boolean {
@@ -182,7 +201,7 @@ export type MdWarning = {
 };
 
 export type MdWarningRule =
-  | "image"
+  | "inline-image"
   | "table"
   | "html"
   | "heading-level"
@@ -198,7 +217,7 @@ export type MdWarningRule =
   | "indented-numbered";
 
 const RULE_MESSAGES: Record<MdWarningRule, string> = {
-  image: "Images are not rendered by the app: users see “!” followed by the alt text as a link.",
+  "inline-image": "Images inside a line of text render as a link to the image; put the image on its own line to show it.",
   table: "Tables are not supported; the app shows the pipes as plain text.",
   html: "HTML and autolinks are not supported; tags are shown as plain text.",
   "heading-level": "Only #, ## and ### headings are supported; deeper levels render as text.",
@@ -255,10 +274,11 @@ export function lintMarkdown(source: string): MdWarning[] {
     if (/\]\[[^\]]*\]/.test(line) || /^\s{0,3}\[[^\]]+\]:\s+\S/.test(line)) add(n, "reference-link");
     if (/\\[\\`*_{}[\]()#+\-.!|>]/.test(line)) add(n, "escape");
     if (/\]\([^)\s]+\s+"[^"]*"\)/.test(line)) add(n, "link-title");
-    if (/!\[[^\]]*\]\([^)\s]+\)/.test(line)) add(n, "image");
+    if (/!\[[^\]]*\]\([^)\s]+\)/.test(line) && !imageLinePattern.test(line)) add(n, "inline-image");
 
     const isStructural =
       trimmed === "" ||
+      imageLinePattern.test(line) ||
       rulePattern.test(line) ||
       headingPattern.test(line) ||
       bulletPattern.test(line) ||
