@@ -381,8 +381,8 @@ function ImagesPanel({
       </p>
       <p className="mb-2 text-xs text-zinc-600">
         Pending images are uploaded to <code>coach-media</code> when you press Save; images removed
-        before saving never reach Storage. The app does not render images yet (ClickUp 123m57f5drw), so
-        users see the alt text as a link.
+        before saving never reach Storage. The app shows an image on a line of its own at full width,
+        and the alt text if it cannot load it.
       </p>
       <ul className="max-h-40 space-y-2 overflow-auto">
         {images.map((image, index) => {
