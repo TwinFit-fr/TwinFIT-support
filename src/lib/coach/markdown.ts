@@ -31,22 +31,38 @@ const numberedPattern = /^\s*(\d{1,3})[.)]\s+(.*)$/;
 const headingPattern = /^\s{0,3}(#{1,3})\s+(.*?)\s*#*\s*$/;
 const rulePattern = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 
+/**
+ * A parsed block with the source text it was built from: the inline markup of a text block (as the
+ * person wrote it), the body of a code block, or "" for rules and images. The chunk editor keeps
+ * this text so a round trip through the editor preserves the author's markup.
+ */
+export type MdBlockSource = { block: MdBlock; text: string };
+
 export function parseMarkdown(source: string): MdBlock[] {
-  const blocks: MdBlock[] = [];
+  return parseBlocks(source).map((entry) => entry.block);
+}
+
+export function parseBlocks(source: string): MdBlockSource[] {
+  const blocks: MdBlockSource[] = [];
   let paragraph: string[] = [];
   let code: string[] | null = null;
 
   const flushParagraph = () => {
     if (paragraph.length > 0) {
-      blocks.push({ type: "paragraph", inlines: parseInline(paragraph.join("\n")) });
+      const text = paragraph.join("\n");
+      blocks.push({ block: { type: "paragraph", inlines: parseInline(text) }, text });
       paragraph = [];
     }
+  };
+  const flushCode = (lines: string[]) => {
+    const text = lines.join("\n");
+    blocks.push({ block: { type: "code", code: text }, text });
   };
 
   for (const line of source.replace(/\r\n/g, "\n").split("\n")) {
     if (code !== null) {
       if (line.trimStart().startsWith("```")) {
-        blocks.push({ type: "code", code: code.join("\n") });
+        flushCode(code);
         code = null;
       } else {
         code.push(line);
@@ -61,29 +77,34 @@ export function parseMarkdown(source: string): MdBlock[] {
       flushParagraph();
     } else if ((match = line.match(imageLinePattern))) {
       flushParagraph();
-      blocks.push({ type: "image", alt: match[1].trim(), url: match[2] });
+      blocks.push({ block: { type: "image", alt: match[1].trim(), url: match[2] }, text: "" });
     } else if (rulePattern.test(line)) {
       flushParagraph();
-      blocks.push({ type: "rule" });
+      blocks.push({ block: { type: "rule" }, text: "" });
     } else if ((match = line.match(headingPattern))) {
       flushParagraph();
-      blocks.push({ type: "heading", level: match[1].length, inlines: parseInline(match[2]) });
+      blocks.push({
+        block: { type: "heading", level: match[1].length, inlines: parseInline(match[2]) },
+        text: match[2],
+      });
     } else if ((match = line.match(bulletPattern))) {
       flushParagraph();
       blocks.push({
-        type: "bullet",
-        indent: Math.floor(match[1].length / 2),
-        inlines: parseInline(match[3]),
+        block: { type: "bullet", indent: Math.floor(match[1].length / 2), inlines: parseInline(match[3]) },
+        text: match[3],
       });
     } else if ((match = line.match(numberedPattern))) {
       flushParagraph();
-      blocks.push({ type: "numbered", number: Number(match[1]), inlines: parseInline(match[2]) });
+      blocks.push({
+        block: { type: "numbered", number: Number(match[1]), inlines: parseInline(match[2]) },
+        text: match[2],
+      });
     } else {
       paragraph.push(line.trimEnd());
     }
   }
   // An unterminated fence (the answer is still streaming) is shown as code so far.
-  if (code !== null) blocks.push({ type: "code", code: code.join("\n") });
+  if (code !== null) flushCode(code);
   flushParagraph();
   return blocks;
 }
@@ -339,19 +360,4 @@ export function removeImage(source: string, image: MdImage): string {
   const joined = before + after;
   // Collapse the empty line left when the image sat alone on its line.
   return joined.replace(/\n{3,}/g, "\n\n").replace(/^\n+/, "");
-}
-
-/** Inserts `snippet` at `[start, end)` on its own paragraph; returns the text and caret position. */
-export function insertBlockAt(
-  source: string,
-  start: number,
-  end: number,
-  snippet: string,
-): { text: string; caret: number } {
-  const before = source.slice(0, start);
-  const after = source.slice(end);
-  const lead = before === "" ? "" : before.endsWith("\n\n") ? "" : before.endsWith("\n") ? "\n" : "\n\n";
-  const trail = after === "" ? "\n" : after.startsWith("\n\n") ? "" : after.startsWith("\n") ? "\n" : "\n\n";
-  const text = before + lead + snippet + trail + after;
-  return { text, caret: before.length + lead.length + snippet.length + trail.length };
 }

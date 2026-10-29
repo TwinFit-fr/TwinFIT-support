@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   findImages,
-  insertBlockAt,
   isAllowedImageUrl,
   lintMarkdown,
   parseInline,
@@ -171,11 +170,5 @@ describe("images", () => {
   it("removes an image and the blank line it leaves", () => {
     const [first] = findImages(source);
     assert.equal(removeImage(source, first), "intro\n\ntext ![two](https://h/v1/files/x) end");
-  });
-
-  it("inserts a block on its own paragraph at the cursor", () => {
-    assert.deepEqual(insertBlockAt("ab", 1, 1, "X"), { text: "a\n\nX\n\nb", caret: 6 });
-    assert.deepEqual(insertBlockAt("", 0, 0, "X"), { text: "X\n", caret: 2 });
-    assert.deepEqual(insertBlockAt("a\n\n", 3, 3, "X"), { text: "a\n\nX\n", caret: 5 });
   });
 });
