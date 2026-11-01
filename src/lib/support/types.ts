@@ -11,7 +11,45 @@ export type SupportUserSearchHit = {
   roles: SupportUserRole[];
   username: string | null;
   display_name: string | null;
-  subscription_tier: string;
+  effective_subscription_tier: string;
+};
+
+export type SupportSubscriptionTier = {
+  code: string;
+  display_name: string;
+  templates_limit: number | null;
+  history_months: number | null;
+  routines_enabled: boolean;
+  support_enabled: boolean;
+};
+
+/** `public.user_entitlements`: the plan derived from Play subscriptions and Support grants. */
+export type SupportUserEntitlement = {
+  tier_code: string;
+  source: "none" | "google_play" | "manual";
+  expires_at: string | null;
+  play_purchase_token: string | null;
+  play_state: string | null;
+  play_product_id: string | null;
+  play_base_plan_id: string | null;
+  play_expiry_time: string | null;
+  play_auto_renewing: boolean | null;
+  play_in_free_trial: boolean | null;
+  period_started_at: string | null;
+  updated_at: string;
+};
+
+/** `billing.manual_grants`. */
+export type SupportManualGrant = {
+  id: string;
+  tier_code: string;
+  ends_at: string | null;
+  reason: string;
+  granted_by: string | null;
+  revoked_at: string | null;
+  inserted_at: string;
+  /** Derived on the server: `running` gives the plan now. */
+  status: "running" | "ended" | "revoked";
 };
 
 export type SupportUserLookup = {
@@ -39,21 +77,15 @@ export type SupportUserLookup = {
     endurance_level: string | null;
     notifications_enabled: boolean | null;
     avatar_url: string | null;
-    subscription_tier: string;
-    subscription_expires_at: string | null;
-    subscription_provider: string | null;
-    subscription_external_id: string | null;
+    effective_subscription_tier: string;
     inserted_at: string;
     updated_at: string;
-    subscription_tier_row: {
-      display_name: string;
-      templates_limit: number | null;
-      history_months: number | null;
-      routines_enabled: boolean;
-      support_enabled: boolean;
-      sensors_entitled: boolean;
-    } | null;
+    entitlement: SupportUserEntitlement | null;
   } | null;
+  /** `subscription_tiers` row of the effective tier: the limits the server applies now. */
+  tier: SupportSubscriptionTier | null;
+  /** Support grants of the user, latest first. */
+  grants: SupportManualGrant[];
   finishedSessions: number;
   templateCount: number;
   routineCount: number;
@@ -136,12 +168,6 @@ export type SupportUserSectionData =
 
 export type AdminAction =
   | { action: "verify-email"; userId: string }
-  | {
-      action: "set-subscription";
-      userId: string;
-      tier: string;
-      expiresAt?: string | null;
-      provider?: string | null;
-      externalId?: string | null;
-    }
+  | { action: "grant-premium"; userId: string; reason: string; endsAt?: string | null }
+  | { action: "revoke-premium"; userId: string }
   | { action: "set-disabled"; userId: string; disabled: boolean };

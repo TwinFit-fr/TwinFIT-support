@@ -15,13 +15,18 @@ export async function POST(request: Request) {
         });
         return NextResponse.json(result.body, { status: result.status });
       }
-      case "set-subscription": {
-        const result = await callStaffFunction(token, "admin-set-subscription", {
+      case "grant-premium": {
+        const result = await callStaffFunction(token, "admin-grant-premium", {
           userId: body.userId,
-          tier: body.tier,
-          expiresAt: body.expiresAt ?? null,
-          provider: body.provider ?? "manual",
-          externalId: body.externalId ?? null,
+          reason: body.reason,
+          endsAt: body.endsAt ?? null,
+        });
+        return NextResponse.json(result.body, { status: result.status });
+      }
+      case "revoke-premium": {
+        const result = await callStaffFunction(token, "admin-grant-premium", {
+          userId: body.userId,
+          revoke: true,
         });
         return NextResponse.json(result.body, { status: result.status });
       }

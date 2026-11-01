@@ -22,7 +22,7 @@ function SearchResultRow({ hit }: { hit: SupportUserSearchHit }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <p className="truncate font-medium text-zinc-900">{label}</p>
-          <Badge className="bg-zinc-900 text-white capitalize">{hit.subscription_tier}</Badge>
+          <Badge className="bg-zinc-900 text-white capitalize">{hit.effective_subscription_tier}</Badge>
           {hit.emailVerified ? (
             <Badge className="flex items-center gap-1 border border-emerald-200 bg-emerald-50 text-emerald-700">
               <MailCheck className="h-3 w-3" /> Verified

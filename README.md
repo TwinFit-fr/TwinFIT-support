@@ -8,7 +8,7 @@ Stack: **Next.js (App Router) + React + TypeScript + Nhost Auth**.
 
 | Module | Routes | Capabilities |
 |--------|--------|--------------|
-| **Support** | `/support`, `/support/[userId]` | Lookup by email, @username, or UUID; view subscription & activity; verify email, set tier; disable account (admin only) |
+| **Support** | `/support`, `/support/[userId]` | Lookup by email, @username, or UUID; view plan (Google Play / Support grant) & activity; verify email, grant or revoke Premium; disable account (admin only) |
 | **Catalog** | `/catalog`, `/catalog/compose`, `/catalog/taxonomy` | Browse, create, edit system exercises; manage taxonomy lookups; deactivate exercises (admin only) |
 
 Users with the Nhost **`staff`** or **`admin`** JWT role can sign in. Staff have read access and limited writes; admin retains destructive actions (disable account, deactivate exercise, unlink taxonomy).
@@ -79,13 +79,13 @@ Both scripts set `default_role = user` so mobile app sessions stay scoped to the
 Browser (Nhost JWT, staff/admin role)
     → Next.js API routes (BFF)
         → Hasura GraphQL (Bearer JWT, staff/admin permissions)
-        → Nhost Functions (verify email, subscription, disable account)
+        → Nhost Functions (verify email, Premium grant, disable account)
 ```
 
 Support write actions call backend Functions:
 
 - `admin-verify-email` (staff or admin)
-- `admin-set-subscription` (staff or admin)
+- `admin-grant-premium` (staff or admin): Premium until a date, or revoke the Support grants
 - `admin-set-user-disabled` (admin only)
 
 Catalog writes go straight to Hasura with the caller's JWT (`src/lib/catalog/`, on `staffGql` in

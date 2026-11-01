@@ -15,7 +15,7 @@ type Policy = {
 type LimitsResponse = { success?: boolean; policies?: Policy[]; error?: string };
 type Draft = { monthly?: string; burst?: string };
 
-const EDITABLE = ["trial", "premium", "premium_plus"] as const;
+const EDITABLE = ["premium"] as const;
 
 export default function CoachTokenLimitPage() {
   const isAdmin = useIsAdmin();
