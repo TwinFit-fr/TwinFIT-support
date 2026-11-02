@@ -67,7 +67,9 @@ const type = {
 
 // ---- Markdown as the app draws it --------------------------------------------------------------
 
-function Inlines({ inlines }: { inlines: MdInline[] }) {
+export { app as appColors, type as appType };
+
+export function Inlines({ inlines }: { inlines: MdInline[] }) {
   return (
     <>
       {inlines.map((part, index) => {
@@ -108,7 +110,7 @@ function Inlines({ inlines }: { inlines: MdInline[] }) {
   );
 }
 
-function ListRow({ marker, indent, children }: { marker: string; indent: number; children: React.ReactNode }) {
+export function ListRow({ marker, indent, children }: { marker: string; indent: number; children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", paddingLeft: indent * 16 }}>
       <span style={{ ...type.body, width: 22, flexShrink: 0, color: app.labelMuted }}>{marker}</span>
@@ -138,8 +140,14 @@ export function AppMarkdown({ source, resolveImage }: { source: string; resolveI
   );
 }
 
+/**
+ * Preview-only placement of an image. The app has no alignment syntax and always draws images full
+ * width; anything but "full" is a what-if for staff and is never written to `answer_md`.
+ */
+export type PreviewImageAlign = "full" | "left" | "center" | "right";
+
 /** `MarkdownImage` in the app: a glass placeholder while loading, the alt text if it fails. */
-function AppImage({ src, alt }: { src: string; alt: string }) {
+export function AppImage({ src, alt, align = "full" }: { src: string; alt: string; align?: PreviewImageAlign }) {
   const [load, setLoad] = useState<{ src: string; state: "loading" | "loaded" | "failed" }>({ src, state: "loading" });
   const state = load.src === src ? load.state : "loading";
   if (state === "failed") {
@@ -148,7 +156,9 @@ function AppImage({ src, alt }: { src: string; alt: string }) {
   return (
     <div
       style={{
-        width: "100%",
+        width: align === "full" ? "100%" : "60%",
+        marginLeft: align === "right" || align === "center" ? "auto" : 0,
+        marginRight: align === "left" || align === "center" ? "auto" : 0,
         minHeight: state === "loading" ? 160 : 0,
         borderRadius: 12,
         overflow: "hidden",
@@ -167,11 +177,19 @@ function AppImage({ src, alt }: { src: string; alt: string }) {
   );
 }
 
-function Block({ block, resolveImage }: { block: MdBlock; resolveImage?: ResolveImage }) {
+export function Block({
+  block,
+  resolveImage,
+  imageAlign,
+}: {
+  block: MdBlock;
+  resolveImage?: ResolveImage;
+  imageAlign?: PreviewImageAlign;
+}) {
   switch (block.type) {
     case "image": {
       const src = resolveImage?.(block.url) ?? null;
-      if (src) return <AppImage src={src} alt={block.alt} />;
+      if (src) return <AppImage src={src} alt={block.alt} align={imageAlign} />;
       return (
         <p style={{ ...type.body, color: app.label, margin: 0, overflowWrap: "anywhere" }}>
           <Inlines inlines={[{ type: "link", label: block.alt || block.url, url: block.url }]} />
@@ -326,15 +344,20 @@ export function LessonsSheetPreview({ lessons, locale }: { lessons: PreviewLesso
   );
 }
 
-/** A lesson opened from the list: the chip text as the user turn, the answer as Twin's reply. */
+/**
+ * A lesson opened from the list: the chip text as the user turn, the answer as Twin's reply.
+ * `children` replaces the rendered answer (the chunk editor draws it block by block).
+ */
 export function LessonChatPreview({
   text,
   answerMd,
   resolveImage,
+  children,
 }: {
   text: string;
   answerMd: string;
   resolveImage?: ResolveImage;
+  children?: React.ReactNode;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "16px 24px 24px" }}>
@@ -371,7 +394,9 @@ export function LessonChatPreview({
           </span>
           <span style={{ ...type.caption, color: app.labelMuted }}>Twin</span>
         </div>
-        {answerMd.trim() ? (
+        {children ? (
+          children
+        ) : answerMd.trim() ? (
           <AppMarkdown source={answerMd} resolveImage={resolveImage} />
         ) : (
           <p style={{ ...type.caption, color: app.labelMuted, margin: 0, fontStyle: "italic" }}>
@@ -415,14 +440,15 @@ export function ChipPreview({ text }: { text: string }) {
  */
 export function PhoneFrame({
   device,
-  stale,
   children,
+  onDropFiles,
 }: {
   device: PreviewDevice;
-  /** True when the draft changed since the preview was last updated. */
-  stale?: boolean;
   children: React.ReactNode;
+  /** Files dropped anywhere on the screen (images for the answer). */
+  onDropFiles?: (files: File[]) => void;
 }) {
+  const [dragging, setDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const bezel = 12;
@@ -461,10 +487,25 @@ export function PhoneFrame({
         <div
           className={cn(
             "relative h-full w-full rounded-[40px] border border-zinc-700 bg-zinc-900 shadow-xl",
-            stale && "ring-2 ring-amber-400",
+            dragging && "ring-2 ring-amber-400",
           )}
           style={{ padding: bezel }}
           aria-label={`Phone preview, ${device.label}`}
+          onDragOver={(event) => {
+            if (onDropFiles && Array.from(event.dataTransfer.types).includes("Files")) {
+              event.preventDefault();
+              setDragging(true);
+            }
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            setDragging(false);
+            if (!onDropFiles) return;
+            const files = Array.from(event.dataTransfer.files ?? []);
+            if (files.length === 0) return;
+            event.preventDefault();
+            onDropFiles(files);
+          }}
         >
           <div
             className="h-full w-full overflow-y-auto overflow-x-hidden rounded-[30px]"
