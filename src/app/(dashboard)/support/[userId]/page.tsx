@@ -35,7 +35,8 @@ import type {
 
 type PendingAction =
   | { type: "verify-email" }
-  | { type: "set-subscription"; tier: string; expiresAt: string | null }
+  | { type: "grant-premium"; reason: string; endsAt: string | null }
+  | { type: "revoke-premium" }
   | { type: "set-disabled"; disabled: boolean };
 
 const SECTION_BY_TAB: Partial<Record<SupportUserTabId, SupportUserSectionData["section"]>> = {
@@ -100,18 +101,16 @@ export default function SupportUserPage() {
 
   const data = lookup ?? null;
   const error = loadError ? loadError.message || "Failed to load user" : null;
-  const [tierChoice, setTier] = useState<string | null>(null);
-  const tier = tierChoice ?? data?.profile?.subscription_tier ?? "free";
-  const [expiresAt, setExpiresAt] = useState("");
+  const [grantEndsAt, setGrantEndsAt] = useState("");
+  const [grantReason, setGrantReason] = useState("");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   async function load() {
-    setTier(null);
     await mutate();
   }
 
-  async function runAction(body: Record<string, unknown>, successMessage: string) {
+  async function runAction(body: Record<string, unknown>, successMessage: string): Promise<boolean> {
     setActionLoading(true);
     try {
       await staffFetch("/api/support/actions", {
@@ -121,8 +120,10 @@ export default function SupportUserPage() {
       toast.success(successMessage);
       setPendingAction(null);
       await load();
+      return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Action failed");
+      return false;
     } finally {
       setActionLoading(false);
     }
@@ -139,17 +140,24 @@ export default function SupportUserPage() {
       );
       return;
     }
-    if (pendingAction.type === "set-subscription") {
-      await runAction(
+    if (pendingAction.type === "grant-premium") {
+      const granted = await runAction(
         {
-          action: "set-subscription",
+          action: "grant-premium",
           userId,
-          tier: pendingAction.tier,
-          expiresAt: pendingAction.expiresAt,
-          provider: "manual",
+          reason: pendingAction.reason,
+          endsAt: pendingAction.endsAt,
         },
-        `Subscription tier set to "${pendingAction.tier}"`,
+        "Premium granted",
       );
+      if (granted) {
+        setGrantEndsAt("");
+        setGrantReason("");
+      }
+      return;
+    }
+    if (pendingAction.type === "revoke-premium") {
+      await runAction({ action: "revoke-premium", userId }, "Support grants revoked");
       return;
     }
     if (pendingAction.type === "set-disabled") {
@@ -174,12 +182,19 @@ export default function SupportUserPage() {
         description: `Mark ${data.user.email} (${userId}) as email-verified immediately.`,
       };
     }
-    if (pendingAction.type === "set-subscription") {
+    if (pendingAction.type === "grant-premium") {
       return {
-        title: "Update subscription tier?",
-        description: `Set subscription to "${pendingAction.tier}"${
-          pendingAction.expiresAt ? ` expiring on ${formatDate(pendingAction.expiresAt)}` : ""
-        } for ${data.user.email}.`,
+        title: "Grant Premium?",
+        description: `Give ${data.user.email} Premium ${
+          pendingAction.endsAt ? `until ${formatDate(pendingAction.endsAt)}` : "with no end date"
+        }. A Google Play subscription is not changed.`,
+      };
+    }
+    if (pendingAction.type === "revoke-premium") {
+      return {
+        title: "Revoke Support grants?",
+        description: `End every running Support grant of ${data.user.email}. A Google Play subscription keeps its Premium.`,
+        variant: "danger",
       };
     }
     return {
@@ -222,7 +237,10 @@ export default function SupportUserPage() {
 
   const userId = data.user.id;
   const profile = data.profile;
-  const tierRow = profile?.subscription_tier_row;
+  const tierRow = data.tier;
+  const entitlement = profile?.entitlement ?? null;
+  const effectiveTier = profile?.effective_subscription_tier ?? "free";
+  const hasRunningGrant = data.grants.some((grant) => grant.status === "running");
 
   return (
     <div className="space-y-6">
@@ -395,23 +413,26 @@ export default function SupportUserPage() {
             <div className="space-y-4 border-t border-zinc-100 pt-4">
               <SectionHeader
                 icon={<CreditCard className="h-5 w-5" />}
-                title="Subscription & entitlements"
-                badge={profile?.subscription_tier ?? "free"}
+                title="Plan & entitlements"
+                badge={effectiveTier}
               />
               <dl className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-3">
+                <Field label="Tier" value={tierRow?.display_name ?? effectiveTier} />
+                <Field label="Source" value={sourceLabel(entitlement?.source)} />
                 <Field
-                  label="Tier"
-                  value={tierRow?.display_name ?? profile?.subscription_tier ?? "free"}
-                />
-                <Field
-                  label="Expires"
+                  label="Ends"
                   value={
-                    profile?.subscription_expires_at
-                      ? formatDate(profile.subscription_expires_at)
-                      : "No expiry"
+                    entitlement?.source && entitlement.source !== "none"
+                      ? entitlement.expires_at
+                        ? formatDate(entitlement.expires_at)
+                        : "No end date"
+                      : "—"
                   }
                 />
-                <Field label="Provider" value={profile?.subscription_provider ?? "manual"} />
+                <Field
+                  label="Plan started"
+                  value={formatDate(entitlement?.period_started_at)}
+                />
                 <Field
                   label="Templates limit"
                   value={tierRow?.templates_limit != null ? String(tierRow.templates_limit) : "—"}
@@ -422,51 +443,120 @@ export default function SupportUserPage() {
                 />
                 <Field label="Routines" value={tierRow?.routines_enabled ? "Yes" : "No"} />
                 <Field label="Support" value={tierRow?.support_enabled ? "Yes" : "No"} />
-                <Field label="Sensors" value={tierRow?.sensors_entitled ? "Yes" : "No"} />
-                <Field
-                  label="External ID"
-                  value={
-                    <span className="break-all font-mono text-xs">
-                      {profile?.subscription_external_id ?? "—"}
-                    </span>
-                  }
-                />
               </dl>
+
+              {entitlement?.play_state && (
+                <div className="space-y-2 border-t border-zinc-100 pt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-zinc-600">
+                    Google Play
+                  </p>
+                  <dl className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-3">
+                    <Field label="State" value={playStateLabel(entitlement.play_state)} />
+                    <Field
+                      label="Plan"
+                      value={[entitlement.play_product_id, entitlement.play_base_plan_id]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    />
+                    <Field
+                      label={entitlement.play_auto_renewing ? "Renews" : "Access ends"}
+                      value={formatDate(entitlement.play_expiry_time)}
+                    />
+                    <Field
+                      label="Auto-renew"
+                      value={entitlement.play_auto_renewing ? "On" : "Off"}
+                    />
+                    <Field
+                      label="Free trial"
+                      value={entitlement.play_in_free_trial ? "Yes" : "No"}
+                    />
+                    <Field
+                      label="Purchase token"
+                      value={
+                        <span className="break-all font-mono text-xs">
+                          {entitlement.play_purchase_token ?? "—"}
+                        </span>
+                      }
+                    />
+                  </dl>
+                </div>
+              )}
+
+              <div className="space-y-3 border-t border-zinc-100 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-600">
+                  Support grants
+                </p>
+                {data.grants.length === 0 ? (
+                  <p className="text-sm text-zinc-500">No Support grant.</p>
+                ) : (
+                  <ul className="space-y-1.5 text-sm">
+                    {data.grants.map((grant) => (
+                      <li
+                        key={grant.id}
+                        className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5"
+                      >
+                        <span className="text-zinc-800">
+                          <span className="capitalize">{grant.tier_code}</span>
+                          {" · "}
+                          {grant.ends_at ? `until ${formatDate(grant.ends_at)}` : "no end date"}
+                          {" · "}
+                          <span className="text-zinc-500">{grant.reason}</span>
+                        </span>
+                        <span className="text-xs text-zinc-500">
+                          {grant.revoked_at ? `revoked ${formatDate(grant.revoked_at)}` : grant.status} · granted {formatDate(grant.inserted_at)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
 
               <div className="space-y-3 border-t border-zinc-100 pt-3">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-600">
-                  Admin tier override
+                  Grant Premium
                 </label>
+                <p className="text-xs text-zinc-500">
+                  Premium until the end date (no end when empty). The plan is the best of the
+                  Google Play subscription and the Support grants; neither changes the other.
+                </p>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <select
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-500"
-                    value={tier}
-                    onChange={(e) => setTier(e.target.value)}
-                  >
-                    <option value="free">free</option>
-                    <option value="premium">premium</option>
-                    <option value="premium_plus">premium_plus</option>
-                    <option value="trial">trial</option>
-                  </select>
+                  <Input
+                    placeholder="Reason (required)"
+                    value={grantReason}
+                    onChange={(e) => setGrantReason(e.target.value)}
+                  />
                   <Input
                     type="datetime-local"
-                    value={expiresAt}
-                    onChange={(e) => setExpiresAt(e.target.value)}
+                    aria-label="Premium end date"
+                    value={grantEndsAt}
+                    onChange={(e) => setGrantEndsAt(e.target.value)}
                   />
                 </div>
-                <Button
-                  type="button"
-                  onClick={() =>
-                    setPendingAction({
-                      type: "set-subscription",
-                      tier,
-                      expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
-                    })
-                  }
-                  className="w-full sm:w-auto"
-                >
-                  Update subscription
-                </Button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    disabled={grantReason.trim() === ""}
+                    onClick={() =>
+                      setPendingAction({
+                        type: "grant-premium",
+                        reason: grantReason.trim(),
+                        endsAt: grantEndsAt ? new Date(grantEndsAt).toISOString() : null,
+                      })
+                    }
+                    className="w-full sm:w-auto"
+                  >
+                    Grant Premium
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!hasRunningGrant}
+                    onClick={() => setPendingAction({ type: "revoke-premium" })}
+                    className="w-full sm:w-auto"
+                  >
+                    Revoke Support grants
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -848,6 +938,18 @@ function SectionHeader({
       </div>
     </div>
   );
+}
+
+function sourceLabel(source: string | null | undefined): string {
+  if (source === "google_play") return "Google Play";
+  if (source === "manual") return "Support grant";
+  return "None";
+}
+
+/** `SUBSCRIPTION_STATE_IN_GRACE_PERIOD` → `In grace period`. */
+function playStateLabel(state: string): string {
+  const words = state.replace(/^SUBSCRIPTION_STATE_/, "").toLowerCase().replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {

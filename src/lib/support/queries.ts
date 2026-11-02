@@ -1,5 +1,7 @@
 import { staffGql } from "@/lib/staff-gql";
 import type {
+  SupportManualGrant,
+  SupportSubscriptionTier,
   SupportUserLookup,
   SupportUserSearchHit,
   SupportUserSection,
@@ -21,7 +23,7 @@ function toSearchHit(
     id: string;
     username: string | null;
     display_name: string | null;
-    subscription_tier: string;
+    effective_subscription_tier: string;
     user: {
       id: string;
       email: string;
@@ -42,7 +44,7 @@ function toSearchHit(
     roles: profile.user.roles,
     username: profile.username,
     display_name: profile.display_name,
-    subscription_tier: profile.subscription_tier,
+    effective_subscription_tier: profile.effective_subscription_tier,
   };
 }
 
@@ -67,7 +69,7 @@ export async function searchUsers(
         roles: result.user.roles,
         username: result.profile?.username ?? null,
         display_name: result.profile?.display_name ?? null,
-        subscription_tier: result.profile?.subscription_tier ?? "free",
+        effective_subscription_tier: result.profile?.effective_subscription_tier ?? "free",
       },
     ];
   }
@@ -91,7 +93,7 @@ export async function searchUsers(
       id: string;
       username: string | null;
       display_name: string | null;
-      subscription_tier: string;
+      effective_subscription_tier: string;
       user: {
         id: string;
         email: string;
@@ -129,7 +131,7 @@ export async function searchUsers(
         id
         username
         display_name
-        subscription_tier
+        effective_subscription_tier
         user {
           id
           email
@@ -159,7 +161,7 @@ export async function searchUsers(
     id: string;
     username: string | null;
     display_name: string | null;
-    subscription_tier: string;
+    effective_subscription_tier: string;
   }> = [];
 
   if (emailOnlyIds.length > 0) {
@@ -172,7 +174,7 @@ export async function searchUsers(
           id
           username
           display_name
-          subscription_tier
+          effective_subscription_tier
         }
       }`,
       { ids: emailOnlyIds },
@@ -194,7 +196,7 @@ export async function searchUsers(
       roles: user.roles,
       username: profile?.username ?? null,
       display_name: profile?.display_name ?? null,
-      subscription_tier: profile?.subscription_tier ?? "free",
+      effective_subscription_tier: profile?.effective_subscription_tier ?? "free",
     });
   }
 
@@ -237,6 +239,15 @@ export async function lookupUserByUsername(
   return lookupUserById(accessToken, userId);
 }
 
+function grantStatus(grant: {
+  ends_at: string | null;
+  revoked_at: string | null;
+}): SupportManualGrant["status"] {
+  if (grant.revoked_at) return "revoked";
+  if (grant.ends_at && new Date(grant.ends_at).getTime() <= Date.now()) return "ended";
+  return "running";
+}
+
 export async function lookupUserById(
   accessToken: string,
   userId: string,
@@ -244,6 +255,8 @@ export async function lookupUserById(
   const data = await staffGql<{
     users: SupportUserLookup["user"][];
     profiles: SupportUserLookup["profile"][];
+    subscription_tiers: SupportSubscriptionTier[];
+    grants: Omit<SupportManualGrant, "status">[];
     workout_sessions_aggregate: { aggregate: { count: number } };
     open_session: SupportUserLookup["openSession"][];
     workout_templates_aggregate: { aggregate: { count: number } };
@@ -276,20 +289,44 @@ export async function lookupUserById(
         endurance_level
         notifications_enabled
         avatar_url
-        subscription_tier
-        subscription_expires_at
-        subscription_provider
-        subscription_external_id
+        effective_subscription_tier
         inserted_at
         updated_at
-        subscription_tier_row {
-          display_name
-          templates_limit
-          history_months
-          routines_enabled
-          support_enabled
-          sensors_entitled
+        entitlement {
+          tier_code
+          source
+          expires_at
+          play_purchase_token
+          play_state
+          play_product_id
+          play_base_plan_id
+          play_expiry_time
+          play_auto_renewing
+          play_in_free_trial
+          period_started_at
+          updated_at
         }
+      }
+      subscription_tiers {
+        code
+        display_name
+        templates_limit
+        history_months
+        routines_enabled
+        support_enabled
+      }
+      grants: billing_manual_grants(
+        where: { user_id: { _eq: $id } }
+        order_by: { inserted_at: desc }
+        limit: 20
+      ) {
+        id
+        tier_code
+        ends_at
+        reason
+        granted_by
+        revoked_at
+        inserted_at
       }
       workout_sessions_aggregate(
         where: { user_id: { _eq: $id }, ended_at: { _is_null: false } }
@@ -319,9 +356,13 @@ export async function lookupUserById(
 
   if (!data.users[0]) return null;
 
+  const profile = data.profiles[0] ?? null;
+  const tierCode = profile?.effective_subscription_tier ?? "free";
   return {
     user: data.users[0],
-    profile: data.profiles[0] ?? null,
+    profile,
+    tier: data.subscription_tiers.find((tier) => tier.code === tierCode) ?? null,
+    grants: data.grants.map((grant) => ({ ...grant, status: grantStatus(grant) })),
     finishedSessions: data.workout_sessions_aggregate.aggregate.count,
     templateCount: data.workout_templates_aggregate.aggregate.count,
     routineCount: data.routines.length,
@@ -505,15 +546,15 @@ export async function fetchUserSection(
     }
     case "coach": {
       const profile = await staffGql<{
-        profiles_by_pk: { subscription_tier: string } | null;
+        profiles_by_pk: { effective_subscription_tier: string } | null;
       }>(
         accessToken,
         `query SupportUserCoachTier($id: uuid!) {
-          profiles_by_pk(id: $id) { subscription_tier }
+          profiles_by_pk(id: $id) { effective_subscription_tier }
         }`,
         { id: userId },
       );
-      const tierCode = profile.profiles_by_pk?.subscription_tier ?? "free";
+      const tierCode = profile.profiles_by_pk?.effective_subscription_tier ?? "free";
       const data = await staffGql<{
         periods: Array<{
           user_id: string;
