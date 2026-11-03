@@ -8,14 +8,30 @@ import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 type Policy = {
   tierCode: string;
   monthlyTokenLimit: number | null;
-  dailyBurstLimit: number | null;
+  weeklyTokenLimit: number | null;
+  hourlyBurstLimit: number | null;
   maxTurnTokens: number;
   minTurnTokens: number;
 };
 type LimitsResponse = { success?: boolean; policies?: Policy[]; error?: string };
-type Draft = { monthly?: string; burst?: string };
+type Field = "monthly" | "weekly" | "hourly";
+type Draft = Partial<Record<Field, string>>;
 
 const EDITABLE = ["premium"] as const;
+
+const FIELDS: { field: Field; key: keyof Policy; label: string; aria: string }[] = [
+  { field: "monthly", key: "monthlyTokenLimit", label: "Tokens per 30-day cycle (empty = no Coach model)", aria: "tokens per cycle" },
+  { field: "weekly", key: "weeklyTokenLimit", label: "Tokens per rolling 7 days (empty = no weekly cap)", aria: "tokens per week" },
+  { field: "hourly", key: "hourlyBurstLimit", label: "Tokens per rolling 60 minutes (empty = no hourly cap)", aria: "tokens per hour" },
+];
+
+/** Empty → null; otherwise a whole number ≥ 0, or undefined when the text is not one. */
+function parseLimit(text: string): number | null | undefined {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  return Number(trimmed);
+}
 
 export default function CoachTokenLimitPage() {
   const isAdmin = useIsAdmin();
@@ -39,18 +55,25 @@ function CoachTokenLimitEditor() {
 
   const policies = data?.policies ?? [];
 
-  async function onSave(event: FormEvent, tierCode: string, monthly: string, burst: string) {
+  async function onSave(event: FormEvent, tierCode: string, values: Record<Field, string>) {
     event.preventDefault();
+    const monthly = parseLimit(values.monthly);
+    const weekly = parseLimit(values.weekly);
+    const hourly = parseLimit(values.hourly);
+    if (monthly === undefined || weekly === undefined || hourly === undefined) {
+      setMessage("Limits are whole numbers ≥ 0, or empty.");
+      return;
+    }
     setSaving(tierCode);
     setMessage(null);
     try {
       await staffFetch("/api/coach/token-limit", {
         method: "POST",
-        // An empty daily cap means "no cap" (null).
         body: JSON.stringify({
           tierCode,
-          monthlyTokenLimit: Number(monthly),
-          dailyBurstLimit: burst.trim() === "" ? null : Number(burst),
+          monthlyTokenLimit: monthly,
+          weeklyTokenLimit: weekly,
+          hourlyBurstLimit: hourly,
         }),
       });
       setDrafts((current) => {
@@ -73,8 +96,9 @@ function CoachTokenLimitEditor() {
         <h1 className="text-lg font-semibold">Coach token budget</h1>
         <p className="mt-1 text-sm text-zinc-600">
           Tokens (input + output + embeddings) a paid plan can spend on the Coach. The budget is per 30-day cycle that
-          starts at the purchase; the daily cap keeps a user from spending the whole cycle in one UTC day. Freemium has
-          no budget and never calls the model.
+          starts at the purchase; the weekly and hourly caps count the last 7 days and the last 60 minutes, so a user
+          cannot spend the whole cycle at once. A message needs every limit to have room. Freemium has no budget and
+          never calls the model.
         </p>
       </div>
       {isLoading && <p className="text-sm text-zinc-500">Loading…</p>}
@@ -83,40 +107,39 @@ function CoachTokenLimitEditor() {
       {EDITABLE.map((tierCode) => {
         const current = policies.find((policy) => policy.tierCode === tierCode);
         const draft = drafts[tierCode] ?? {};
-        const monthly = draft.monthly ?? (current?.monthlyTokenLimit == null ? "" : String(current.monthlyTokenLimit));
-        const burst = draft.burst ?? (current?.dailyBurstLimit == null ? "" : String(current.dailyBurstLimit));
-        const setField = (field: keyof Draft, value: string) =>
+        const valueOf = (field: Field, key: keyof Policy) => {
+          const stored = current?.[key];
+          return draft[field] ?? (stored == null ? "" : String(stored));
+        };
+        const values = Object.fromEntries(FIELDS.map(({ field, key }) => [field, valueOf(field, key)])) as Record<
+          Field,
+          string
+        >;
+        const setField = (field: Field, value: string) =>
           setDrafts((currentDrafts) => ({ ...currentDrafts, [tierCode]: { ...currentDrafts[tierCode], [field]: value } }));
         return (
           <Card key={tierCode}>
-            <form className="flex flex-col gap-3" onSubmit={(event) => onSave(event, tierCode, monthly, burst)}>
+            <form className="flex flex-col gap-3" onSubmit={(event) => onSave(event, tierCode, values)}>
               <h2 className="font-medium capitalize">{tierCode.replace("_", " ")}</h2>
-              <label className="flex flex-col gap-1 text-xs text-zinc-500">
-                Tokens per 30-day cycle
-                <Input
-                  inputMode="numeric"
-                  value={monthly}
-                  onChange={(event) => setField("monthly", event.target.value)}
-                  aria-label={`${tierCode} tokens per cycle`}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-zinc-500">
-                Tokens per UTC day (empty = no daily cap)
-                <Input
-                  inputMode="numeric"
-                  value={burst}
-                  onChange={(event) => setField("burst", event.target.value)}
-                  aria-label={`${tierCode} tokens per day`}
-                />
-              </label>
+              {FIELDS.map(({ field, label, aria }) => (
+                <label key={field} className="flex flex-col gap-1 text-xs text-zinc-500">
+                  {label}
+                  <Input
+                    inputMode="numeric"
+                    value={values[field]}
+                    onChange={(event) => setField(field, event.target.value)}
+                    aria-label={`${tierCode} ${aria}`}
+                  />
+                </label>
+              ))}
               {current && (
                 <p className="text-xs text-zinc-500">
                   One message holds up to {current.maxTurnTokens.toLocaleString()} tokens; a new one is refused below{" "}
-                  {current.minTurnTokens.toLocaleString()} left (set in SQL).
+                  {current.minTurnTokens.toLocaleString()} left in the cycle, the week or the hour (set in SQL).
                 </p>
               )}
               <div>
-                <Button type="submit" disabled={saving === tierCode || monthly.trim() === ""}>
+                <Button type="submit" disabled={saving === tierCode}>
                   {saving === tierCode ? "Saving…" : "Save"}
                 </Button>
               </div>

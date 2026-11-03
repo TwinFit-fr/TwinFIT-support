@@ -29,6 +29,7 @@ import { useIsAdmin } from "@/hooks/use-is-staff";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { formatDate, formatDuration } from "@/lib/support/format";
 import type {
+  SupportUserCoachQuota,
   SupportUserLookup,
   SupportUserSectionData,
 } from "@/lib/support/types";
@@ -769,7 +770,7 @@ export default function SupportUserPage() {
             <SectionHeader
               icon={<MessageSquare className="h-5 w-5" />}
               title="Coach usage"
-              subtitle="30-day token cycles (read-only)"
+              subtitle="30-day cycles, weekly and hourly limits (read-only)"
               badge={
                 sectionData?.section === "coach" ? sectionData.tierCode : undefined
               }
@@ -798,10 +799,12 @@ function CoachUsagePanel({
       return start <= now && now < end;
     }) ?? null;
   const openSpent = openPeriod ? periodSpent(openPeriod) : 0;
+  const quota = data.quota;
+  const llmEnabled = quota ? quota.llm_enabled : data.monthlyTokenLimit != null;
 
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <QuickStat
           label="Period used"
           value={
@@ -811,20 +814,40 @@ function CoachUsagePanel({
           }
         />
         <QuickStat
-          label="Period %"
-          value={formatPercent(openSpent, data.monthlyTokenLimit)}
-        />
-        <QuickStat
-          label="Daily burst limit"
+          label="Period left"
           value={
-            data.dailyBurstLimit == null ? "No cap" : formatTokens(data.dailyBurstLimit)
+            data.monthlyTokenLimit == null
+              ? "No LLM"
+              : formatTokens(Math.max(0, data.monthlyTokenLimit - openSpent))
+          }
+          hint={
+            data.monthlyTokenLimit == null
+              ? undefined
+              : `${formatPercent(openSpent, data.monthlyTokenLimit)} used`
           }
         />
         <QuickStat
-          label="Daily % (UTC)"
-          value="—"
-          hint="Needs staff read of today’s turns (backend)."
+          label="Period ends"
+          value={openPeriod ? formatDate(openPeriod.period_end) : "—"}
+          hint={openPeriod ? undefined : "No open cycle; the next message starts one."}
         />
+        <RollingLimitStat
+          label="Week used"
+          span="Rolling 7 days"
+          limit={quota ? quota.week_limit : data.weeklyTokenLimit}
+          used={quota?.week_used ?? null}
+          remaining={quota?.week_remaining ?? null}
+          llmEnabled={llmEnabled}
+        />
+        <RollingLimitStat
+          label="Hour used"
+          span="Rolling 60 minutes"
+          limit={quota ? quota.hour_limit : data.hourlyBurstLimit}
+          used={quota?.hour_used ?? null}
+          remaining={quota?.hour_remaining ?? null}
+          llmEnabled={llmEnabled}
+        />
+        <BindingLimitStat quota={quota} llmEnabled={llmEnabled} />
       </div>
       <SupportSectionTable
         columns={[
@@ -912,6 +935,63 @@ function QuickStat({
       <p className="mt-1 text-lg font-semibold text-zinc-900">{value}</p>
       {hint && <p className="mt-1 text-[11px] text-zinc-400">{hint}</p>}
     </div>
+  );
+}
+
+/** Week / hour usage from the user's quota; "—" used when the backend has no quota row. */
+function RollingLimitStat({
+  label,
+  span,
+  limit,
+  used,
+  remaining,
+  llmEnabled,
+}: {
+  label: string;
+  span: string;
+  limit: number | null;
+  used: number | null;
+  remaining: number | null;
+  llmEnabled: boolean;
+}) {
+  if (!llmEnabled) return <QuickStat label={label} value="No LLM" />;
+  if (limit == null) return <QuickStat label={label} value="No cap" hint={span} />;
+  if (used == null) {
+    return <QuickStat label={label} value={`— / ${formatTokens(limit)}`} hint={`${span}. No quota for this user.`} />;
+  }
+  return (
+    <QuickStat
+      label={label}
+      value={`${formatTokens(used)} / ${formatTokens(limit)}`}
+      hint={remaining == null ? span : `${formatTokens(remaining)} left · ${span.toLowerCase()}`}
+    />
+  );
+}
+
+const SCOPE_LABEL: Record<NonNullable<SupportUserCoachQuota["scope"]>, string> = {
+  period: "Period",
+  week: "Week",
+  hour: "Hour",
+};
+
+/** The limit that binds now (`scope`), what is left of it and when it frees up (`resets_at`). */
+function BindingLimitStat({
+  quota,
+  llmEnabled,
+}: {
+  quota: SupportUserCoachQuota | null;
+  llmEnabled: boolean;
+}) {
+  const label = "Binding limit";
+  if (!llmEnabled) return <QuickStat label={label} value="No LLM" />;
+  if (!quota || !quota.scope) return <QuickStat label={label} value="—" hint="No quota for this user." />;
+  const left = quota.remaining == null ? "" : ` · ${formatTokens(Math.max(0, quota.remaining))} left`;
+  return (
+    <QuickStat
+      label={label}
+      value={`${SCOPE_LABEL[quota.scope]}${left}`}
+      hint={quota.resets_at ? `Frees up ${formatDate(quota.resets_at)}` : undefined}
+    />
   );
 }
 

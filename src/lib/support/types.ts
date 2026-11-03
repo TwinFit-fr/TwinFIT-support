@@ -146,6 +146,27 @@ export type SupportUserCoachPeriodRow = {
   reserved_tokens: number;
 };
 
+/** The user's Coach budget as the backend computes it (`assistant_user_quota`, same snapshot as `my_quota`). */
+export type SupportUserCoachQuota = {
+  llm_enabled: boolean;
+  period_limit: number | null;
+  period_used: number | null;
+  period_remaining: number | null;
+  /** Rolling 7 days; null when the tier has no weekly cap. */
+  week_limit: number | null;
+  week_used: number | null;
+  week_remaining: number | null;
+  /** Rolling 60 minutes; null when the tier has no hourly cap. */
+  hour_limit: number | null;
+  hour_used: number | null;
+  hour_remaining: number | null;
+  /** Smallest remaining, minus the open hold. */
+  remaining: number | null;
+  /** The limit `remaining` comes from. */
+  scope: "period" | "week" | "hour" | null;
+  resets_at: string | null;
+};
+
 export type SupportUserSection =
   | "sessions"
   | "templates"
@@ -162,7 +183,10 @@ export type SupportUserSectionData =
       section: "coach";
       tierCode: string;
       monthlyTokenLimit: number | null;
-      dailyBurstLimit: number | null;
+      weeklyTokenLimit: number | null;
+      hourlyBurstLimit: number | null;
+      /** Null when the backend returns no row for the user. */
+      quota: SupportUserCoachQuota | null;
       periods: SupportUserCoachPeriodRow[];
     };
 

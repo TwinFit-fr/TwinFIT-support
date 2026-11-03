@@ -66,8 +66,8 @@ export default function CoachTiersPage() {
       <div>
         <h1 className="text-lg font-semibold">Coach tier policies</h1>
         <p className="mt-1 text-sm text-zinc-600">
-          Staff can edit capabilities. Token budgets are read-only here; admins change monthly and
-          daily limits under Token budget.
+          Staff can edit capabilities. Token budgets are read-only here; admins change the monthly,
+          weekly and hourly limits under Token budget.
         </p>
       </div>
 
@@ -137,8 +137,12 @@ export default function CoachTiersPage() {
                     <dd>{policy.monthly_token_limit ?? "null (no LLM)"}</dd>
                   </div>
                   <div>
-                    <dt className="font-medium text-zinc-500">Daily burst limit</dt>
-                    <dd>{policy.daily_burst_limit ?? "null (no cap)"}</dd>
+                    <dt className="font-medium text-zinc-500">Weekly token limit (rolling 7 days)</dt>
+                    <dd>{policy.weekly_token_limit ?? "null (no cap)"}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-medium text-zinc-500">Hourly burst limit (rolling 60 min)</dt>
+                    <dd>{policy.hourly_burst_limit ?? "null (no cap)"}</dd>
                   </div>
                   <div>
                     <dt className="font-medium text-zinc-500">Max turn tokens</dt>
