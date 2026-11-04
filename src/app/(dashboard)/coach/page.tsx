@@ -19,18 +19,23 @@ type Draft = Partial<Record<Field, string>>;
 
 const EDITABLE = ["premium"] as const;
 
-const FIELDS: { field: Field; key: keyof Policy; label: string; aria: string }[] = [
-  { field: "monthly", key: "monthlyTokenLimit", label: "Tokens per 30-day cycle (empty = no Coach model)", aria: "tokens per cycle" },
-  { field: "weekly", key: "weeklyTokenLimit", label: "Tokens per rolling 7 days (empty = no weekly cap)", aria: "tokens per week" },
-  { field: "hourly", key: "hourlyBurstLimit", label: "Tokens per rolling 60 minutes (empty = no hourly cap)", aria: "tokens per hour" },
+/**
+ * Bounds of `admin-set-coach-token-limit` (API_FUNCTIONS_CONTRACT). The cycle budget cannot be null
+ * there (null = no Coach model is set in SQL); the weekly and hourly caps can (null = no cap).
+ */
+const FIELDS: { field: Field; key: keyof Policy; label: string; aria: string; max: number; nullable: boolean }[] = [
+  { field: "monthly", key: "monthlyTokenLimit", label: "Tokens per 30-day cycle", aria: "tokens per cycle", max: 100_000_000, nullable: false },
+  { field: "weekly", key: "weeklyTokenLimit", label: "Tokens per rolling 7 days (empty = no weekly cap)", aria: "tokens per week", max: 100_000_000, nullable: true },
+  { field: "hourly", key: "hourlyBurstLimit", label: "Tokens per rolling 60 minutes (empty = no hourly cap)", aria: "tokens per hour", max: 10_000_000, nullable: true },
 ];
 
-/** Empty → null; otherwise a whole number ≥ 0, or undefined when the text is not one. */
-function parseLimit(text: string): number | null | undefined {
+/** Empty → null when the field allows it; otherwise a whole number in [0, max], or undefined when it is not one. */
+function parseLimit(text: string, max: number, nullable: boolean): number | null | undefined {
   const trimmed = text.trim();
-  if (trimmed === "") return null;
+  if (trimmed === "") return nullable ? null : undefined;
   if (!/^\d+$/.test(trimmed)) return undefined;
-  return Number(trimmed);
+  const value = Number(trimmed);
+  return value <= max ? value : undefined;
 }
 
 export default function CoachTokenLimitPage() {
@@ -57,13 +62,17 @@ function CoachTokenLimitEditor() {
 
   async function onSave(event: FormEvent, tierCode: string, values: Record<Field, string>) {
     event.preventDefault();
-    const monthly = parseLimit(values.monthly);
-    const weekly = parseLimit(values.weekly);
-    const hourly = parseLimit(values.hourly);
-    if (monthly === undefined || weekly === undefined || hourly === undefined) {
-      setMessage("Limits are whole numbers ≥ 0, or empty.");
-      return;
+    const parsed = {} as Record<Field, number | null>;
+    for (const { field, aria, max, nullable } of FIELDS) {
+      const value = parseLimit(values[field], max, nullable);
+      if (value === undefined) {
+        const name = aria.charAt(0).toUpperCase() + aria.slice(1);
+        setMessage(`${name}: a whole number from 0 to ${max.toLocaleString()}${nullable ? ", or empty" : ""}.`);
+        return;
+      }
+      parsed[field] = value;
     }
+    const { monthly, weekly, hourly } = parsed;
     setSaving(tierCode);
     setMessage(null);
     try {
