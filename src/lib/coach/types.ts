@@ -37,7 +37,8 @@ export type PromptVersion = {
 export type TierPolicy = {
   tier_code: string;
   monthly_token_limit: number | null;
-  daily_burst_limit: number | null;
+  weekly_token_limit: number | null;
+  hourly_burst_limit: number | null;
   max_turn_tokens: number;
   min_turn_tokens: number;
   personal_data_enabled: boolean;

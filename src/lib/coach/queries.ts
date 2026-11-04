@@ -81,7 +81,7 @@ export async function listTierPolicies(token: string): Promise<TierPolicy[]> {
     token,
     `query {
       assistant_tier_policies(order_by: { tier_code: asc }) {
-        tier_code monthly_token_limit daily_burst_limit max_turn_tokens min_turn_tokens
+        tier_code monthly_token_limit weekly_token_limit hourly_burst_limit max_turn_tokens min_turn_tokens
         personal_data_enabled plan_builder_enabled max_tool_rounds updated_at
       }
     }`,
@@ -102,7 +102,7 @@ export async function updateTierCapabilities(
     token,
     `mutation($tier_code: String!, $set: assistant_tier_policies_set_input!) {
       update_assistant_tier_policies_by_pk(pk_columns: { tier_code: $tier_code }, _set: $set) {
-        tier_code monthly_token_limit daily_burst_limit max_turn_tokens min_turn_tokens
+        tier_code monthly_token_limit weekly_token_limit hourly_burst_limit max_turn_tokens min_turn_tokens
         personal_data_enabled plan_builder_enabled max_tool_rounds updated_at
       }
     }`,

@@ -20,12 +20,18 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       tierCode?: string;
       monthlyTokenLimit?: number;
-      dailyBurstLimit?: number | null;
+      weeklyTokenLimit?: number | null;
+      hourlyBurstLimit?: number | null;
     };
+    // The cycle budget is an integer ≥ 0 (the Function refuses null); the weekly and hourly caps are an
+    // integer ≥ 0 or null (no cap). The Function checks the bounds. A limit left undefined is dropped by
+    // JSON.stringify, so only the limits being set are sent. `dailyBurstLimit` is never forwarded: backend
+    // 2.1.0 refuses a body that carries it.
     const result = await callStaffFunction(token, "admin-set-coach-token-limit", {
       tierCode: body.tierCode,
       monthlyTokenLimit: body.monthlyTokenLimit,
-      dailyBurstLimit: body.dailyBurstLimit,
+      weeklyTokenLimit: body.weeklyTokenLimit,
+      hourlyBurstLimit: body.hourlyBurstLimit,
     });
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {

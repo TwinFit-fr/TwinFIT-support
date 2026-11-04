@@ -2,6 +2,7 @@ import { staffGql } from "@/lib/staff-gql";
 import type {
   SupportManualGrant,
   SupportSubscriptionTier,
+  SupportUserCoachQuota,
   SupportUserLookup,
   SupportUserSearchHit,
   SupportUserSection,
@@ -387,6 +388,34 @@ export async function lookupUser(
   return lookupUserByUsername(accessToken, trimmed);
 }
 
+/** bigint token counts may arrive as JSON strings; null stays null (no cap). */
+function toCount(value: unknown): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** First row of `assistant_user_quota`, or null when the backend has no row for the user. */
+function toCoachQuota(row: Record<keyof SupportUserCoachQuota, unknown> | undefined): SupportUserCoachQuota | null {
+  if (!row) return null;
+  const scope = row.scope === "period" || row.scope === "week" || row.scope === "hour" ? row.scope : null;
+  return {
+    llm_enabled: row.llm_enabled === true,
+    period_limit: toCount(row.period_limit),
+    period_used: toCount(row.period_used),
+    period_remaining: toCount(row.period_remaining),
+    week_limit: toCount(row.week_limit),
+    week_used: toCount(row.week_used),
+    week_remaining: toCount(row.week_remaining),
+    hour_limit: toCount(row.hour_limit),
+    hour_used: toCount(row.hour_used),
+    hour_remaining: toCount(row.hour_remaining),
+    remaining: toCount(row.remaining),
+    scope,
+    resets_at: typeof row.resets_at === "string" ? row.resets_at : null,
+  };
+}
+
 export async function fetchUserSection(
   accessToken: string,
   userId: string,
@@ -567,8 +596,10 @@ export async function fetchUserSection(
         }>;
         policy: {
           monthly_token_limit: number | null;
-          daily_burst_limit: number | null;
+          weekly_token_limit: number | null;
+          hourly_burst_limit: number | null;
         } | null;
+        quota: Array<Record<keyof SupportUserCoachQuota, unknown>>;
       }>(
         accessToken,
         `query SupportUserCoach($id: uuid!, $tier: String!) {
@@ -587,7 +618,15 @@ export async function fetchUserSection(
           }
           policy: assistant_tier_policies_by_pk(tier_code: $tier) {
             monthly_token_limit
-            daily_burst_limit
+            weekly_token_limit
+            hourly_burst_limit
+          }
+          quota: assistant_user_quota(args: { p_user_id: $id }) {
+            llm_enabled
+            period_limit period_used period_remaining
+            week_limit week_used week_remaining
+            hour_limit hour_used hour_remaining
+            remaining scope resets_at
           }
         }`,
         { id: userId, tier: tierCode },
@@ -596,7 +635,9 @@ export async function fetchUserSection(
         section: "coach",
         tierCode,
         monthlyTokenLimit: data.policy?.monthly_token_limit ?? null,
-        dailyBurstLimit: data.policy?.daily_burst_limit ?? null,
+        weeklyTokenLimit: data.policy?.weekly_token_limit ?? null,
+        hourlyBurstLimit: data.policy?.hourly_burst_limit ?? null,
+        quota: toCoachQuota(data.quota?.[0]),
         periods: data.periods,
       };
     }
