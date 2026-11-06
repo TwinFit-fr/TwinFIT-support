@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { AvatarSocket, EquipmentItem, VectorFormat, VectorStatus } from "./types";
+import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, VectorFormat, VectorStatus } from "./types";
 
 export type CameraPreset = "front" | "three-quarter" | "side";
 
@@ -61,10 +61,14 @@ function sameItems(a: EquipmentItem[], b: EquipmentItem[]): boolean {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
+function sameModels(a: ActiveEquipmentModels, b: ActiveEquipmentModels): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
  * Workspace state shared by the three panes. Components subscribe to slices with selectors, so
  * typing in the inspector, scrolling the catalog or a queue refresh never re-renders the 3D
- * canvas: it listens to `scene`, `previewItems` and the view toggles only, and reads the
+ * canvas: it listens to `scene`, `previewItems`, `equipmentModels` and the view toggles only, and reads the
  * playback controls imperatively inside its frame loop.
  */
 export type StudioState = {
@@ -74,6 +78,8 @@ export type StudioState = {
   scene: SceneSource;
   /** Equipment items the inspector is editing, drawn live on the avatar. */
   previewItems: EquipmentItem[];
+  /** The generated model per `kind:code` (active rows); items without one are drawn as proxies. */
+  equipmentModels: ActiveEquipmentModels;
   playing: boolean;
   speed: number;
   showGrid: boolean;
@@ -87,6 +93,7 @@ export type StudioState = {
   setVector: (vectorId: string | null) => void;
   setScene: (scene: SceneSource) => void;
   setPreviewItems: (items: EquipmentItem[]) => void;
+  setEquipmentModels: (models: ActiveEquipmentModels) => void;
   togglePlaying: () => void;
   setSpeed: (speed: number) => void;
   toggleGrid: () => void;
@@ -101,6 +108,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   vectorId: null,
   scene: EMPTY_SCENE,
   previewItems: [],
+  equipmentModels: {},
   playing: true,
   speed: 1,
   showGrid: true,
@@ -115,6 +123,8 @@ export const useStudioStore = create<StudioState>((set) => ({
   setScene: (scene) => set((s) => (sameScene(s.scene, scene) ? s : { scene })),
   setPreviewItems: (previewItems) =>
     set((s) => (sameItems(s.previewItems, previewItems) ? s : { previewItems })),
+  setEquipmentModels: (equipmentModels) =>
+    set((s) => (sameModels(s.equipmentModels, equipmentModels) ? s : { equipmentModels })),
   togglePlaying: () => set((s) => ({ playing: !s.playing })),
   setSpeed: (speed) => set({ speed }),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),

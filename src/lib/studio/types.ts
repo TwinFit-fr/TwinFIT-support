@@ -1,10 +1,12 @@
-/** Nhost Storage bucket of the 3D Studio (avatars and movement clips). */
+/** Nhost Storage bucket of the 3D Studio (avatars, equipment models and movement clips). */
 export const STUDIO_BUCKET = "3d-workspace";
 
 export type VectorStatus = "pending" | "processing" | "ready" | "error";
 export type VectorFormat = "glb" | "gltf" | "bvh" | "json";
 export type AvatarSubject = "neutral" | "man" | "woman";
 export type AvatarRig = "mixamo" | "vrm" | "custom";
+export type EquipmentKind = "load" | "support";
+export type EquipmentProvider = "meshy" | "upload";
 
 export const VECTOR_FORMATS: readonly VectorFormat[] = ["glb", "gltf", "bvh", "json"];
 export const AVATAR_SUBJECTS: readonly AvatarSubject[] = ["neutral", "man", "woman"];
@@ -26,6 +28,8 @@ export type EquipmentItem = {
   kind: "load" | "support";
   code: string;
   socket?: string;
+  /** Second socket when both hands hold the item (a barbell): it sits between the two, long axis from one to the other. */
+  socket_b?: string;
   count?: number;
   weight_kg?: number;
   model_url?: string;
@@ -86,6 +90,60 @@ export type MovementVector = {
   finished_at: string | null;
   updated_at: string;
   avatar: { id: string; code: string; subject: AvatarSubject } | null;
+};
+
+/** How the viewer places a generated equipment model (animation_studio.equipment_models.params). */
+export type EquipmentPlacement = {
+  /** Longest dimension in metres the model is scaled to. */
+  size_m: number;
+  offset?: Vec3;
+  /** Euler degrees. */
+  rotation?: Vec3;
+};
+
+export type EquipmentModel = {
+  id: string;
+  kind: EquipmentKind;
+  code: string;
+  name: string;
+  provider: EquipmentProvider;
+  task_id: string | null;
+  source_image_url: string | null;
+  prompt: string | null;
+  status: VectorStatus;
+  progress: number;
+  error: string | null;
+  file_id: string | null;
+  model_url: string | null;
+  thumbnail_file_id: string | null;
+  thumbnail_url: string | null;
+  params: Record<string, unknown>;
+  usage: Record<string, unknown> | null;
+  active: boolean;
+  inserted_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+};
+
+/** A catalog implement or support with its reference image and the models generated for it. */
+export type StudioEquipment = {
+  kind: EquipmentKind;
+  code: string;
+  name: string;
+  description: string | null;
+  reference_image_url: string | null;
+  models: EquipmentModel[];
+};
+
+/** The model the viewer draws per `${kind}:${code}` (see equipmentKey). */
+export type ActiveEquipmentModels = Record<string, { url: string; placement: EquipmentPlacement }>;
+
+export type MeshyCredits = {
+  balance: number;
+  monthly_credits: number;
+  permanent_credits: number;
+  monthly_resets_at: number | null;
 };
 
 export type StudioSettings = {

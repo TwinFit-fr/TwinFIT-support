@@ -8,6 +8,7 @@ const equipmentItem = z.object({
   kind: z.enum(["load", "support"]),
   code: z.string().trim().min(1).max(64),
   socket: z.string().trim().min(1).max(64).optional(),
+  socket_b: z.string().trim().min(1).max(64).optional(),
   count: z.number().int().min(1).max(20).optional(),
   weight_kg: z.number().min(0).max(1000).optional(),
   model_url: z.string().url().optional(),

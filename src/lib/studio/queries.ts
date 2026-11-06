@@ -1,7 +1,15 @@
 import { staffGql } from "@/lib/staff-gql";
 import {
+  STUDIO_ACTIVATE_EQUIPMENT_MODEL,
   STUDIO_ACTIVATE_VECTOR,
   STUDIO_AVATARS,
+  STUDIO_CLAIM_EQUIPMENT_FINISH,
+  STUDIO_CREATE_EQUIPMENT_MODEL,
+  STUDIO_DELETE_EQUIPMENT_MODEL,
+  STUDIO_EQUIPMENT,
+  STUDIO_EQUIPMENT_MODEL,
+  STUDIO_EQUIPMENT_PROCESSING,
+  STUDIO_UPDATE_EQUIPMENT_MODEL,
   STUDIO_CATALOG,
   STUDIO_CREATE_AVATAR,
   STUDIO_CREATE_DEFAULT_AVATAR,
@@ -14,7 +22,11 @@ import {
 } from "./graphql";
 import type {
   BaseAvatar,
+  EquipmentKind,
+  EquipmentModel,
+  EquipmentProvider,
   MovementVector,
+  StudioEquipment,
   NewAvatarInput,
   NewVectorInput,
   StudioExercise,
@@ -168,4 +180,135 @@ export async function deleteVector(token: string, id: string): Promise<{ id: str
     { id },
   );
   return data.delete_animation_studio_movement_vectors_by_pk;
+}
+
+// ---------------------------------------------------------------------------
+// Equipment models
+// ---------------------------------------------------------------------------
+
+type RawCatalogEquipment = { code: string; name: string; description: string | null };
+
+/** Catalog implements and supports with their reference image and models, in catalog order. */
+export async function listEquipment(token: string): Promise<StudioEquipment[]> {
+  const data = await staffGql<{
+    catalog_equipment: RawCatalogEquipment[];
+    catalog_support_equipment: RawCatalogEquipment[];
+    images_equipment_images: { kind: EquipmentKind; code: string; image_url: string }[];
+    animation_studio_equipment_models: EquipmentModel[];
+  }>(token, STUDIO_EQUIPMENT);
+
+  const refs = new Map(data.images_equipment_images.map((r) => [`${r.kind}:${r.code}`, r.image_url]));
+  const models = new Map<string, EquipmentModel[]>();
+  for (const m of data.animation_studio_equipment_models) {
+    const key = `${m.kind}:${m.code}`;
+    models.set(key, [...(models.get(key) ?? []), m]);
+  }
+  const entry = (kind: EquipmentKind) => (row: RawCatalogEquipment): StudioEquipment => ({
+    kind,
+    code: row.code,
+    name: row.name,
+    description: row.description,
+    reference_image_url: refs.get(`${kind}:${row.code}`) ?? null,
+    models: models.get(`${kind}:${row.code}`) ?? [],
+  });
+  return [...data.catalog_equipment.map(entry("load")), ...data.catalog_support_equipment.map(entry("support"))];
+}
+
+export async function getEquipmentModel(token: string, id: string): Promise<EquipmentModel | null> {
+  const data = await staffGql<{ animation_studio_equipment_models_by_pk: EquipmentModel | null }>(
+    token,
+    STUDIO_EQUIPMENT_MODEL,
+    { id },
+  );
+  return data.animation_studio_equipment_models_by_pk;
+}
+
+export async function listProcessingEquipmentModels(token: string): Promise<EquipmentModel[]> {
+  const data = await staffGql<{ animation_studio_equipment_models: EquipmentModel[] }>(
+    token,
+    STUDIO_EQUIPMENT_PROCESSING,
+  );
+  return data.animation_studio_equipment_models;
+}
+
+export type NewEquipmentModelInput = {
+  kind: EquipmentKind;
+  code: string;
+  name: string;
+  provider: EquipmentProvider;
+  task_id?: string | null;
+  source_image_url?: string | null;
+  prompt?: string | null;
+  status?: VectorStatus;
+  params: Record<string, unknown>;
+};
+
+export async function createEquipmentModel(token: string, input: NewEquipmentModelInput): Promise<EquipmentModel> {
+  const data = await staffGql<{ insert_animation_studio_equipment_models_one: EquipmentModel }>(
+    token,
+    STUDIO_CREATE_EQUIPMENT_MODEL,
+    { object: input },
+  );
+  return data.insert_animation_studio_equipment_models_one;
+}
+
+export type EquipmentModelPatch = Partial<{
+  name: string;
+  task_id: string | null;
+  source_image_url: string | null;
+  prompt: string | null;
+  status: VectorStatus;
+  progress: number;
+  error: string | null;
+  file_id: string | null;
+  model_url: string | null;
+  thumbnail_file_id: string | null;
+  thumbnail_url: string | null;
+  params: Record<string, unknown>;
+  usage: Record<string, unknown> | null;
+  active: boolean;
+}>;
+
+export async function updateEquipmentModel(token: string, id: string, set: EquipmentModelPatch): Promise<EquipmentModel> {
+  const data = await staffGql<{ update_animation_studio_equipment_models_by_pk: EquipmentModel | null }>(
+    token,
+    STUDIO_UPDATE_EQUIPMENT_MODEL,
+    { id, set },
+  );
+  const row = data.update_animation_studio_equipment_models_by_pk;
+  if (!row) throw new Error("Equipment model not found");
+  return row;
+}
+
+/** True when this request won the right to finish the task (see STUDIO_CLAIM_EQUIPMENT_FINISH). */
+export async function claimEquipmentFinish(token: string, id: string): Promise<boolean> {
+  const data = await staffGql<{ update_animation_studio_equipment_models: { affected_rows: number } }>(
+    token,
+    STUDIO_CLAIM_EQUIPMENT_FINISH,
+    { id },
+  );
+  return data.update_animation_studio_equipment_models.affected_rows === 1;
+}
+
+export async function activateEquipmentModel(
+  token: string,
+  model: Pick<EquipmentModel, "id" | "kind" | "code">,
+): Promise<EquipmentModel> {
+  const data = await staffGql<{ set: EquipmentModel | null }>(token, STUDIO_ACTIVATE_EQUIPMENT_MODEL, {
+    id: model.id,
+    kind: model.kind,
+    code: model.code,
+  });
+  if (!data.set) throw new Error("Equipment model not found");
+  return data.set;
+}
+
+export async function deleteEquipmentModel(
+  token: string,
+  id: string,
+): Promise<{ id: string; file_id: string | null; thumbnail_file_id: string | null } | null> {
+  const data = await staffGql<{
+    delete_animation_studio_equipment_models_by_pk: { id: string; file_id: string | null; thumbnail_file_id: string | null } | null;
+  }>(token, STUDIO_DELETE_EQUIPMENT_MODEL, { id });
+  return data.delete_animation_studio_equipment_models_by_pk;
 }
