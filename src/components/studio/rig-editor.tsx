@@ -96,7 +96,7 @@ export function RigEditor({ avatar, onSaved }: { avatar: BaseAvatar | null; onSa
 
   if (edit.mode === "off") {
     return (
-      <div className="pointer-events-none absolute left-3 top-3 z-10">
+      <div className="pointer-events-none absolute right-4 top-12 z-10">
         <M3Button
           size="sm"
           variant="tonal"
@@ -112,7 +112,7 @@ export function RigEditor({ avatar, onSaved }: { avatar: BaseAvatar | null; onSa
   }
 
   return (
-    <div className="studio-glass absolute left-3 top-3 z-10 w-[300px] rounded-2xl p-3 text-xs shadow-xl">
+    <div className="studio-glass studio-scroll absolute right-4 top-12 z-10 max-h-[calc(100%-8rem)] w-[300px] overflow-y-auto rounded-2xl p-3 text-xs shadow-xl">
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1.5 font-semibold tracking-tight">
           <Move3d className="h-3.5 w-3.5 text-(--m3-primary)" /> Rig editor

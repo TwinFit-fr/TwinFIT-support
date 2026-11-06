@@ -23,7 +23,8 @@ Conventions (degrees; the avatar faces +Z, its left is +X):
 - Elbows: 0 straight, 90 right angle. Knees: 0 straight, 90 right angle, 120-130 a deep squat. Hip flexion: 0 standing tall, 90 thigh horizontal, 110-120 a deep squat; in a hinge the hip flexion equals the hips.pitch (thighs stay near vertical).
 - Ankle dorsiflexion rises with knee flexion while standing (about 0.2 x knee flexion).
 - Read the angles the text gives; interpolate sensibly when it gives a range; when a joint is not mentioned keep it near neutral and consistent with the frame. Use the same values for both sides unless the text describes an asymmetry (lunges, single-arm rows, side planks).
-- Frames must be physically consistent with each other: the same orientation across the three frames unless the movement itself changes it.`;
+- Frames must be physically consistent with each other: the same orientation across the three frames unless the movement itself changes it.
+- implement: when the message says the exercise uses a two-handed implement, give its centre (height above the floor, forward of the standing midline) and the grip width in EVERY frame, read from the text ("bar at mid-thigh", "bar over mid-foot", "locked out overhead", "at the shoulders") and scaled to the avatar height; the arms are then solved to reach it, so make the implement position the truthful one and let the shoulder / elbow angles be approximate. Otherwise implement is null.`;
 
 export type PoseSetResult = { poses: PoseAngles[]; notes: string; usage: Record<string, unknown> };
 
@@ -34,6 +35,10 @@ export async function extractPoseAngles(input: {
   equipment: string;
   avatarHeightM: number | null;
   poses: { position: number; pose: string }[];
+  /** The exercise's load is held with both hands (a barbell, a plate): ask for the implement position. */
+  twoHanded: boolean;
+  /** Catalog grip code (STANDARD, WIDE, NARROW, UNDERHAND, HAMMER, MIXED). */
+  grip: string | null;
 }): Promise<PoseSetResult> {
   const model = input.model?.trim() || DEFAULT_POSE_LLM_MODEL;
   const frames = [...input.poses]
@@ -43,6 +48,9 @@ export async function extractPoseAngles(input: {
   const user = [
     `Exercise: ${input.exerciseName}`,
     `Equipment: ${input.equipment}`,
+    input.twoHanded
+      ? `The load is a two-handed implement held in both hands${input.grip ? ` with a ${input.grip.toLowerCase()} grip` : ""}: fill "implement" in every frame.`
+      : `No two-handed implement: "implement" is null.`,
     input.avatarHeightM ? `Avatar height: ${input.avatarHeightM.toFixed(2)} m` : null,
     input.description.trim() ? `Description: ${input.description.trim()}` : null,
     "",

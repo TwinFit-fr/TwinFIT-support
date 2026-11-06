@@ -164,11 +164,11 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
     if (!clip) return [null, null];
     if (!isPoseClipJson(clip)) return [clip, null];
     try {
-      return [buildPoseClip(model, clip, rest), null];
+      return [buildPoseClip(model, clip, rest, sockets), null];
     } catch (error) {
       return [null, error instanceof Error ? error.message : String(error)];
     }
-  }, [clip, model, rest]);
+  }, [clip, model, rest, sockets]);
   useEffect(() => {
     if (clipError) onClipError?.(clipError);
   }, [clipError, onClipError]);

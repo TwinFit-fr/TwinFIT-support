@@ -36,6 +36,16 @@ export type LegAngles = {
   ankle_dorsiflexion: number;
 };
 
+/** Where a two-handed implement (bar, plate, handle) is in this frame; the arms are solved to reach it. */
+export type ImplementPose = {
+  /** Height of the implement's centre above the floor, metres. */
+  height_m: number;
+  /** Forward (+) / back (-) of the implement's centre from the avatar's standing midline, metres. */
+  forward_m: number;
+  /** Distance between the hands on the implement, metres. */
+  grip_width_m: number;
+};
+
 export type PoseAngles = {
   orientation: Orientation;
   hips: {
@@ -63,6 +73,8 @@ export type PoseAngles = {
   right_arm: ArmAngles;
   left_leg: LegAngles;
   right_leg: LegAngles;
+  /** Null when the exercise has no two-handed implement in this frame. */
+  implement: ImplementPose | null;
 };
 
 export const NEUTRAL_ARM: ArmAngles = {
@@ -91,6 +103,7 @@ export const NEUTRAL_POSE: PoseAngles = {
   right_arm: NEUTRAL_ARM,
   left_leg: NEUTRAL_LEG,
   right_leg: NEUTRAL_LEG,
+  implement: null,
 };
 
 /** Pelvis height when the legs do not carry the body (metres), by orientation. */
@@ -166,9 +179,20 @@ const LEG_SCHEMA = {
 export const POSE_ANGLES_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["orientation", "hips", "torso", "head", "left_arm", "right_arm", "left_leg", "right_leg"],
+  required: ["orientation", "hips", "torso", "head", "left_arm", "right_arm", "left_leg", "right_leg", "implement"],
   properties: {
     orientation: { type: "string", enum: [...ORIENTATIONS], description: "how the body is supported" },
+    implement: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["height_m", "forward_m", "grip_width_m"],
+      description: "the two-handed implement (barbell, EZ bar, plate, bar handle) in this frame, when the exercise has one; null otherwise. The arms are solved to reach it, so this is what makes the grip exact",
+      properties: {
+        height_m: num("height of the implement's centre above the floor, metres (floor 0.22 for a loaded barbell, mid-thigh about 0.75, shoulders about 1.4, overhead about 2.1 for a 1.75 m avatar; scale with the avatar height)"),
+        forward_m: num("forward (+) / back (-) of the implement's centre from the avatar's standing midline, metres (over mid-foot about 0.05, held at the chest about 0.2, arms extended forward about 0.55)"),
+        grip_width_m: num("distance between the hands, metres (shoulder width 0.45, bench press 0.8, wide 1.0, narrow 0.25)"),
+      },
+    },
     hips: {
       type: "object",
       additionalProperties: false,
@@ -258,7 +282,31 @@ export function sanitizePose(p: PoseAngles): PoseAngles {
     right_arm: arm(p?.right_arm),
     left_leg: leg(p?.left_leg),
     right_leg: leg(p?.right_leg),
+    implement:
+      p?.implement && typeof p.implement === "object"
+        ? {
+            height_m: c(p.implement.height_m, 0, 2.6, 0.9),
+            forward_m: c(p.implement.forward_m, -0.6, 1.0, 0.2),
+            grip_width_m: c(p.implement.grip_width_m, 0.05, 1.4, 0.45),
+          }
+        : null,
   };
+}
+
+/** How each palm faces a two-handed implement, from the catalog grip code (see solveArmsToImplement). */
+export type PalmFacing = "pronated" | "supinated" | "neutral";
+
+export function palmFacing(grip: string | null | undefined, side: "left" | "right"): PalmFacing {
+  switch (grip) {
+    case "UNDERHAND":
+      return "supinated";
+    case "HAMMER":
+      return "neutral";
+    case "MIXED":
+      return side === "left" ? "pronated" : "supinated";
+    default:
+      return "pronated";
+  }
 }
 
 /** Keyframes of one repetition from the three catalog poses: start → mid → end (→ start when looping). */

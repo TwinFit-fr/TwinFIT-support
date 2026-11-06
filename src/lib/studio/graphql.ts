@@ -235,6 +235,7 @@ export const STUDIO_WORKER_EXERCISE = `
   query StudioWorkerExercise($id: uuid!) {
     catalog_exercises_by_pk(id: $id) {
       id exo_id display_name
+      grip { code }
       localizations(where: { locale: { _eq: "en" } }, limit: 1) { description }
     }
   }
