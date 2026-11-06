@@ -24,6 +24,7 @@ const topNav: NavItem[] = [
   { href: "/catalog", label: "Catalog" },
   { href: "/images", label: "Images" },
   { href: "/muscle-map", label: "Muscle map" },
+  { href: "/studio", label: "Studio" },
   { href: "/lab", label: "Lab" },
 ];
 

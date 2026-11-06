@@ -1,0 +1,275 @@
+"use client";
+
+import { useAccessToken } from "@nhost/react";
+import { useState } from "react";
+import { Bone, Link2, Upload, X } from "lucide-react";
+import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
+import { codeFromFileName, defaultSockets } from "@/lib/studio/prompt";
+import type { AvatarRig, AvatarSocket, AvatarSubject, BaseAvatar } from "@/lib/studio/types";
+import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
+import { Field, M3Button, Segmented, Select, TextArea, TextInput } from "./ui";
+
+type Mode = "generate" | "upload" | "url";
+
+const MODES: { value: Mode; label: React.ReactNode; title: string }[] = [
+  { value: "generate", label: "Generate", title: "Build a mannequin with the Mixamo skeleton, no file needed" },
+  { value: "upload", label: "Upload", title: "Upload a rigged .glb / .gltf" },
+  { value: "url", label: "From URL", title: "Import a .glb from an https URL (Ready Player Me, a CDN…)" },
+];
+
+type Fields = {
+  code: string;
+  name: string;
+  subject: AvatarSubject;
+  rig: AvatarRig;
+  height_m: number | null;
+  sockets: AvatarSocket[];
+  is_default: boolean;
+  params?: Record<string, unknown>;
+};
+
+async function postAvatar(token: string, body: FormData | { url: string; fields: Fields }): Promise<BaseAvatar> {
+  const res = await fetch("/api/studio/avatars", {
+    method: "POST",
+    headers:
+      body instanceof FormData
+        ? { Authorization: `Bearer ${token}` }
+        : { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: body instanceof FormData ? body : JSON.stringify(body),
+  });
+  const json = (await res.json()) as { avatar?: BaseAvatar; error?: string };
+  if (!res.ok || !json.avatar) throw new Error(json.error ?? `Request failed (${res.status})`);
+  return json.avatar;
+}
+
+/** Register a base avatar: generate a Mixamo-rigged mannequin, upload a rigged model, or import one from a URL. */
+export function AvatarDialog({
+  hasDefault,
+  onClose,
+  onCreated,
+}: {
+  hasDefault: boolean;
+  onClose: () => void;
+  onCreated: (avatar: BaseAvatar) => void;
+}) {
+  const token = useAccessToken();
+  const toast = useToast();
+  const [mode, setMode] = useState<Mode>("generate");
+  const [file, setFile] = useState<File | null>(null);
+  const [url, setUrl] = useState("");
+  const [code, setCode] = useState("MANNEQUIN_MIXAMO");
+  const [name, setName] = useState("Mannequin (Mixamo rig)");
+  const [subject, setSubject] = useState<AvatarSubject>("neutral");
+  const [rig, setRig] = useState<AvatarRig>("mixamo");
+  const [height, setHeight] = useState("1.75");
+  const [socketsText, setSocketsText] = useState(() => JSON.stringify(defaultSockets("mixamo"), null, 2));
+  const [isDefault, setIsDefault] = useState(!hasDefault);
+  const [busy, setBusy] = useState(false);
+
+  const changeMode = (next: Mode) => {
+    setMode(next);
+    if (next === "generate") {
+      setCode("MANNEQUIN_MIXAMO");
+      setName("Mannequin (Mixamo rig)");
+      setRig("mixamo");
+      setSocketsText(JSON.stringify(defaultSockets("mixamo"), null, 2));
+    } else if (code === "MANNEQUIN_MIXAMO") {
+      setCode("");
+      setName("");
+    }
+  };
+
+  const pickFile = (next: File | null) => {
+    setFile(next);
+    if (next && !code) setCode(codeFromFileName(next.name));
+    if (next && !name) setName(next.name.replace(/\.(glb|gltf)$/i, ""));
+  };
+
+  const changeRig = (next: AvatarRig) => {
+    setRig(next);
+    setSocketsText(JSON.stringify(defaultSockets(next), null, 2));
+  };
+
+  const readFields = (): Fields | null => {
+    try {
+      const sockets = JSON.parse(socketsText || "[]") as AvatarSocket[];
+      if (!Array.isArray(sockets)) throw new Error("sockets must be a JSON array");
+      return {
+        code: code.trim(),
+        name: name.trim(),
+        subject,
+        rig,
+        height_m: height.trim() ? Number(height) : null,
+        sockets,
+        is_default: isDefault,
+      };
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Invalid sockets JSON");
+      return null;
+    }
+  };
+
+  const submit = async () => {
+    if (!token) return;
+    const fields = readFields();
+    if (!fields) return;
+    setBusy(true);
+    try {
+      let avatar: BaseAvatar;
+      if (mode === "generate") {
+        // three.js only loads when the mannequin is asked for.
+        const { exportMannequinGlb, mannequinSockets } = await import("@/lib/studio/mannequin");
+        const heightM = fields.height_m ?? 1.75;
+        const glb = await exportMannequinGlb(heightM);
+        const form = new FormData();
+        form.set("file", glb);
+        form.set(
+          "fields",
+          JSON.stringify({
+            ...fields,
+            height_m: heightM,
+            sockets: mannequinSockets(heightM),
+            params: { generated: "mannequin", forward_axis: "+z", rest_pose: "T" },
+          }),
+        );
+        avatar = await postAvatar(token, form);
+      } else if (mode === "upload") {
+        if (!file) return;
+        const form = new FormData();
+        form.set("file", file);
+        form.set("fields", JSON.stringify(fields));
+        avatar = await postAvatar(token, form);
+      } else {
+        avatar = await postAvatar(token, { url: url.trim(), fields });
+      }
+      toast.success(`${avatar.name} is ready`, "Avatar added");
+      onCreated(avatar);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add the avatar");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const canSubmit =
+    Boolean(code.trim() && name.trim()) &&
+    (mode === "generate" || (mode === "upload" && Boolean(file)) || (mode === "url" && /^https:\/\/\S+/.test(url.trim())));
+
+  return (
+    <Modal
+      onClose={onClose}
+      labelledBy="avatar-dialog-title"
+      dismissible={!busy}
+      className="studio-root w-[580px] max-w-[calc(100vw-2rem)] rounded-3xl border border-(--m3-outline-variant) bg-(--m3-surface-container) p-0 text-(--m3-on-surface) shadow-2xl backdrop:bg-(--m3-scrim)"
+    >
+      <div className="flex items-center justify-between border-b border-(--m3-outline-variant) px-5 py-4">
+        <h2 id="avatar-dialog-title" className="text-base font-semibold tracking-tight">
+          New base avatar
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          aria-label="Close"
+          className="studio-state flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-(--m3-on-surface-variant)"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="studio-scroll max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
+        <Segmented value={mode} onChange={changeMode} options={MODES} className="w-full justify-between" />
+
+        {mode === "generate" ? (
+          <div className="flex items-start gap-3 rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-low) px-4 py-3">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-(--m3-primary-container) text-(--m3-on-primary-container)">
+              <Bone className="h-4 w-4" />
+            </span>
+            <p className="text-xs leading-relaxed text-(--m3-on-surface-variant)">
+              Builds a neutral mannequin right here: the Mixamo skeleton (<code className="font-mono">mixamorigHips</code>,
+              arms, legs, head) in T-pose, capsule limbs, sockets on the hands, back and feet. No file, no licence; any
+              clip authored for Mixamo drives it. Scaled to the height below.
+            </p>
+          </div>
+        ) : null}
+
+        {mode === "upload" ? (
+          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-(--m3-outline) bg-(--m3-surface-container-low) px-4 py-6 text-center transition-colors hover:border-(--m3-primary)">
+            <Upload className="h-5 w-5 text-(--m3-primary)" />
+            <span className="text-sm">{file ? file.name : "Choose a rigged .glb or .gltf"}</span>
+            <span className="text-[11px] text-(--m3-on-surface-variant)">
+              {file ? `${(file.size / 1024 / 1024).toFixed(1)} MiB` : "Up to 100 MiB · Mixamo, VRM or a custom skeleton"}
+            </span>
+            <input
+              type="file"
+              accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+              className="hidden"
+              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+        ) : null}
+
+        {mode === "url" ? (
+          <Field label="Model URL" hint="https link to a .glb or .gltf; the server downloads it into the 3d-workspace bucket.">
+            <div className="relative">
+              <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--m3-on-surface-variant)" />
+              <TextInput value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://models.readyplayer.me/….glb" className="pl-10" />
+            </div>
+          </Field>
+        ) : null}
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Code" hint="SCREAMING_SNAKE, unique">
+            <TextInput value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="NEUTRAL_MAN" />
+          </Field>
+          <Field label="Name">
+            <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Neutral man" />
+          </Field>
+          <Field label="Subject">
+            <Segmented
+              value={subject}
+              onChange={setSubject}
+              options={AVATAR_SUBJECTS.map((s) => ({ value: s, label: s }))}
+              className="w-full justify-between"
+            />
+          </Field>
+          <Field label="Height (m)" hint={mode === "generate" ? "Size of the mannequin" : "Scales the model; empty keeps its own units"}>
+            <TextInput type="number" min={0.5} max={2.5} step={0.01} value={height} onChange={(e) => setHeight(e.target.value)} />
+          </Field>
+          {mode !== "generate" ? (
+            <>
+              <Field label="Rig" className="col-span-2">
+                <Select value={rig} onChange={(e) => changeRig(e.target.value as AvatarRig)}>
+                  {AVATAR_RIGS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field
+                label="Sockets"
+                className="col-span-2"
+                hint="JSON array of {id, bone, offset?, rotation?}; the bone names must exist in the model."
+              >
+                <TextArea rows={6} value={socketsText} onChange={(e) => setSocketsText(e.target.value)} className="font-mono text-[11px]" />
+              </Field>
+            </>
+          ) : null}
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-(--m3-on-surface-variant)">
+          <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="h-4 w-4 accent-(--m3-primary)" />
+          Make it the default avatar
+        </label>
+      </div>
+      <div className="flex justify-end gap-2 border-t border-(--m3-outline-variant) px-5 py-4">
+        <M3Button variant="text" onClick={onClose} disabled={busy}>
+          Cancel
+        </M3Button>
+        <M3Button variant="filled" onClick={submit} busy={busy} disabled={!canSubmit}>
+          {mode === "generate" ? "Generate mannequin" : mode === "upload" ? "Upload avatar" : "Import avatar"}
+        </M3Button>
+      </div>
+    </Modal>
+  );
+}
