@@ -1,9 +1,125 @@
 "use client";
 
-import type { EquipmentItem } from "@/lib/studio/types";
+import { Component, Suspense, useMemo } from "react";
+import { useGLTF } from "@react-three/drei";
+import * as THREE from "three";
+import type { EquipmentItem, EquipmentPlacement } from "@/lib/studio/types";
 
-/* Stand-in geometry for the equipment of a movement, drawn in the avatar's hands (sockets) or on
-   the floor until real models exist. Everything is in metres. */
+/* The equipment of a movement, drawn in the avatar's hands (sockets) or on the floor: the
+   generated model of the code when one is in use (animation_studio.equipment_models), else
+   stand-in geometry. Everything is in metres. */
+
+/** Floor slot of the n-th support: in front of the avatar, one behind the other. */
+export function supportSlotZ(index: number): number {
+  return -0.1 - index * 0.5;
+}
+
+/**
+ * A generated .glb scaled to its placement: the longest dimension becomes size_m, a load is
+ * centred on the socket, a support stands on the floor. Mutates its own clone only.
+ */
+function GeneratedModel({
+  url,
+  kind,
+  placement,
+  slotZ,
+  alignLongAxis = false,
+}: {
+  url: string;
+  kind: EquipmentItem["kind"];
+  placement: EquipmentPlacement;
+  /** Floor slot of a support (see supportSlotZ); 0 for a load, which sits on its socket. */
+  slotZ: number;
+  /** Turn the model so its longest side runs along X (a two-handed item, hand to hand). */
+  alignLongAxis?: boolean;
+}) {
+  const { scene } = useGLTF(url);
+  const object = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.position.set(0, 0, 0);
+    clone.rotation.set(0, 0, 0);
+    clone.scale.setScalar(1);
+    clone.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(clone);
+    let size = box.getSize(new THREE.Vector3());
+    if (alignLongAxis) {
+      if (size.z > size.x && size.z >= size.y) clone.rotation.set(0, Math.PI / 2, 0);
+      else if (size.y > size.x && size.y > size.z) clone.rotation.set(0, 0, Math.PI / 2);
+      clone.updateMatrixWorld(true);
+      box = new THREE.Box3().setFromObject(clone);
+      size = box.getSize(new THREE.Vector3());
+    }
+    const longest = Math.max(size.x, size.y, size.z, 1e-6);
+    const scale = placement.size_m / longest;
+    clone.scale.setScalar(scale);
+    clone.updateMatrixWorld(true);
+    const scaled = new THREE.Box3().setFromObject(clone);
+    const center = scaled.getCenter(new THREE.Vector3());
+    clone.position.set(-center.x, kind === "support" ? -scaled.min.y : -center.y, -center.z);
+    clone.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+      }
+    });
+    return clone;
+  }, [scene, kind, placement.size_m, alignLongAxis]);
+  const rotation = useMemo(
+    () => new THREE.Euler(...((placement.rotation ?? [0, 0, 0]).map((d) => THREE.MathUtils.degToRad(d)) as [number, number, number])),
+    [placement.rotation],
+  );
+  const [ox, oy, oz] = placement.offset ?? [0, 0, 0];
+  return (
+    <group position={[ox, oy, oz + slotZ]} rotation={rotation}>
+      <primitive object={object} />
+    </group>
+  );
+}
+
+/** A model that fails to load falls back to the proxy, for this url, until the url changes. */
+class ProxyBoundary extends Component<{ fallback: React.ReactNode; resetKey: string; children: React.ReactNode }, { failed: string | null }> {
+  state = { failed: null as string | null };
+  static getDerivedStateFromError() {
+    return {};
+  }
+  componentDidCatch() {
+    this.setState({ failed: this.props.resetKey });
+  }
+  render() {
+    return this.state.failed === this.props.resetKey ? this.props.fallback : this.props.children;
+  }
+}
+
+/** The mesh of one item: its generated model when there is one in use, else the proxy. */
+export function EquipmentMesh({
+  item,
+  index,
+  model,
+  alignLongAxis = false,
+}: {
+  item: EquipmentItem;
+  index: number;
+  model: { url: string; placement: EquipmentPlacement } | undefined;
+  /** The item is held with both hands: its longest side runs along X (see BilateralAttachment). */
+  alignLongAxis?: boolean;
+}) {
+  // The proxies place themselves (a support at its floor slot), so they work as fallbacks as they are.
+  const proxy = item.kind === "load" ? <LoadProxy item={item} /> : <SupportProxy item={item} index={index} />;
+  if (!model) return proxy;
+  return (
+    <ProxyBoundary fallback={proxy} resetKey={model.url}>
+      <Suspense fallback={proxy}>
+        <GeneratedModel
+          url={model.url}
+          kind={item.kind}
+          placement={model.placement}
+          slotZ={item.kind === "support" ? supportSlotZ(index) : 0}
+          alignLongAxis={alignLongAxis}
+        />
+      </Suspense>
+    </ProxyBoundary>
+  );
+}
 
 const METAL = { color: "#aab4c3", metalness: 0.85, roughness: 0.3 } as const;
 const RUBBER = { color: "#2a2f3a", metalness: 0.1, roughness: 0.9 } as const;
@@ -91,7 +207,7 @@ export function LoadProxy({ item }: { item: EquipmentItem }) {
 
 /** A support item placed on the floor, in front of or under the avatar. */
 export function SupportProxy({ item, index }: { item: EquipmentItem; index: number }) {
-  const z = -0.1 - index * 0.5;
+  const z = supportSlotZ(index);
   switch (item.code) {
     case "BENCH":
     case "INCLINE_BENCH":

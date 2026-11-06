@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAccessToken } from "@nhost/react";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Dumbbell, Plus } from "lucide-react";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
+import { equipmentKey, placementOf } from "@/lib/studio/equipment";
 import { EMPTY_SCENE, useStudioStore, type SceneSource } from "@/lib/studio/store";
-import type { BaseAvatar, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
+import type { ActiveEquipmentModels, BaseAvatar, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
 import { isQueued } from "@/lib/studio/types";
 import { AvatarDialog } from "./avatar-dialog";
+import { EQUIPMENT_KEY, EquipmentDialog, type EquipmentResponse } from "./equipment-dialog";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { InspectorPanel, type GenerateInput, type VectorAction } from "./inspector-panel";
 import { StudioShell } from "./studio-shell";
@@ -89,6 +91,7 @@ export function StudioWorkspace() {
   const setAvatar = useStudioStore((s) => s.setAvatar);
   const setVector = useStudioStore((s) => s.setVector);
   const setScene = useStudioStore((s) => s.setScene);
+  const setEquipmentModels = useStudioStore((s) => s.setEquipmentModels);
 
   const { data: catalog, isLoading: catalogLoading, mutate: mutateCatalog } = useStaffSWR<{
     exercises: StudioExercise[];
@@ -97,6 +100,8 @@ export function StudioWorkspace() {
     "/api/studio/avatars",
   );
   const { data: settingsData } = useStaffSWR<{ settings: StudioSettings }>("/api/studio/settings");
+  // Same key as the equipment dialog: one cache, one poll while a Meshy task runs.
+  const { data: equipmentData, mutate: mutateEquipment } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY);
 
   const exercises = useMemo(() => catalog?.exercises ?? [], [catalog]);
   const avatars = useMemo(() => avatarData?.avatars ?? [], [avatarData]);
@@ -133,6 +138,18 @@ export function StudioWorkspace() {
     setScene(sceneFor(avatar, vector));
   }, [avatar, vector, setScene]);
 
+  // The model in use per code, for the viewer (same identity rule: only a real change reaches the canvas).
+  useEffect(() => {
+    const models: ActiveEquipmentModels = {};
+    for (const entry of equipmentData?.equipment ?? []) {
+      const active = entry.models.find((m) => m.active && m.status === "ready" && m.model_url);
+      if (active?.model_url) {
+        models[equipmentKey(entry.kind, entry.code)] = { url: active.model_url, placement: placementOf(entry.kind, entry.code, active.params) };
+      }
+    }
+    setEquipmentModels(models);
+  }, [equipmentData, setEquipmentModels]);
+
   // Deep link: /studio?exo=12 selects that exercise once the catalog is in; selection writes it back.
   useEffect(() => {
     if (exerciseId || !exercises.length) return;
@@ -152,6 +169,7 @@ export function StudioWorkspace() {
   }, [avatarId, avatar, setAvatar]);
 
   const [avatarDialog, setAvatarDialog] = useState(false);
+  const [equipmentDialog, setEquipmentDialog] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [busyVectorId, setBusyVectorId] = useState<string | null>(null);
 
@@ -266,6 +284,9 @@ export function StudioWorkspace() {
               onSelect={(id) => setAvatar(id)}
               onUpload={() => setAvatarDialog(true)}
             />
+            <M3Button size="sm" variant="outlined" onClick={() => setEquipmentDialog(true)} title="3D models of the catalog equipment">
+              <Dumbbell className="h-3.5 w-3.5" /> Equipment
+            </M3Button>
           </div>
         }
         left={<CatalogSidebar exercises={exercises} loading={catalogLoading} />}
@@ -287,6 +308,7 @@ export function StudioWorkspace() {
           />
         }
       />
+      {equipmentDialog ? <EquipmentDialog onClose={() => setEquipmentDialog(false)} onChanged={() => void mutateEquipment()} /> : null}
       {avatarDialog ? (
         <AvatarDialog
           hasDefault={avatars.some((a) => a.is_default)}

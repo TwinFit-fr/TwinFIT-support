@@ -16,7 +16,8 @@ import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.j
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useStudioStore, type CameraPreset } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
-import { LoadProxy, SupportProxy } from "./equipment-proxies";
+import { EquipmentMesh } from "./equipment-proxies";
+import { equipmentKey } from "@/lib/studio/equipment";
 import { recordCanvasCommit } from "./render-stats";
 
 export type SceneProps = {
@@ -63,7 +64,47 @@ function CameraRig() {
   return null;
 }
 
-type Attachment = { item: EquipmentItem; bone: THREE.Object3D; offset: THREE.Vector3; quaternion: THREE.Quaternion; scale: number };
+type Attachment = {
+  item: EquipmentItem;
+  bone: THREE.Object3D;
+  /** Second hand bone of a bilateral item (socket_b): drawn between the two bones instead of inside one. */
+  boneB: THREE.Object3D | null;
+  offset: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  scale: number;
+};
+
+const UP = new THREE.Vector3(0, 1, 0);
+
+/**
+ * A two-handed item (barbell, plate): a world-space group kept, every frame, at the midpoint of
+ * the two hand bones with its X axis running from one hand to the other. Not parented to a bone,
+ * so the bones' scale does not reach the mesh.
+ */
+function BilateralAttachment({ a, b, children }: { a: THREE.Object3D; b: THREE.Object3D; children: React.ReactNode }) {
+  const group = useMemo(() => new THREE.Group(), []);
+  const pa = useMemo(() => new THREE.Vector3(), []);
+  const pb = useMemo(() => new THREE.Vector3(), []);
+  const x = useMemo(() => new THREE.Vector3(), []);
+  const y = useMemo(() => new THREE.Vector3(), []);
+  const z = useMemo(() => new THREE.Vector3(), []);
+  const m = useMemo(() => new THREE.Matrix4(), []);
+  useFrame(() => {
+    a.getWorldPosition(pa);
+    b.getWorldPosition(pb);
+    group.position.addVectors(pa, pb).multiplyScalar(0.5);
+    x.subVectors(pa, pb);
+    if (x.lengthSq() < 1e-8) x.set(1, 0, 0);
+    x.normalize();
+    z.crossVectors(x, UP);
+    if (z.lengthSq() < 1e-6) z.set(0, 0, 1);
+    z.normalize();
+    y.crossVectors(z, x).normalize();
+    m.makeBasis(x, y, z);
+    group.quaternion.setFromRotationMatrix(m);
+  });
+  return <primitive object={group}>{children}</primitive>;
+}
 
 function socketTransform(socket: AvatarSocket | undefined) {
   const offset = new THREE.Vector3(...(socket?.offset ?? [0, 0, 0]));
@@ -79,6 +120,7 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo }: ScenePro
   const { scene, animations } = useGLTF(modelUrl);
   const model = useMemo(() => cloneSkeleton(scene), [scene]);
   const items = useStudioStore((s) => s.previewItems);
+  const models = useStudioStore((s) => s.equipmentModels);
   const showEquipment = useStudioStore((s) => s.showEquipment);
 
   // Ground the model, centre it and bring it to metres (Mixamo exports are often in centimetres).
@@ -130,9 +172,11 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo }: ScenePro
         .map((item) => {
           const socket = sockets.find((s) => s.id === item.socket);
           const bone = (socket && model.getObjectByName(socket.bone)) || model;
+          const socketB = item.socket_b ? sockets.find((s) => s.id === item.socket_b) : undefined;
+          const boneB = (socketB && model.getObjectByName(socketB.bone)) || null;
           const { offset, quaternion } = socketTransform(socket);
           const worldScale = bone.getWorldScale(new THREE.Vector3()).x || 1;
-          return { item, bone, offset, quaternion, scale: 1 / worldScale };
+          return { item, bone, boneB: boneB && boneB !== bone ? boneB : null, offset, quaternion, scale: 1 / worldScale };
         }),
     // info changes whenever the model was re-laid out, which moves the bones' world scale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,19 +208,29 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo }: ScenePro
     <>
       <primitive object={model} />
       {showEquipment
-        ? attachments.map((a, i) => (
-            // The key belongs to the element in this list (the portal), not to the group inside it.
-            <Fragment key={`${a.item.code}-${a.item.socket ?? "root"}-${i}`}>
-              {createPortal(
-                <group position={a.offset} quaternion={a.quaternion} scale={a.scale}>
-                  <LoadProxy item={a.item} />
-                </group>,
-                a.bone,
-              )}
-            </Fragment>
+        ? attachments.map((a, i) =>
+            a.boneB ? (
+              <BilateralAttachment key={`${a.item.code}-both-${i}`} a={a.bone} b={a.boneB}>
+                <EquipmentMesh item={a.item} index={i} model={models[equipmentKey("load", a.item.code)]} alignLongAxis />
+              </BilateralAttachment>
+            ) : (
+              // The key belongs to the element in this list (the portal), not to the group inside it.
+              <Fragment key={`${a.item.code}-${a.item.socket ?? "root"}-${i}`}>
+                {createPortal(
+                  <group position={a.offset} quaternion={a.quaternion} scale={a.scale}>
+                    <EquipmentMesh item={a.item} index={i} model={models[equipmentKey("load", a.item.code)]} />
+                  </group>,
+                  a.bone,
+                )}
+              </Fragment>
+            ),
+          )
+        : null}
+      {showEquipment
+        ? supports.map((item, i) => (
+            <EquipmentMesh key={`${item.code}-${i}`} item={item} index={i} model={models[equipmentKey("support", item.code)]} />
           ))
         : null}
-      {showEquipment ? supports.map((item, i) => <SupportProxy key={`${item.code}-${i}`} item={item} index={i} />) : null}
     </>
   );
 }

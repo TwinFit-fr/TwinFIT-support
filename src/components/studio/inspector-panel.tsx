@@ -36,6 +36,9 @@ export type GenerateInput = {
 
 export type VectorAction = "activate" | "deactivate" | "requeue" | "upload" | "delete";
 
+/** Select value for an item held with both hands (socket hand_r + socket_b hand_l). */
+const BOTH_HANDS = "__both__";
+
 function relativeTime(iso: string): string {
   const seconds = Math.round((Date.now() - Date.parse(iso)) / 1000);
   if (seconds < 60) return "just now";
@@ -77,12 +80,17 @@ function ItemRow({
       </Select>
       {item.kind === "load" ? (
         <Select
-          value={item.socket ?? ""}
-          onChange={(e) => onChange({ ...item, socket: e.target.value || undefined })}
+          value={item.socket_b ? BOTH_HANDS : (item.socket ?? "")}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value === BOTH_HANDS) onChange({ ...item, socket: "hand_r", socket_b: "hand_l" });
+            else onChange({ ...item, socket: value || undefined, socket_b: undefined });
+          }}
           className="h-8 w-28 py-0 text-xs"
           aria-label="Socket"
         >
           <option value="">no socket</option>
+          {sockets.includes("hand_l") && sockets.includes("hand_r") ? <option value={BOTH_HANDS}>both hands</option> : null}
           {sockets.map((id) => (
             <option key={id} value={id}>
               {id}

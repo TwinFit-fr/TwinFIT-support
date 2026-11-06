@@ -45,6 +45,11 @@ export function equipmentSentence(items: EquipmentItem[]): string {
     .join(", ");
 }
 
+/** Implements held one in each hand. */
+export const ONE_PER_HAND = new Set(["DUMBBELL", "KETTLEBELL"]);
+/** Implements held with both hands at once: drawn between the two hand sockets. */
+export const BILATERAL = new Set(["BARBELL", "EZ_BAR", "PLATE", "LANDMINE", "BAND"]);
+
 /** Equipment items an exercise starts with: its load implement in the hands, its support on the floor. */
 export function defaultEquipmentItems(
   exercise: StudioExercise,
@@ -54,10 +59,12 @@ export function defaultEquipmentItems(
   const ids = new Set(sockets.map((s) => s.id));
   const load = exercise.equipment?.code;
   if (load && load !== "NONE") {
-    const twoHanded = ["DUMBBELL", "KETTLEBELL"].includes(load);
-    if (twoHanded && ids.has("hand_l") && ids.has("hand_r")) {
+    const bothHands = ids.has("hand_l") && ids.has("hand_r");
+    if (ONE_PER_HAND.has(load) && bothHands) {
       items.push({ kind: "load", code: load, socket: "hand_r", count: 1 });
       items.push({ kind: "load", code: load, socket: "hand_l", count: 1 });
+    } else if (BILATERAL.has(load) && bothHands) {
+      items.push({ kind: "load", code: load, socket: "hand_r", socket_b: "hand_l", count: 1 });
     } else {
       items.push({
         kind: "load",
