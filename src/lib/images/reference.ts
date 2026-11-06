@@ -4,10 +4,10 @@ import type { Subject } from "./types";
 export const REFERENCE_USE_DIRECTIVE = `CHARACTER REFERENCE: the input image is the official character for this style. Draw exactly this same person — same face, hair, body type, skin tone, clothing, colors and illustration style. Do NOT copy the pose, framing or camera angle of the reference: use only the pose described above, and show any equipment it requires.`;
 
 /** Appended when a frame also receives a support-equipment reference. */
-export const SUPPORT_REFERENCE_DIRECTIVE = `SUPPORT EQUIPMENT REFERENCE: one of the input images is the official support equipment for this style (bench, machine, bars, etc.). Draw exactly this same equipment — same shape, proportions, colors and illustration style. Place it where the exercise requires it. Do not invent a different bench or machine.`;
+export const SUPPORT_REFERENCE_DIRECTIVE = `SUPPORT EQUIPMENT REFERENCE: one of the input images is the official support equipment for this style (bench, machine, bars, etc.). Draw exactly this same equipment — same shape, proportions, colors and illustration style. Place it where the exercise requires it. Do not invent a different bench or machine. Copy only the object, not the camera angle or the left/right orientation of this reference. Rotate or mirror it so the athlete faces its working side in the view described above.`;
 
 /** Appended when a frame also receives the exercise's load-equipment reference. */
-export const EQUIPMENT_REFERENCE_DIRECTIVE = `LOAD EQUIPMENT REFERENCE: one of the input images is the official load equipment of this exercise (dumbbell, barbell, kettlebell, cable machine, etc.). Draw exactly this same equipment — same shape, proportions, colors and illustration style. The athlete uses it as the exercise requires; do not invent a different one.`;
+export const EQUIPMENT_REFERENCE_DIRECTIVE = `LOAD EQUIPMENT REFERENCE: one of the input images is the official load equipment of this exercise (dumbbell, barbell, kettlebell, cable machine, etc.). Draw exactly this same equipment — same shape, proportions, colors and illustration style. The athlete uses it as the exercise requires; do not invent a different one. Copy only the object, not the camera angle or the left/right orientation of this reference. Rotate or mirror it so the athlete faces its working side in the view described above.`;
 
 /** Appended to the system prompt when generating a character reference sheet. */
 export function referenceSheetDirective(subject: Subject): string {

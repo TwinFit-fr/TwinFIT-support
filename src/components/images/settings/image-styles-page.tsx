@@ -274,14 +274,14 @@ export function ImageStylesPage() {
   /** POST generate / upload or DELETE one style asset; every asset route returns the style. */
   async function assetRequest(
     path: string,
-    action: "generate" | "remove" | File,
+    action: "generate" | "flip" | "remove" | File,
   ): Promise<StyleResponse> {
     if (action === "remove") {
       return (await staffFetch(path, { method: "DELETE" })) as StyleResponse;
     }
     const body =
-      action === "generate"
-        ? { action: "generate" }
+      action === "generate" || action === "flip"
+        ? { action }
         : { action: "upload", mimeType: action.type, data: await readAsBase64(action) };
     return (await staffFetch(path, {
       method: "POST",
@@ -309,7 +309,7 @@ export function ImageStylesPage() {
   async function equipmentAction(
     kind: EquipmentKind,
     id: string,
-    action: "generate" | "remove" | File,
+    action: "generate" | "flip" | "remove" | File,
   ) {
     if (!selectedStyleId) return;
     setEquipmentBusy(id);

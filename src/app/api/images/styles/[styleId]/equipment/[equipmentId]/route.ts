@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
-import { assetBodySchema, assetErrorResponse, decodeAssetUpload } from "@/lib/images/asset-request";
+import {
+  assetErrorResponse,
+  decodeAssetUpload,
+  equipmentAssetBodySchema,
+} from "@/lib/images/asset-request";
+import { flipImage } from "@/lib/images/flip";
 import { generateImage } from "@/lib/images/openai";
 import { fillPromptTemplate } from "@/lib/images/prompt";
 import { getStyle, listActiveEquipment, listImagePromptsForStyle } from "@/lib/images/queries";
 import { equipmentFileName } from "@/lib/images/reference";
-import { deleteImageFile } from "@/lib/images/storage";
+import { deleteImageFile, downloadImageFile } from "@/lib/images/storage";
 import {
   deleteStyleEquipment,
   extensionForMime,
@@ -28,7 +33,7 @@ export async function POST(request: Request, context: Ctx) {
     const equipment = (await listActiveEquipment(token)).find((e) => e.id === equipmentId);
     if (!equipment) return NextResponse.json({ error: "Equipment not found" }, { status: 404 });
 
-    const body = assetBodySchema.parse(await request.json());
+    const body = equipmentAssetBodySchema.parse(await request.json());
     const previous = style.equipment.find((e) => e.equipment_id === equipmentId)?.file_id ?? null;
 
     let bytes: Buffer;
@@ -38,6 +43,10 @@ export async function POST(request: Request, context: Ctx) {
       const decoded = decodeAssetUpload(body);
       if (decoded instanceof NextResponse) return decoded;
       ({ bytes, mimeType } = decoded);
+    } else if (body.action === "flip") {
+      if (!previous) return NextResponse.json({ error: "No image to flip" }, { status: 400 });
+      const current = await downloadImageFile(token, previous);
+      ({ bytes, mimeType } = await flipImage(current.bytes));
     } else {
       let template;
       try {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Skeleton } from "@/components/ui/primitives";
+import { Button, Skeleton } from "@/components/ui/primitives";
 import type { LookupRowFull, TaxonomyData } from "@/components/catalog/taxonomy/types";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
 import type { ImageStyle } from "@/lib/images/types";
@@ -50,7 +50,7 @@ function EquipmentCard({
   fileId: string | null;
   busy: boolean;
   dirty: boolean;
-  onAction: (action: "generate" | "remove" | File) => void;
+  onAction: (action: "generate" | "flip" | "remove" | File) => void;
 }) {
   const description = item.description?.trim() || null;
   return (
@@ -65,6 +65,18 @@ function EquipmentCard({
       onUpload={onAction}
       onGenerate={() => onAction("generate")}
       onRemove={() => onAction("remove")}
+      extraActions={
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={busy || !fileId}
+          className="h-8 px-2.5 text-xs"
+          title="Mirror the image left to right; flip again to undo"
+          onClick={() => onAction("flip")}
+        >
+          Flip
+        </Button>
+      }
     >
       <AssetNote>
         {description ?? (
@@ -89,7 +101,7 @@ export function EquipmentSection({
   style: ImageStyle;
   dirty: boolean;
   busyId: string | null;
-  onAction: (id: string, action: "generate" | "remove" | File) => void;
+  onAction: (id: string, action: "generate" | "flip" | "remove" | File) => void;
 }) {
   const { data: taxonomy, isLoading } = useStaffSWR<{ data: TaxonomyData }>(
     "/api/catalog/taxonomy",

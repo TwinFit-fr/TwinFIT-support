@@ -5,14 +5,24 @@ const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 export const IMAGE_MIME_TYPES = z.enum(["image/png", "image/webp", "image/jpeg"]);
 
+const generateBody = z.object({ action: z.literal("generate") });
+const uploadBody = z.object({
+  action: z.literal("upload"),
+  mimeType: IMAGE_MIME_TYPES,
+  data: z.string().min(1),
+});
+
 /** Body of every style asset POST: generate with the style, or upload a file. */
-export const assetBodySchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("generate") }),
-  z.object({
-    action: z.literal("upload"),
-    mimeType: IMAGE_MIME_TYPES,
-    data: z.string().min(1),
-  }),
+export const assetBodySchema = z.discriminatedUnion("action", [generateBody, uploadBody]);
+
+/**
+ * Body of the support and load equipment POST, which can also mirror the current image. A schema
+ * of its own: the other asset routes treat anything but "upload" as a paid generation.
+ */
+export const equipmentAssetBodySchema = z.discriminatedUnion("action", [
+  generateBody,
+  uploadBody,
+  z.object({ action: z.literal("flip") }),
 ]);
 
 export type AssetBody = z.infer<typeof assetBodySchema>;
