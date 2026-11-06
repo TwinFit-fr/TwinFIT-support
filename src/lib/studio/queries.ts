@@ -2,13 +2,16 @@ import { staffGql } from "@/lib/staff-gql";
 import {
   STUDIO_ACTIVATE_EQUIPMENT_MODEL,
   STUDIO_ACTIVATE_VECTOR,
+  STUDIO_AVATAR,
   STUDIO_AVATARS,
+  STUDIO_CLAIM,
   STUDIO_CLAIM_EQUIPMENT_FINISH,
   STUDIO_CREATE_EQUIPMENT_MODEL,
   STUDIO_DELETE_EQUIPMENT_MODEL,
   STUDIO_EQUIPMENT,
   STUDIO_EQUIPMENT_MODEL,
   STUDIO_EQUIPMENT_PROCESSING,
+  STUDIO_UPDATE_AVATAR,
   STUDIO_UPDATE_EQUIPMENT_MODEL,
   STUDIO_CATALOG,
   STUDIO_CREATE_AVATAR,
@@ -19,6 +22,8 @@ import {
   STUDIO_UPDATE_VECTOR,
   STUDIO_VECTOR,
   STUDIO_VECTORS,
+  STUDIO_WORKER_EXERCISE,
+  STUDIO_WORKER_POSES,
 } from "./graphql";
 import type {
   BaseAvatar,
@@ -99,6 +104,15 @@ export async function createAvatar(token: string, input: NewAvatarInput): Promis
     { object: { ...input, active: true } },
   );
   return data.insert_animation_studio_base_avatars_one;
+}
+
+export type AvatarPatch = Partial<Pick<BaseAvatar, "name" | "height_m" | "sockets" | "params" | "active">>;
+
+export async function updateAvatar(token: string, id: string, set: AvatarPatch): Promise<BaseAvatar> {
+  const data = await staffGql<{ update_animation_studio_base_avatars_by_pk: BaseAvatar | null }>(token, STUDIO_UPDATE_AVATAR, { id, set });
+  const row = data.update_animation_studio_base_avatars_by_pk;
+  if (!row) throw new Error("Avatar not found");
+  return row;
 }
 
 export async function getStudioSettings(token: string): Promise<StudioSettings> {
@@ -311,4 +325,35 @@ export async function deleteEquipmentModel(
     delete_animation_studio_equipment_models_by_pk: { id: string; file_id: string | null; thumbnail_file_id: string | null } | null;
   }>(token, STUDIO_DELETE_EQUIPMENT_MODEL, { id });
   return data.delete_animation_studio_equipment_models_by_pk;
+}
+
+// ---------------------------------------------------------------------------
+// Worker
+// ---------------------------------------------------------------------------
+
+/** The next runnable pending vector marked processing, or null (see claim_movement_vector). */
+export async function claimMovementVector(token: string): Promise<MovementVector | null> {
+  const data = await staffGql<{ animation_studio_claim_movement_vector: MovementVector[] }>(token, STUDIO_CLAIM);
+  return data.animation_studio_claim_movement_vector[0] ?? null;
+}
+
+export async function getAvatar(token: string, id: string): Promise<BaseAvatar | null> {
+  const data = await staffGql<{ animation_studio_base_avatars_by_pk: BaseAvatar | null }>(token, STUDIO_AVATAR, { id });
+  return data.animation_studio_base_avatars_by_pk;
+}
+
+export type WorkerExercise = { id: string; exo_id: number; display_name: string; description: string };
+
+export async function getWorkerExercise(token: string, id: string): Promise<WorkerExercise | null> {
+  const data = await staffGql<{
+    catalog_exercises_by_pk: { id: string; exo_id: number; display_name: string; localizations: { description: string | null }[] } | null;
+  }>(token, STUDIO_WORKER_EXERCISE, { id });
+  const row = data.catalog_exercises_by_pk;
+  if (!row) return null;
+  return { id: row.id, exo_id: row.exo_id, display_name: row.display_name, description: row.localizations[0]?.description?.trim() ?? "" };
+}
+
+export async function getExercisePoses(token: string, exoId: number): Promise<{ position: number; pose: string }[]> {
+  const data = await staffGql<{ images_exercise_poses: { position: number; pose: string }[] }>(token, STUDIO_WORKER_POSES, { exoId });
+  return data.images_exercise_poses;
 }

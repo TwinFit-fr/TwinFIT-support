@@ -24,6 +24,7 @@ function GeneratedModel({
   placement,
   slotZ,
   alignLongAxis = false,
+  editRef,
 }: {
   url: string;
   kind: EquipmentItem["kind"];
@@ -32,6 +33,8 @@ function GeneratedModel({
   slotZ: number;
   /** Turn the model so its longest side runs along X (a two-handed item, hand to hand). */
   alignLongAxis?: boolean;
+  /** Set by the rig editor on its target: the placement group the gizmo moves. */
+  editRef?: (o: THREE.Object3D | null) => void;
 }) {
   const { scene } = useGLTF(url);
   const object = useMemo(() => {
@@ -68,10 +71,13 @@ function GeneratedModel({
     () => new THREE.Euler(...((placement.rotation ?? [0, 0, 0]).map((d) => THREE.MathUtils.degToRad(d)) as [number, number, number])),
     [placement.rotation],
   );
-  const [ox, oy, oz] = placement.offset ?? [0, 0, 0];
+  // Outer group: the floor slot of a support. Inner group: the placement (offset, rotation) relative
+  // to the socket or the slot, which is what the rig editor moves.
   return (
-    <group position={[ox, oy, oz + slotZ]} rotation={rotation}>
-      <primitive object={object} />
+    <group position={[0, 0, slotZ]}>
+      <group ref={editRef} position={placement.offset ?? [0, 0, 0]} rotation={rotation}>
+        <primitive object={object} />
+      </group>
     </group>
   );
 }
@@ -96,12 +102,14 @@ export function EquipmentMesh({
   index,
   model,
   alignLongAxis = false,
+  editRef,
 }: {
   item: EquipmentItem;
   index: number;
   model: { url: string; placement: EquipmentPlacement } | undefined;
   /** The item is held with both hands: its longest side runs along X (see BilateralAttachment). */
   alignLongAxis?: boolean;
+  editRef?: (o: THREE.Object3D | null) => void;
 }) {
   // The proxies place themselves (a support at its floor slot), so they work as fallbacks as they are.
   const proxy = item.kind === "load" ? <LoadProxy item={item} /> : <SupportProxy item={item} index={index} />;
@@ -115,6 +123,7 @@ export function EquipmentMesh({
           placement={model.placement}
           slotZ={item.kind === "support" ? supportSlotZ(index) : 0}
           alignLongAxis={alignLongAxis}
+          editRef={editRef}
         />
       </Suspense>
     </ProxyBoundary>

@@ -229,3 +229,32 @@ export const STUDIO_DELETE_EQUIPMENT_MODEL = `
     delete_animation_studio_equipment_models_by_pk(id: $id) { id file_id thumbnail_file_id }
   }
 `;
+
+/** What the pose worker needs about an exercise: its exo_id (poses are keyed by it), name and EN description. */
+export const STUDIO_WORKER_EXERCISE = `
+  query StudioWorkerExercise($id: uuid!) {
+    catalog_exercises_by_pk(id: $id) {
+      id exo_id display_name
+      localizations(where: { locale: { _eq: "en" } }, limit: 1) { description }
+    }
+  }
+`;
+
+export const STUDIO_WORKER_POSES = `
+  query StudioWorkerPoses($exoId: Int!) {
+    images_exercise_poses(where: { exo_id: { _eq: $exoId } }, order_by: { position: asc }) { position pose }
+  }
+`;
+
+export const STUDIO_AVATAR = `
+  query StudioAvatar($id: uuid!) {
+    animation_studio_base_avatars_by_pk(id: $id) { ${AVATAR_FIELDS} }
+  }
+`;
+
+/** Staff edit of an avatar's attachment points (rig editor). */
+export const STUDIO_UPDATE_AVATAR = `
+  mutation StudioUpdateAvatar($id: uuid!, $set: animation_studio_base_avatars_set_input!) {
+    update_animation_studio_base_avatars_by_pk(pk_columns: { id: $id }, _set: $set) { ${AVATAR_FIELDS} }
+  }
+`;

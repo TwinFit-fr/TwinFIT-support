@@ -7,7 +7,7 @@ import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
 
 const MAX_MODEL_BYTES = 100 * 1024 * 1024;
 
-const socket = z.object({
+export const socketSchema = z.object({
   id: z.string().trim().min(1).max(64),
   bone: z.string().trim().min(1).max(128),
   offset: z.tuple([z.number(), z.number(), z.number()]).optional(),
@@ -25,7 +25,7 @@ const fieldsSchema = z.object({
   subject: z.enum(AVATAR_SUBJECTS as [string, ...string[]]),
   rig: z.enum(AVATAR_RIGS as [string, ...string[]]),
   height_m: z.number().min(0.5).max(2.5).nullable(),
-  sockets: z.array(socket).max(32),
+  sockets: z.array(socketSchema).max(32),
   is_default: z.boolean(),
   params: z.record(z.unknown()).optional(),
 });

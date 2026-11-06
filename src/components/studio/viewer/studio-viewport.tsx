@@ -189,6 +189,9 @@ export const StudioViewport = memo(function StudioViewport() {
   const onModelInfo = useCallback((next: ModelInfo | null) => setInfo(next), []);
   const onProgress = useCallback((next: number | null) => setProgress(next), []);
   const onError = useCallback((next: string | null) => setModelError(next), []);
+  // A pose clip that cannot be solved on this rig: reported by the canvas, shown while that clip is selected.
+  const [clipSolveError, setClipSolveError] = useState<{ key: string | null; message: string } | null>(null);
+  const onClipError = useCallback((message: string) => setClipSolveError({ key: scene.clipUrl, message }), [scene.clipUrl]);
   const webgl = useWebGLSupport();
 
   if (webgl === false) {
@@ -221,6 +224,7 @@ export const StudioViewport = memo(function StudioViewport() {
         onModelInfo={onModelInfo}
         onProgress={onProgress}
         onError={onError}
+        onClipError={onClipError}
       />
       {progress !== null || modelError ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -235,7 +239,11 @@ export const StudioViewport = memo(function StudioViewport() {
           </div>
         </div>
       ) : null}
-      <Hud scene={scene} clipState={clipState} info={info} />
+      <Hud
+        scene={scene}
+        clipState={clipSolveError && clipSolveError.key === scene.clipUrl ? { ...clipState, error: clipSolveError.message } : clipState}
+        info={info}
+      />
       <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center">
         <Toolbar />
       </div>

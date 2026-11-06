@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAccessToken } from "@nhost/react";
 import { ChevronDown, Dumbbell, Plus } from "lucide-react";
@@ -15,11 +15,14 @@ import { AvatarDialog } from "./avatar-dialog";
 import { EQUIPMENT_KEY, EquipmentDialog, type EquipmentResponse } from "./equipment-dialog";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { InspectorPanel, type GenerateInput, type VectorAction } from "./inspector-panel";
+import { RigEditor } from "./rig-editor";
 import { StudioShell } from "./studio-shell";
 import { M3Button } from "./ui";
 import { StudioViewport } from "./viewer/studio-viewport";
 
 const QUEUE_POLL_MS = 3000;
+/** While the queue has pending rows the workspace drives the pipeline: one claim per tick. */
+const WORKER_TICK_MS = 4000;
 
 function AvatarMenu({
   avatars,
@@ -144,7 +147,11 @@ export function StudioWorkspace() {
     for (const entry of equipmentData?.equipment ?? []) {
       const active = entry.models.find((m) => m.active && m.status === "ready" && m.model_url);
       if (active?.model_url) {
-        models[equipmentKey(entry.kind, entry.code)] = { url: active.model_url, placement: placementOf(entry.kind, entry.code, active.params) };
+        models[equipmentKey(entry.kind, entry.code)] = {
+          id: active.id,
+          url: active.model_url,
+          placement: placementOf(entry.kind, entry.code, active.params),
+        };
       }
     }
     setEquipmentModels(models);
@@ -186,6 +193,29 @@ export function StudioWorkspace() {
     () => Promise.all([mutateVectors(), mutateCatalog()]),
     [mutateVectors, mutateCatalog],
   );
+
+  // The pipeline runs from here: while this exercise has pending rows, ask the server to claim
+  // and process one every few seconds (several tabs may do it; the claim keeps the cap).
+  const hasPending = vectors.some((v) => v.status === "pending");
+  const ticking = useRef(false);
+  const tick = useCallback(async () => {
+    if (ticking.current) return;
+    ticking.current = true;
+    try {
+      await staffFetch("/api/studio/worker", { method: "POST", body: JSON.stringify({ max: 1 }) });
+    } catch {
+      // The row reports its own error on the next poll.
+    } finally {
+      ticking.current = false;
+      void refresh();
+    }
+  }, [staffFetch, refresh]);
+  useEffect(() => {
+    if (!hasPending) return;
+    void tick();
+    const id = window.setInterval(() => void tick(), WORKER_TICK_MS);
+    return () => window.clearInterval(id);
+  }, [hasPending, tick]);
 
   const onGenerate = useCallback(
     async (input: GenerateInput) => {
@@ -290,7 +320,18 @@ export function StudioWorkspace() {
           </div>
         }
         left={<CatalogSidebar exercises={exercises} loading={catalogLoading} />}
-        center={<StudioViewport />}
+        center={
+          <>
+            <StudioViewport />
+            <RigEditor
+              avatar={avatar}
+              onSaved={() => {
+                void mutateAvatars();
+                void mutateEquipment();
+              }}
+            />
+          </>
+        }
         right={
           <InspectorPanel
             key={`${exercise?.id ?? "none"}:${avatar?.id ?? "none"}`}
