@@ -3,11 +3,13 @@
 import * as THREE from "three";
 import {
   HIPS_HEIGHT_BY_ORIENTATION,
+  palmFacing,
   type ArmAngles,
   type LegAngles,
   type PoseAngles,
   type PoseClipJson,
 } from "./anatomy";
+import type { AvatarSocket } from "./types";
 
 /**
  * Solves a pose-angles clip on a loaded rig: anatomical angles → per-bone quaternions in the
@@ -118,6 +120,13 @@ function characterDeltas(p: PoseAngles): Partial<Record<Logical, THREE.Quaternio
 
 type Solved = { local: Map<string, THREE.Quaternion>; hipsPosition: THREE.Vector3 };
 
+/** What a clip needs beyond the angles: whether the arms reach a two-handed implement, and how. */
+type SolveContext = {
+  twoHanded: boolean;
+  grip: string | null;
+  sockets: AvatarSocket[];
+};
+
 type Rig = {
   names: Partial<Record<Logical, string>>;
   rest: RestPose;
@@ -168,7 +177,134 @@ function standingHips(p: PoseAngles, rig: Rig): { y: number; z: number } {
   return { y: rig.hipsRestY - full + support.down, z: p.hips.forward_m - support.forward };
 }
 
-function solvePose(p: PoseAngles, rig: Rig): Solved {
+type WorldTransform = { pos: THREE.Vector3; quat: THREE.Quaternion };
+
+/** World transform of every bone for a set of local quaternions (rest positions, hips moved). */
+function forwardKinematics(rig: Rig, local: Map<string, THREE.Quaternion>, hipsPosition: THREE.Vector3): Map<string, WorldTransform> {
+  const out = new Map<string, WorldTransform>();
+  const hipsName = rig.names.Hips;
+  const worldOf = (name: string): WorldTransform | null => {
+    const cached = out.get(name);
+    if (cached) return cached;
+    const r = rig.rest.get(name);
+    if (!r) return null;
+    const qLocal = local.get(name) ?? r.local;
+    const pLocal = (name === hipsName ? hipsPosition : r.position).clone().multiplyScalar(r.parentWorldScale);
+    let parent: WorldTransform | null = r.parent ? worldOf(r.parent) : null;
+    if (!parent) {
+      // The bone hangs from a non-bone node (Armature, model root): recover that node's world
+      // transform from the bone's rest world position.
+      const pq = rig.parentWorld.get(name) ?? new THREE.Quaternion();
+      const pp = r.worldPosition.clone().sub(r.position.clone().multiplyScalar(r.parentWorldScale).applyQuaternion(pq));
+      parent = { pos: pp, quat: pq };
+    }
+    const t = { pos: parent.pos.clone().add(pLocal.applyQuaternion(parent.quat)), quat: parent.quat.clone().multiply(qLocal) };
+    out.set(name, t);
+    return t;
+  };
+  for (const name of rig.rest.keys()) worldOf(name);
+  return out;
+}
+
+/** Shortest rotation taking unit vector a onto unit vector b. */
+function arc(a: THREE.Vector3, b: THREE.Vector3): THREE.Quaternion {
+  return new THREE.Quaternion().setFromUnitVectors(a, b);
+}
+
+/** Rotation whose frame maps the rest pair (axis, normal) onto the wanted pair. */
+function frameDelta(axisRest: THREE.Vector3, normalRest: THREE.Vector3, axis: THREE.Vector3, normal: THREE.Vector3): THREE.Quaternion {
+  const ortho = (ax: THREE.Vector3, n: THREE.Vector3) => n.clone().sub(ax.clone().multiplyScalar(n.dot(ax))).normalize();
+  const nR = ortho(axisRest, normalRest);
+  const nW = ortho(axis, normal);
+  const mRest = new THREE.Matrix4().makeBasis(axisRest, nR, axisRest.clone().cross(nR));
+  const mWant = new THREE.Matrix4().makeBasis(axis, nW, axis.clone().cross(nW));
+  return new THREE.Quaternion().setFromRotationMatrix(mWant.multiply(mRest.transpose()));
+}
+
+/**
+ * Two-bone IK of each arm onto the implement: the hand socket lands on its grip point (bar centre
+ * ± half the grip width), the elbow stays on the side the pose put it (the FK elbow is the pole
+ * hint), and the palm faces the bar as the catalog grip says. Overrides the upper arm and forearm
+ * of the pose; everything else keeps the FK result.
+ */
+function solveArmsToImplement(p: PoseAngles, rig: Rig, local: Map<string, THREE.Quaternion>, hipsPosition: THREE.Vector3, ctx: SolveContext) {
+  const imp = p.implement;
+  if (!imp) return;
+  const fk = forwardKinematics(rig, local, hipsPosition);
+  const centre = new THREE.Vector3(0, imp.height_m, imp.forward_m);
+  const barAxis = new THREE.Vector3(1, 0, 0);
+  const posOf = (logical: Logical) => {
+    const name = rig.names[logical];
+    return name ? rig.rest.get(name)?.worldPosition : undefined;
+  };
+
+  for (const side of ["left", "right"] as const) {
+    const s = side === "left" ? 1 : -1;
+    const upper = side === "left" ? "LeftArm" : "RightArm";
+    const fore = side === "left" ? "LeftForeArm" : "RightForeArm";
+    const hand = side === "left" ? "LeftHand" : "RightHand";
+    const nUpper = rig.names[upper];
+    const nFore = rig.names[fore];
+    const nHand = rig.names[hand];
+    if (!nUpper || !nFore || !nHand) continue;
+    const rUpper = rig.rest.get(nUpper)!;
+    const rFore = rig.rest.get(nFore)!;
+    const wUpper = fk.get(nUpper);
+    const wFore = fk.get(nFore);
+    const pUpper0 = posOf(upper), pFore0 = posOf(fore), pHand0 = posOf(hand);
+    if (!wUpper || !wFore || !pUpper0 || !pFore0 || !pHand0) continue;
+
+    const L1 = pUpper0.distanceTo(pFore0);
+    const rHand = rig.rest.get(nHand)!;
+    const socket = ctx.sockets.find((so) => so.bone === nHand);
+    const socketOffset = new THREE.Vector3(...(socket?.offset ?? [0, 0, 0]));
+    const grip = centre.clone().addScaledVector(barAxis, (s * imp.grip_width_m) / 2);
+    const facing = palmFacing(ctx.grip, side);
+    const S = wUpper.pos;
+
+    // The hand keeps its rest pose on the forearm, so the socket is a fixed point of the forearm
+    // frame: elbow → wrist → socket. Solve the two-bone chain to that point directly (segment
+    // lengths L1 and |gRest|), and the socket lands on the grip exactly.
+    const gRest = pHand0.clone().sub(pFore0).add(socketOffset.clone().applyQuaternion(rHand.world));
+    const L2 = Math.max(gRest.length(), 1e-3);
+    const gRestDir = gRest.clone().normalize();
+    const axisUpperRest = pFore0.clone().sub(pUpper0).normalize();
+    const palmRest = new THREE.Vector3(0, -1, 0);
+
+    const toTarget = grip.clone().sub(S);
+    const d = THREE.MathUtils.clamp(toTarget.length(), Math.abs(L1 - L2) + 1e-3, L1 + L2 - 1e-3);
+    const u = toTarget.normalize();
+    // Pole: where the pose already put the elbow, projected off the shoulder→target line.
+    let v = wFore.pos.clone().sub(S);
+    v.sub(u.clone().multiplyScalar(v.dot(u)));
+    if (v.lengthSq() < 1e-6) v = new THREE.Vector3(0, -1, 0).addScaledVector(u, u.y);
+    if (v.lengthSq() < 1e-6) v = new THREE.Vector3(0, 0, -1);
+    v.normalize();
+    const alpha = Math.acos(THREE.MathUtils.clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+    const elbow = S.clone().addScaledVector(u, Math.cos(alpha) * L1).addScaledVector(v, Math.sin(alpha) * L1);
+    const end = S.clone().addScaledVector(u, d);
+    const dirUpper = elbow.clone().sub(S).normalize();
+    const dirG = end.clone().sub(elbow).normalize();
+    // Palm normal at rest is -Y (T-pose, palms down); the grip decides where it faces the bar.
+    const palm =
+      facing === "neutral"
+        ? new THREE.Vector3(-s, 0, 0)
+        : facing === "supinated"
+          ? dirG.clone().cross(barAxis)
+          : barAxis.clone().cross(dirG);
+    if (palm.lengthSq() < 1e-6) palm.set(0, 0, -1);
+    palm.normalize();
+    const qUpperWorld = arc(axisUpperRest, dirUpper).multiply(rUpper.world);
+    const qForeWorld = frameDelta(gRestDir, palmRest, dirG, palm).multiply(rFore.world);
+
+    const parentUpper = rUpper.parent ? fk.get(rUpper.parent)?.quat : rig.parentWorld.get(nUpper);
+    local.set(nUpper, (parentUpper ?? new THREE.Quaternion()).clone().invert().multiply(qUpperWorld));
+    local.set(nFore, qUpperWorld.clone().invert().multiply(qForeWorld));
+    // The hand keeps the pose's own wrist flexion relative to the forearm.
+  }
+}
+
+function solvePose(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
   const deltas = characterDeltas(p);
   const local = new Map<string, THREE.Quaternion>();
   for (const logical of LOGICAL) {
@@ -197,17 +333,23 @@ function solvePose(p: PoseAngles, rig: Rig): Solved {
     deltaWorld.applyQuaternion(pw.clone().invert()).divideScalar(hipsRest.parentWorldScale || 1);
     hipsPosition.add(deltaWorld);
   }
+  if (ctx.twoHanded && p.implement) solveArmsToImplement(p, rig, local, hipsPosition, ctx);
   return { local, hipsPosition };
 }
 
 const ease = (t: number) => t * t * (3 - 2 * t);
 
 /** The three.js clip for a pose-angles json on this model. */
-export function buildPoseClip(model: THREE.Object3D, clip: PoseClipJson, rest: RestPose): THREE.AnimationClip {
+export function buildPoseClip(model: THREE.Object3D, clip: PoseClipJson, rest: RestPose, sockets: AvatarSocket[] = []): THREE.AnimationClip {
   const rig = buildRig(model, rest);
   const keys = [...clip.keyframes].sort((a, b) => a.t - b.t);
   if (!keys.length) throw new Error("The pose clip has no keyframes");
-  const solved = keys.map((k) => solvePose(k.angles, rig));
+  const ctx: SolveContext = {
+    twoHanded: clip.meta?.two_handed === true,
+    grip: typeof clip.meta?.grip === "string" ? clip.meta.grip : null,
+    sockets,
+  };
+  const solved = keys.map((k) => solvePose(k.angles, rig, ctx));
   const duration = Math.max(clip.duration, keys[keys.length - 1].t, 1 / clip.fps);
   const fps = Math.min(120, Math.max(1, clip.fps));
   const frames = Math.max(2, Math.round(duration * fps) + 1);

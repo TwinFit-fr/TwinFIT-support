@@ -342,15 +342,27 @@ export async function getAvatar(token: string, id: string): Promise<BaseAvatar |
   return data.animation_studio_base_avatars_by_pk;
 }
 
-export type WorkerExercise = { id: string; exo_id: number; display_name: string; description: string };
+export type WorkerExercise = { id: string; exo_id: number; display_name: string; description: string; grip: string | null };
 
 export async function getWorkerExercise(token: string, id: string): Promise<WorkerExercise | null> {
   const data = await staffGql<{
-    catalog_exercises_by_pk: { id: string; exo_id: number; display_name: string; localizations: { description: string | null }[] } | null;
+    catalog_exercises_by_pk: {
+      id: string;
+      exo_id: number;
+      display_name: string;
+      grip: { code: string } | null;
+      localizations: { description: string | null }[];
+    } | null;
   }>(token, STUDIO_WORKER_EXERCISE, { id });
   const row = data.catalog_exercises_by_pk;
   if (!row) return null;
-  return { id: row.id, exo_id: row.exo_id, display_name: row.display_name, description: row.localizations[0]?.description?.trim() ?? "" };
+  return {
+    id: row.id,
+    exo_id: row.exo_id,
+    display_name: row.display_name,
+    description: row.localizations[0]?.description?.trim() ?? "",
+    grip: row.grip?.code ?? null,
+  };
 }
 
 export async function getExercisePoses(token: string, exoId: number): Promise<{ position: number; pose: string }[]> {

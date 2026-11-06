@@ -56,13 +56,18 @@ async function processVector(token: string, vector: MovementVector): Promise<Mov
   const loop = vector.params.loop !== false;
   const llmModel = typeof vector.params.model === "string" ? vector.params.model : null;
 
+  const items = vector.equipment.items ?? [];
+  // A load held in both hands (socket + socket_b): the implement leads and the arms reach it.
+  const twoHanded = items.some((item) => item.kind === "load" && item.socket && item.socket_b);
   const extracted = await extractPoseAngles({
     model: llmModel,
     exerciseName: exercise.display_name,
     description: exercise.description,
-    equipment: equipmentSentence(vector.equipment.items ?? []),
+    equipment: equipmentSentence(items),
     avatarHeightM: avatar.height_m,
     poses,
+    twoHanded,
+    grip: exercise.grip,
   });
 
   const clip: PoseClipJson = {
@@ -78,6 +83,8 @@ async function processVector(token: string, vector: MovementVector): Promise<Mov
       rig: avatar.rig,
       prompt: vector.prompt,
       notes: extracted.notes,
+      two_handed: twoHanded,
+      grip: exercise.grip,
       generator: WORKER_MODEL,
       llm: extracted.usage.model,
     },
