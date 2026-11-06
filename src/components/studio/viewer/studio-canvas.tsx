@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, Fragment, Suspense, useEffect, useMemo } from "react";
+import { Component, Fragment, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Canvas, createPortal, useFrame, useThree } from "@react-three/fiber";
 import {
   ContactShadows,
@@ -8,14 +8,18 @@ import {
   GizmoViewport,
   Grid,
   OrbitControls,
+  TransformControls,
   useGLTF,
   useProgress,
 } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { isPoseClipJson } from "@/lib/studio/anatomy";
+import { buildPoseClip, captureRestPose, type RestPose } from "@/lib/studio/pose-clip";
 import { useStudioStore, type CameraPreset } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
+import type { LoadedClip } from "./movement-clip";
 import { EquipmentMesh } from "./equipment-proxies";
 import { equipmentKey } from "@/lib/studio/equipment";
 import { recordCanvasCommit } from "./render-stats";
@@ -24,12 +28,14 @@ export type SceneProps = {
   modelUrl: string | null;
   heightM: number | null;
   sockets: AvatarSocket[];
-  clip: THREE.AnimationClip | null;
+  clip: LoadedClip | null;
   onModelInfo?: (info: ModelInfo | null) => void;
   /** Loading progress of the model (0-100) while a load is in flight, null when idle. */
   onProgress?: (progress: number | null) => void;
   /** The model failed to load (message), or loads again (null). */
   onError?: (message: string | null) => void;
+  /** A pose clip could not be solved on this rig. */
+  onClipError?: (message: string) => void;
 };
 
 export type ModelInfo = {
@@ -63,16 +69,6 @@ function CameraRig() {
   }, [preset, nonce, camera, controls]);
   return null;
 }
-
-type Attachment = {
-  item: EquipmentItem;
-  bone: THREE.Object3D;
-  /** Second hand bone of a bilateral item (socket_b): drawn between the two bones instead of inside one. */
-  boneB: THREE.Object3D | null;
-  offset: THREE.Vector3;
-  quaternion: THREE.Quaternion;
-  scale: number;
-};
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -116,7 +112,7 @@ function socketTransform(socket: AvatarSocket | undefined) {
   return { offset, quaternion };
 }
 
-function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo }: SceneProps & { modelUrl: string }) {
+function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipError }: SceneProps & { modelUrl: string }) {
   const { scene, animations } = useGLTF(modelUrl);
   const model = useMemo(() => cloneSkeleton(scene), [scene]);
   const items = useStudioStore((s) => s.previewItems);
@@ -125,7 +121,7 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo }: ScenePro
 
   // Ground the model, centre it and bring it to metres (Mixamo exports are often in centimetres).
   // The three object is mutated in place: it is scene state, not React state.
-  const info = useMemo<ModelInfo>(() => {
+  const { info, rest } = useMemo<{ info: ModelInfo; rest: RestPose }>(() => {
     model.position.set(0, 0, 0);
     model.scale.setScalar(1);
     model.updateMatrixWorld(true);
@@ -151,42 +147,97 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo }: ScenePro
       }
     });
     return {
-      bones,
-      meshes,
-      animations: animations.map((a) => a.name),
-      heightM: rawHeight * scale,
-      missingSockets: sockets.filter((s) => !model.getObjectByName(s.bone)).map((s) => s.id),
+      info: {
+        bones,
+        meshes,
+        animations: animations.map((a) => a.name),
+        heightM: rawHeight * scale,
+        missingSockets: sockets.filter((s) => !model.getObjectByName(s.bone)).map((s) => s.id),
+      },
+      // The rest pose, taken now, before the mixer moves any bone: pose clips are solved against it.
+      rest: captureRestPose(model),
     };
   }, [model, heightM, sockets, animations]);
+
+  // Anatomical keyframes become a three.js clip for this very rig; a ready clip is used as it is.
+  const [resolvedClip, clipError] = useMemo<[THREE.AnimationClip | null, string | null]>(() => {
+    if (!clip) return [null, null];
+    if (!isPoseClipJson(clip)) return [clip, null];
+    try {
+      return [buildPoseClip(model, clip, rest), null];
+    } catch (error) {
+      return [null, error instanceof Error ? error.message : String(error)];
+    }
+  }, [clip, model, rest]);
+  useEffect(() => {
+    if (clipError) onClipError?.(clipError);
+  }, [clipError, onClipError]);
 
   useEffect(() => {
     onModelInfo?.(info);
     return () => onModelInfo?.(null);
   }, [info, onModelInfo]);
 
-  // Resolve each load item to the bone of its socket (or the model root when the bone is missing).
-  const attachments = useMemo<Attachment[]>(
-    () =>
-      items
-        .filter((item) => item.kind === "load")
-        .map((item) => {
-          const socket = sockets.find((s) => s.id === item.socket);
-          const bone = (socket && model.getObjectByName(socket.bone)) || model;
-          const socketB = item.socket_b ? sockets.find((s) => s.id === item.socket_b) : undefined;
-          const boneB = (socketB && model.getObjectByName(socketB.bone)) || null;
-          const { offset, quaternion } = socketTransform(socket);
-          const worldScale = bone.getWorldScale(new THREE.Vector3()).x || 1;
-          return { item, bone, boneB: boneB && boneB !== bone ? boneB : null, offset, quaternion, scale: 1 / worldScale };
-        }),
+  // The rig editor: drafts replace the saved sockets / placements while they are being moved.
+  const edit = useStudioStore((s) => s.edit);
+  const draftSockets = useStudioStore((s) => s.draftSockets);
+  const draftPlacements = useStudioStore((s) => s.draftPlacements);
+  const liveSockets = draftSockets ?? sockets;
+  const modelFor = (kind: EquipmentItem["kind"], code: string) => {
+    const key = equipmentKey(kind, code);
+    const saved = models[key];
+    if (!saved) return undefined;
+    const draft = draftPlacements[key];
+    return draft ? { ...saved, placement: draft } : saved;
+  };
+  const [editObject, setEditObject] = useState<THREE.Object3D | null>(null);
+  // Stable callback ref: it is attached to the edit target only, so React calls it once per target change.
+  const editRef = useCallback((o: THREE.Object3D | null) => setEditObject(o), []);
+
+  // Items by the socket they hang from; bilateral items are drawn between two bones (see below).
+  const { socketGroups, bilateral, rootItems } = useMemo(() => {
+    const groups = new Map<string, { socket: AvatarSocket; bone: THREE.Object3D; scale: number; items: EquipmentItem[] }>();
+    const bilateral: { item: EquipmentItem; bone: THREE.Object3D; boneB: THREE.Object3D }[] = [];
+    const rootItems: EquipmentItem[] = [];
+    const groupFor = (socket: AvatarSocket) => {
+      let group = groups.get(socket.id);
+      if (!group) {
+        const bone = model.getObjectByName(socket.bone) || model;
+        group = { socket, bone, scale: 1 / (bone.getWorldScale(new THREE.Vector3()).x || 1), items: [] };
+        groups.set(socket.id, group);
+      }
+      return group;
+    };
+    // Every socket gets a group, so the editor can show and move the empty ones too.
+    for (const socket of liveSockets) groupFor(socket);
+    for (const item of items) {
+      if (item.kind !== "load") continue;
+      const socket = liveSockets.find((s) => s.id === item.socket);
+      const socketB = item.socket_b ? liveSockets.find((s) => s.id === item.socket_b) : undefined;
+      const bone = socket ? model.getObjectByName(socket.bone) : undefined;
+      const boneB = socketB ? model.getObjectByName(socketB.bone) : undefined;
+      if (bone && boneB && bone !== boneB) bilateral.push({ item, bone, boneB });
+      else if (socket) groupFor(socket).items.push(item);
+      else rootItems.push(item);
+    }
+    return { socketGroups: [...groups.values()], bilateral, rootItems };
     // info changes whenever the model was re-laid out, which moves the bones' world scale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, sockets, model, info],
-  );
+  }, [items, liveSockets, model, info]);
 
-  // Play the selected clip, else the model's own first animation.
+  // Play the selected clip, else the model's own first animation. Not while editing the rig: the
+  // avatar stands in its bind pose so sockets are placed on a still body.
   const mixer = useMemo(() => new THREE.AnimationMixer(model), [model]);
+  const editing = edit.mode !== "off";
   useEffect(() => {
-    const active = clip ?? animations[0] ?? null;
+    if (editing) {
+      mixer.stopAllAction();
+      model.traverse((o) => {
+        if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.pose();
+      });
+      return;
+    }
+    const active = resolvedClip ?? animations[0] ?? null;
     if (!active) return;
     const action = mixer.clipAction(active);
     action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
@@ -195,52 +246,140 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo }: ScenePro
       mixer.uncacheAction(active);
       mixer.uncacheClip(active);
     };
-  }, [mixer, clip, animations]);
+  }, [mixer, model, resolvedClip, animations, editing]);
   // Playback controls are read straight from the store every frame: toggling them never re-renders the scene.
   useFrame((_, delta) => {
-    const { playing, speed } = useStudioStore.getState();
-    if (playing) mixer.update(delta * speed);
+    const { playing, speed, edit } = useStudioStore.getState();
+    if (playing && edit.mode === "off") mixer.update(delta * speed);
   });
 
+  // The gizmo moved the target: write its transform (metres, degrees) into the draft.
+  const commitEdit = () => {
+    if (!editObject) return;
+    const { edit, updateDraftSocket, setDraftPlacement } = useStudioStore.getState();
+    const r3 = (v: number) => Math.round(v * 1000) / 1000;
+    const r1 = (v: number) => Math.round(THREE.MathUtils.radToDeg(v) * 10) / 10;
+    const offset: [number, number, number] = [r3(editObject.position.x), r3(editObject.position.y), r3(editObject.position.z)];
+    const rotation: [number, number, number] = [r1(editObject.rotation.x), r1(editObject.rotation.y), r1(editObject.rotation.z)];
+    if (edit.mode === "sockets" && edit.target) updateDraftSocket(sockets, edit.target, { offset, rotation });
+    if (edit.mode === "model" && edit.target) {
+      const [kind, code] = edit.target.split(":") as [EquipmentItem["kind"], string];
+      const current = modelFor(kind, code)?.placement;
+      if (current) setDraftPlacement(edit.target, { size_m: current.size_m, offset, rotation });
+    }
+  };
+
   const supports = items.filter((i) => i.kind === "support");
+  const isModelTarget = (kind: EquipmentItem["kind"], code: string) => edit.mode === "model" && edit.target === equipmentKey(kind, code);
 
   return (
     <>
       <primitive object={model} />
+      {socketGroups.map((g) => {
+        const { offset, quaternion } = socketTransform(g.socket);
+        const selected = edit.mode === "sockets" && edit.target === g.socket.id;
+        const show = (showEquipment && g.items.length > 0) || edit.mode === "sockets";
+        if (!show) return null;
+        return (
+          // The key belongs to the element in this list (the portal), not to the group inside it.
+          <Fragment key={g.socket.id}>
+            {createPortal(
+              // Outer group: bone units → metres. Inner group: the socket itself (offset in metres,
+              // rotation), which is what the gizmo moves in sockets mode.
+              <group scale={g.scale}>
+                <group ref={selected ? editRef : undefined} position={offset} quaternion={quaternion}>
+                  {edit.mode === "sockets" ? <SocketMarker selected={selected} /> : null}
+                  {showEquipment
+                    ? g.items.map((item, i) => (
+                        <EquipmentMesh
+                          key={`${item.code}-${i}`}
+                          item={item}
+                          index={i}
+                          model={modelFor("load", item.code)}
+                          editRef={isModelTarget("load", item.code) ? editRef : undefined}
+                        />
+                      ))
+                    : null}
+                </group>
+              </group>,
+              g.bone,
+            )}
+          </Fragment>
+        );
+      })}
       {showEquipment
-        ? attachments.map((a, i) =>
-            a.boneB ? (
-              <BilateralAttachment key={`${a.item.code}-both-${i}`} a={a.bone} b={a.boneB}>
-                <EquipmentMesh item={a.item} index={i} model={models[equipmentKey("load", a.item.code)]} alignLongAxis />
-              </BilateralAttachment>
-            ) : (
-              // The key belongs to the element in this list (the portal), not to the group inside it.
-              <Fragment key={`${a.item.code}-${a.item.socket ?? "root"}-${i}`}>
-                {createPortal(
-                  <group position={a.offset} quaternion={a.quaternion} scale={a.scale}>
-                    <EquipmentMesh item={a.item} index={i} model={models[equipmentKey("load", a.item.code)]} />
-                  </group>,
-                  a.bone,
-                )}
-              </Fragment>
-            ),
-          )
+        ? bilateral.map((b, i) => (
+            <BilateralAttachment key={`${b.item.code}-both-${i}`} a={b.bone} b={b.boneB}>
+              <EquipmentMesh
+                item={b.item}
+                index={i}
+                model={modelFor("load", b.item.code)}
+                alignLongAxis
+                editRef={isModelTarget("load", b.item.code) ? editRef : undefined}
+              />
+            </BilateralAttachment>
+          ))
+        : null}
+      {showEquipment
+        ? rootItems.map((item, i) => (
+            <EquipmentMesh key={`${item.code}-root-${i}`} item={item} index={i} model={modelFor("load", item.code)} editRef={isModelTarget("load", item.code) ? editRef : undefined} />
+          ))
         : null}
       {showEquipment
         ? supports.map((item, i) => (
-            <EquipmentMesh key={`${item.code}-${i}`} item={item} index={i} model={models[equipmentKey("support", item.code)]} />
+            <EquipmentMesh
+              key={`${item.code}-${i}`}
+              item={item}
+              index={i}
+              model={modelFor("support", item.code)}
+              editRef={isModelTarget("support", item.code) ? editRef : undefined}
+            />
           ))
         : null}
+      {editing && editObject ? (
+        <TransformControls object={editObject} mode={edit.tool} space="local" size={0.7} onMouseUp={commitEdit} />
+      ) : null}
     </>
   );
 }
 
-/** Reports the loading manager's progress to the DOM overlay; renders nothing in the scene. */
+/** Where a socket sits: a dot and its axes, drawn over everything while the rig is edited. */
+function SocketMarker({ selected }: { selected: boolean }) {
+  return (
+    <group>
+      <axesHelper args={[0.08]} />
+      <mesh renderOrder={999}>
+        <sphereGeometry args={[0.012, 12, 8]} />
+        <meshBasicMaterial color={selected ? "#7fe0c4" : "#e3e7f0"} depthTest={false} transparent opacity={0.95} />
+      </mesh>
+    </group>
+  );
+}
+
+/**
+ * Reports the loading manager's progress to the DOM overlay; renders nothing in the scene.
+ * It subscribes to drei's progress store outside React's render and defers each report, because
+ * the store updates synchronously while a sibling (a model, an equipment GLB) is still rendering
+ * and suspending; a hook subscription there would set state during another component's render.
+ */
 function LoadReporter({ onProgress }: { onProgress?: (progress: number | null) => void }) {
-  const { active, progress } = useProgress();
   useEffect(() => {
-    onProgress?.(active ? progress : null);
-  }, [active, progress, onProgress]);
+    let timer = 0;
+    const emit = () => {
+      const { active, progress } = useProgress.getState();
+      onProgress?.(active ? progress : null);
+    };
+    const unsubscribe = useProgress.subscribe(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(emit, 0);
+    });
+    emit();
+    return () => {
+      unsubscribe();
+      window.clearTimeout(timer);
+      onProgress?.(null);
+    };
+  }, [onProgress]);
   return null;
 }
 

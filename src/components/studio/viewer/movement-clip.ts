@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { isPoseClipJson, type PoseClipJson } from "@/lib/studio/anatomy";
 import type { VectorFormat } from "@/lib/studio/types";
 
 /**
@@ -43,13 +44,16 @@ export function clipFromJson(data: JsonClip, name = "movement"): THREE.Animation
   return new THREE.AnimationClip(name, data.duration ?? -1, tracks);
 }
 
+/** A clip ready to play, or anatomical keyframes the canvas solves on the loaded rig (see pose-clip.ts). */
+export type LoadedClip = THREE.AnimationClip | PoseClipJson;
+
 export type ClipState = {
-  clip: THREE.AnimationClip | null;
+  clip: LoadedClip | null;
   loading: boolean;
   error: string | null;
 };
 
-type Loaded = { key: string; clip: THREE.AnimationClip | null; error: string | null };
+type Loaded = { key: string; clip: LoadedClip | null; error: string | null };
 
 /** Load the clip of a movement vector (glb / gltf animations, or keyframe json). bvh is not played yet. */
 export function useMovementClip(url: string | null, format: VectorFormat | null): ClipState {
@@ -62,7 +66,7 @@ export function useMovementClip(url: string | null, format: VectorFormat | null)
     if (!url || !format || !key) return;
     let cancelled = false;
 
-    const load = async (): Promise<THREE.AnimationClip> => {
+    const load = async (): Promise<LoadedClip> => {
       if (format === "glb" || format === "gltf") {
         const gltf = await new GLTFLoader().loadAsync(url);
         const clip = gltf.animations[0];
@@ -72,7 +76,9 @@ export function useMovementClip(url: string | null, format: VectorFormat | null)
       if (format === "json") {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Clip download failed (${res.status})`);
-        return clipFromJson((await res.json()) as JsonClip);
+        const data = (await res.json()) as unknown;
+        if (isPoseClipJson(data)) return data;
+        return clipFromJson(data as JsonClip);
       }
       throw new Error(`Format ${format} is not played in the viewer yet`);
     };

@@ -137,7 +137,7 @@ export type StudioEquipment = {
 };
 
 /** The model the viewer draws per `${kind}:${code}` (see equipmentKey). */
-export type ActiveEquipmentModels = Record<string, { url: string; placement: EquipmentPlacement }>;
+export type ActiveEquipmentModels = Record<string, { id: string; url: string; placement: EquipmentPlacement }>;
 
 export type MeshyCredits = {
   balance: number;

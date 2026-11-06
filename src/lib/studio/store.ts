@@ -1,9 +1,19 @@
 "use client";
 
 import { create } from "zustand";
-import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, VectorFormat, VectorStatus } from "./types";
+import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, EquipmentPlacement, VectorFormat, VectorStatus } from "./types";
 
 export type CameraPreset = "front" | "three-quarter" | "side";
+
+/** Rig editor: move the avatar's sockets, or a generated model relative to its socket, with a gizmo. */
+export type EditMode = "off" | "sockets" | "model";
+export type EditTool = "translate" | "rotate";
+export type EditState = {
+  mode: EditMode;
+  /** Socket id (sockets mode) or equipment key `kind:code` (model mode). */
+  target: string | null;
+  tool: EditTool;
+};
 
 /**
  * What the 3D scene needs, and nothing else: primitives plus the socket list, derived by the
@@ -87,6 +97,11 @@ export type StudioState = {
   cameraPreset: CameraPreset;
   /** Bumped by "Reset view" so the camera rig re-applies the preset. */
   viewNonce: number;
+  edit: EditState;
+  /** Sockets being edited (the avatar's with the gizmo moves applied); null when untouched. */
+  draftSockets: AvatarSocket[] | null;
+  /** Placement being edited per equipment key; empty when untouched. */
+  draftPlacements: Record<string, EquipmentPlacement>;
 
   selectExercise: (exerciseId: string | null) => void;
   setAvatar: (avatarId: string | null) => void;
@@ -100,6 +115,11 @@ export type StudioState = {
   toggleEquipment: () => void;
   setCameraPreset: (preset: CameraPreset) => void;
   resetView: () => void;
+  setEdit: (edit: Partial<EditState>) => void;
+  setDraftSockets: (sockets: AvatarSocket[] | null) => void;
+  updateDraftSocket: (base: AvatarSocket[], id: string, patch: Pick<AvatarSocket, "offset" | "rotation">) => void;
+  setDraftPlacement: (key: string, placement: EquipmentPlacement | null) => void;
+  clearDrafts: () => void;
 };
 
 export const useStudioStore = create<StudioState>((set) => ({
@@ -115,6 +135,9 @@ export const useStudioStore = create<StudioState>((set) => ({
   showEquipment: true,
   cameraPreset: "three-quarter",
   viewNonce: 0,
+  edit: { mode: "off", target: null, tool: "translate" },
+  draftSockets: null,
+  draftPlacements: {},
 
   selectExercise: (exerciseId) =>
     set((s) => (s.exerciseId === exerciseId ? s : { exerciseId, vectorId: null, previewItems: [] })),
@@ -131,4 +154,18 @@ export const useStudioStore = create<StudioState>((set) => ({
   toggleEquipment: () => set((s) => ({ showEquipment: !s.showEquipment })),
   setCameraPreset: (cameraPreset) => set((s) => ({ cameraPreset, viewNonce: s.viewNonce + 1 })),
   resetView: () => set((s) => ({ viewNonce: s.viewNonce + 1 })),
+  setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
+  setDraftSockets: (draftSockets) => set({ draftSockets }),
+  updateDraftSocket: (base, id, patch) =>
+    set((s) => ({
+      draftSockets: (s.draftSockets ?? base).map((socket) => (socket.id === id ? { ...socket, ...patch } : socket)),
+    })),
+  setDraftPlacement: (key, placement) =>
+    set((s) => {
+      const next = { ...s.draftPlacements };
+      if (placement) next[key] = placement;
+      else delete next[key];
+      return { draftPlacements: next };
+    }),
+  clearDrafts: () => set({ draftSockets: null, draftPlacements: {} }),
 }));
