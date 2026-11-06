@@ -14,3 +14,101 @@ body {
     "Segoe UI",
     sans-serif;
 }
+
+/* ---------------------------------------------------------------------------
+   TwinFIT 3D Studio (/studio): a desktop workspace in strict dark mode.
+   Material 3 dark tonal surfaces as CSS tokens, scoped to .studio-root so the
+   rest of Support stays light. Use them with Tailwind's var shorthand:
+   bg-(--m3-surface) text-(--m3-on-surface) border-(--m3-outline-variant).
+   --------------------------------------------------------------------------- */
+.studio-root {
+  color-scheme: dark;
+  --m3-surface: #0d1017;
+  --m3-surface-dim: #090b10;
+  --m3-surface-bright: #2b3240;
+  --m3-surface-container-lowest: #07090d;
+  --m3-surface-container-low: #12161f;
+  --m3-surface-container: #171c27;
+  --m3-surface-container-high: #1e2431;
+  --m3-surface-container-highest: #262e3d;
+  --m3-on-surface: #e3e7f0;
+  --m3-on-surface-variant: #98a2b6;
+  --m3-outline: #3b4457;
+  --m3-outline-variant: #242b39;
+  --m3-primary: #a3c4ff;
+  --m3-on-primary: #072a5a;
+  --m3-primary-container: #2857a8;
+  --m3-on-primary-container: #dbe7ff;
+  --m3-secondary-container: #283550;
+  --m3-on-secondary-container: #d6e2ff;
+  --m3-tertiary: #7fe0c4;
+  --m3-tertiary-container: #124a3b;
+  --m3-error: #ffb4ab;
+  --m3-error-container: #5a1a16;
+  --m3-success: #6ee7b7;
+  --m3-warning: #fcd34d;
+  --m3-scrim: rgba(3, 5, 9, 0.6);
+  --studio-glass: rgba(18, 22, 31, 0.72);
+  --studio-glass-border: rgba(255, 255, 255, 0.07);
+  --studio-glow: 0 0 0 1px rgba(163, 196, 255, 0.18), 0 12px 40px -12px rgba(40, 87, 168, 0.55);
+  background: var(--m3-surface);
+  color: var(--m3-on-surface);
+  font-feature-settings: "cv02", "cv03", "cv04", "tnum";
+}
+
+.studio-glass {
+  background: var(--studio-glass);
+  border: 1px solid var(--studio-glass-border);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+.studio-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--m3-outline) transparent;
+}
+.studio-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.studio-scroll::-webkit-scrollbar-thumb {
+  background: var(--m3-outline);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* M3 state layer: an 8 % / 12 % tint of the content colour on hover / press. */
+.studio-state {
+  position: relative;
+  isolation: isolate;
+}
+.studio-state::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+  z-index: -1;
+}
+.studio-state:hover::after {
+  opacity: 0.08;
+}
+.studio-state:active::after {
+  opacity: 0.12;
+}
+
+@keyframes studio-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.studio-pulse {
+  animation: studio-pulse 1.6s ease-in-out infinite;
+}
