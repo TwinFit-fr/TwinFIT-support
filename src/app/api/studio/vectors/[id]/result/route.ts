@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import { getVector, updateVector } from "@/lib/studio/queries";
 import { CLIP_EXTENSIONS, describeKeyframeJson } from "@/lib/studio/clip-files";
-import { uploadStudioFile } from "@/lib/studio/storage";
+import { deleteStudioFile, uploadStudioFile } from "@/lib/studio/storage";
 
 const MAX_CLIP_BYTES = 100 * 1024 * 1024;
 
@@ -56,6 +56,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       duration_ms: meta.duration_ms ?? described?.duration_ms ?? vector.duration_ms,
       model: meta.model ?? vector.model ?? "manual-upload",
     });
+    // The replaced file has no row pointing at it any more: drop it (best effort).
+    if (vector.file_id && vector.file_id !== uploaded.id) await deleteStudioFile(token, vector.file_id);
     return NextResponse.json({ vector: updated }, { status: 201 });
   } catch (error) {
     if (error instanceof Response) return error;

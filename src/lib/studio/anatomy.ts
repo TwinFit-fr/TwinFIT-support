@@ -256,6 +256,41 @@ export const POSE_SET_SCHEMA = {
   },
 } as const;
 
+/** A pose with the time it takes to reach it from the previous one (the draft the editor asks for). */
+const TIMED_POSE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [...POSE_ANGLES_SCHEMA.required, "label", "transition_s"],
+  properties: {
+    ...POSE_ANGLES_SCHEMA.properties,
+    label: { type: "string", description: "two or three words naming the moment (start, bottom, lockout, ...)" },
+    transition_s: num("seconds spent moving into this pose from the previous one (the first pose's value is the return into it when the loop cycles); slower on the lowering phase"),
+  },
+} as const;
+
+export const POSE_DRAFT_SCHEMA = {
+  name: "exercise_pose_draft",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["poses", "loop_mode", "notes"],
+    properties: {
+      poses: { type: "array", description: "the key poses of one repetition in order, 2 to 6 of them; the first is the start position", items: TIMED_POSE_SCHEMA },
+      loop_mode: { type: "string", enum: ["pingpong", "cycle"], description: "pingpong when the movement retraces its poses (a lift up and down); cycle when it returns to the start another way (a step, a rotation)" },
+      notes: { type: "string", description: "one line on anything ambiguous or that the images contradict" },
+    },
+  },
+} as const;
+
+/** The ranges of motion as one line per joint, for the prompt. */
+export function jointLimitsText(): string {
+  return Object.entries(JOINT_LIMITS)
+    .filter(([k]) => !k.startsWith("implement."))
+    .map(([k, v]) => `${k}: ${v.min}…${v.max}`)
+    .join("; ");
+}
+
 /** Clamp every angle to a plausible human range so a bad extraction cannot fold the avatar. */
 export function sanitizePose(p: PoseAngles): PoseAngles {
   const c = (v: unknown, lo: number, hi: number, fallback = 0) => {
@@ -340,8 +375,13 @@ export function palmFacing(grip: string | null | undefined, side: "left" | "righ
 export type LoopMode = "cycle" | "pingpong" | "once";
 export const LOOP_MODES: readonly LoopMode[] = ["cycle", "pingpong", "once"];
 
-/** Expand an ordered list of poses into timed keyframes, evenly spaced over the duration. */
-export function buildKeyframes(poses: PoseAngles[], durationS: number, mode: LoopMode): PoseKeyframe[] {
+/**
+ * Expand an ordered list of poses into timed keyframes over the duration. `weights[i]` is the
+ * relative time spent getting to pose i from the previous one (weights[0] is the return leg of a
+ * cycle); omitted or equal weights space the poses evenly. A boomerang reuses the weights on the
+ * way back.
+ */
+export function buildKeyframes(poses: PoseAngles[], durationS: number, mode: LoopMode, weights?: number[]): PoseKeyframe[] {
   if (!poses.length) throw new Error("A pose is needed");
   if (poses.length === 1) {
     return [
@@ -349,14 +389,27 @@ export function buildKeyframes(poses: PoseAngles[], durationS: number, mode: Loo
       { t: durationS, position: 0, angles: poses[0] },
     ];
   }
+  const w = poses.map((_, i) => Math.max(0.05, weights?.[i] ?? 1));
   const order: number[] =
     mode === "cycle"
       ? [...poses.map((_, i) => i), 0]
       : mode === "pingpong"
         ? [...poses.map((_, i) => i), ...poses.map((_, i) => i).reverse().slice(1)]
         : poses.map((_, i) => i);
-  const steps = order.length - 1;
-  return order.map((index, k) => ({ t: (durationS * k) / steps, position: index, angles: poses[index] }));
+  // Segment k goes from order[k-1] to order[k]; its weight is that of the pose being entered
+  // (going forward) or the one being left (going back), so each transition keeps its tempo.
+  const segments: number[] = [];
+  for (let k = 1; k < order.length; k += 1) {
+    const from = order[k - 1];
+    const to = order[k];
+    segments.push(to > from ? w[to] : to === 0 && from === poses.length - 1 && mode === "cycle" ? w[0] : w[from]);
+  }
+  const total = segments.reduce((acc, v) => acc + v, 0);
+  let t = 0;
+  return order.map((index, k) => {
+    if (k > 0) t += (durationS * segments[k - 1]) / total;
+    return { t: k === order.length - 1 ? durationS : t, position: index, angles: poses[index] };
+  });
 }
 
 /** Keyframes of one repetition from the three catalog poses (start, mid, end). */
@@ -366,7 +419,7 @@ export function keyframesFromPoses(poses: PoseAngles[], durationS: number, loop:
 }
 
 /** The editable poses of a clip: one per distinct `position`, in order; a trailing return to the start is dropped. */
-export function posesFromClip(clip: PoseClipJson): { poses: PoseAngles[]; mode: LoopMode } {
+export function posesFromClip(clip: PoseClipJson): { poses: PoseAngles[]; mode: LoopMode; weights: number[] | null } {
   const keys = [...clip.keyframes].sort((a, b) => a.t - b.t);
   const byPosition = new Map<number, PoseAngles>();
   keys.forEach((k, i) => {
@@ -376,7 +429,9 @@ export function posesFromClip(clip: PoseClipJson): { poses: PoseAngles[]; mode: 
   const poses = [...byPosition.entries()].sort((a, b) => a[0] - b[0]).map(([, p]) => p);
   const metaMode = clip.meta?.loop_mode;
   const mode: LoopMode = metaMode === "pingpong" || metaMode === "once" || metaMode === "cycle" ? metaMode : clip.loop ? "cycle" : "once";
-  return { poses: poses.length ? poses : [NEUTRAL_POSE], mode };
+  const rawWeights = clip.meta?.segment_weights;
+  const weights = Array.isArray(rawWeights) && rawWeights.length === poses.length && rawWeights.every((v) => typeof v === "number") ? (rawWeights as number[]) : null;
+  return { poses: poses.length ? poses : [NEUTRAL_POSE], mode, weights };
 }
 
 // ---------------------------------------------------------------------------
@@ -523,14 +578,16 @@ export function poseClipFromDraft(draft: {
   fps: number;
   twoHanded: boolean;
   grip: string | null;
+  weights?: number[] | null;
   meta: Record<string, unknown>;
 }): PoseClipJson {
+  const weights = draft.weights && draft.weights.length === draft.poses.length ? draft.weights : null;
   return {
     kind: "pose-angles",
     fps: draft.fps,
     duration: draft.durationS,
     loop: draft.mode !== "once",
-    keyframes: buildKeyframes(draft.poses, draft.durationS, draft.mode),
-    meta: { ...draft.meta, loop_mode: draft.mode, two_handed: draft.twoHanded, grip: draft.grip, generator: "pose-editor" },
+    keyframes: buildKeyframes(draft.poses, draft.durationS, draft.mode, weights ?? undefined),
+    meta: { ...draft.meta, loop_mode: draft.mode, two_handed: draft.twoHanded, grip: draft.grip, segment_weights: weights, generator: "pose-editor" },
   };
 }

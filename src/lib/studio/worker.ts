@@ -6,20 +6,72 @@
  */
 
 import { buildKeyframes, type LoopMode, type PoseClipJson } from "./anatomy";
-import { extractPoseAngles } from "./pose-llm";
+import { imageUrlToDataUri } from "./meshy";
+import { draftPoses, type PoseDraftResult } from "./pose-llm";
 import { equipmentSentence } from "./prompt";
 import {
   claimMovementVector,
   getAvatar,
+  getExerciseFrames,
   getExercisePoses,
   getWorkerExercise,
   updateVector,
 } from "./queries";
 import { uploadStudioFile } from "./storage";
-import type { MovementVector } from "./types";
+import type { EquipmentItem, MovementVector } from "./types";
 
 const RETRY_DELAY_MS = 30_000;
 const WORKER_MODEL = "studio-poses";
+
+/**
+ * Everything the pose model needs about an exercise: its name and description, the three pose
+ * texts, the catalog frames as data URIs (start, mid, end; skipped when a download fails), grip.
+ */
+export async function gatherExerciseContext(token: string, exerciseId: string, subject: string) {
+  const exercise = await getWorkerExercise(token, exerciseId);
+  if (!exercise) throw new Error("The exercise no longer exists");
+  const [poses, frames] = await Promise.all([getExercisePoses(token, exercise.exo_id), getExerciseFrames(token, exercise.exo_id, subject === "woman" ? "woman" : "man")]);
+  const images: string[] = [];
+  for (const frame of frames.slice(0, 3)) {
+    try {
+      images.push(await imageUrlToDataUri(frame.image_url));
+    } catch {
+      // A frame that cannot be fetched is left out; the text still describes it.
+    }
+  }
+  return { exercise, poses, images };
+}
+
+export type DraftRequest = {
+  exerciseId: string;
+  subject: string;
+  avatarHeightM: number | null;
+  items: EquipmentItem[];
+  twoHanded: boolean;
+  instructions?: string | null;
+  poseCount?: number | null;
+  model?: string | null;
+};
+
+/** The AI draft of an exercise's poses, with images: what the editor's "AI draft" and the worker use. */
+export async function draftExercisePoses(token: string, req: DraftRequest): Promise<PoseDraftResult & { exoId: number; grip: string | null }> {
+  const { exercise, poses, images } = await gatherExerciseContext(token, req.exerciseId, req.subject);
+  if (poses.length !== 3) throw new Error(`Exercise #${exercise.exo_id} has ${poses.length} poses instead of 3 (images.exercise_poses)`);
+  const result = await draftPoses({
+    model: req.model,
+    exerciseName: exercise.display_name,
+    description: exercise.description,
+    equipment: equipmentSentence(req.items),
+    avatarHeightM: req.avatarHeightM,
+    poses,
+    twoHanded: req.twoHanded,
+    grip: exercise.grip,
+    images,
+    instructions: req.instructions,
+    poseCount: req.poseCount,
+  });
+  return { ...result, exoId: exercise.exo_id, grip: exercise.grip };
+}
 
 export type TickResult =
   | { claimed: false }
@@ -45,50 +97,49 @@ export async function runWorkerTick(token: string): Promise<TickResult> {
 }
 
 async function processVector(token: string, vector: MovementVector): Promise<MovementVector> {
-  const [exercise, avatar] = await Promise.all([getWorkerExercise(token, vector.exercise_id), getAvatar(token, vector.avatar_id)]);
-  if (!exercise) throw new Error("The exercise no longer exists");
+  const avatar = await getAvatar(token, vector.avatar_id);
   if (!avatar) throw new Error("The avatar no longer exists");
-  const poses = await getExercisePoses(token, exercise.exo_id);
-  if (poses.length !== 3) throw new Error(`Exercise #${exercise.exo_id} has ${poses.length} poses instead of 3 (images.exercise_poses)`);
 
   const fps = clampInt(Number(vector.params.fps ?? 30), 1, 120);
   const durationS = clampNumber(Number(vector.params.duration_s ?? 4), 0.5, 60);
   const loop = vector.params.loop !== false;
-  const loopMode: LoopMode = !loop ? "once" : vector.params.loop_mode === "pingpong" ? "pingpong" : "cycle";
   const llmModel = typeof vector.params.model === "string" ? vector.params.model : null;
-
   const items = vector.equipment.items ?? [];
   // A load held in both hands (socket + socket_b): the implement leads and the arms reach it.
   const twoHanded = items.some((item) => item.kind === "load" && item.socket && item.socket_b);
-  const extracted = await extractPoseAngles({
-    model: llmModel,
-    exerciseName: exercise.display_name,
-    description: exercise.description,
-    equipment: equipmentSentence(items),
+
+  const draft = await draftExercisePoses(token, {
+    exerciseId: vector.exercise_id,
+    subject: avatar.subject,
     avatarHeightM: avatar.height_m,
-    poses,
+    items,
     twoHanded,
-    grip: exercise.grip,
+    instructions: typeof vector.params.instructions === "string" ? vector.params.instructions : vector.prompt,
+    poseCount: typeof vector.params.pose_count === "number" ? vector.params.pose_count : null,
+    model: llmModel,
   });
+  const loopMode: LoopMode = !loop ? "once" : vector.params.loop_mode === "cycle" ? "cycle" : vector.params.loop_mode === "pingpong" ? "pingpong" : draft.mode;
 
   const clip: PoseClipJson = {
     kind: "pose-angles",
     fps,
     duration: durationS,
     loop,
-    keyframes: buildKeyframes(extracted.poses, durationS, loopMode),
+    keyframes: buildKeyframes(draft.poses, durationS, loopMode, draft.weights),
     meta: {
       loop_mode: loopMode,
-      exercise_id: exercise.id,
-      exo_id: exercise.exo_id,
+      segment_weights: draft.weights,
+      labels: draft.labels,
+      exercise_id: vector.exercise_id,
+      exo_id: draft.exoId,
       avatar_code: avatar.code,
       rig: avatar.rig,
       prompt: vector.prompt,
-      notes: extracted.notes,
+      notes: draft.notes,
       two_handed: twoHanded,
-      grip: exercise.grip,
+      grip: draft.grip,
       generator: WORKER_MODEL,
-      llm: extracted.usage.model,
+      llm: draft.usage.model,
     },
   };
 
@@ -108,8 +159,8 @@ async function processVector(token: string, vector: MovementVector): Promise<Mov
     fps,
     frame_count: Math.round(durationS * fps),
     duration_ms: Math.round(durationS * 1000),
-    model: `${WORKER_MODEL}/${extracted.usage.model}`,
-    usage: extracted.usage,
+    model: `${WORKER_MODEL}/${draft.usage.model}`,
+    usage: draft.usage,
   });
 }
 

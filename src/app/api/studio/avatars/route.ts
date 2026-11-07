@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { generateStyledAvatar, syncProcessingAvatars } from "@/lib/studio/avatar-service";
+import { MeshyError } from "@/lib/studio/meshy";
 import { createAvatar, listAvatars } from "@/lib/studio/queries";
 import { deleteStudioFile, uploadStudioFile } from "@/lib/studio/storage";
 import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
@@ -37,9 +39,27 @@ const urlBodySchema = z.object({
   fields: fieldsSchema,
 });
 
+/** A styled avatar from the catalog's character image (Meshy image-to-3D + rigging). */
+const styleBodySchema = z.object({
+  mode: z.literal("style"),
+  code: z.string().trim().regex(/^[A-Z][A-Z0-9_]*$/, "code must be SCREAMING_SNAKE"),
+  name: z.string().trim().min(1).max(120),
+  subject: z.enum(["man", "woman"]),
+  height_m: z.number().min(0.5).max(2.5),
+  is_default: z.boolean(),
+  image_data_url: z
+    .string()
+    .regex(/^data:image\/(png|jpe?g|webp);base64,/, "image_data_url must be a PNG, JPEG or WebP data URI")
+    .max(28 * 1024 * 1024)
+    .nullable()
+    .optional(),
+});
+
 export async function GET(request: Request) {
   try {
     const token = requireStaffToken(request);
+    // Avatars being generated advance here: polling the list is how a generation completes.
+    await syncProcessingAvatars(token);
     return NextResponse.json({ avatars: await listAvatars(token) });
   } catch (error) {
     if (error instanceof Response) return error;
@@ -103,9 +123,11 @@ async function storeAvatar(token: string, fields: Fields, bytes: Buffer, kind: {
 }
 
 /**
- * Register a base avatar. Two bodies:
+ * Register a base avatar. Three bodies:
  * - multipart/form-data: `file` (.glb / .gltf, also the mannequin the browser generates) + `fields` (JSON);
- * - application/json: `{ url, fields }` to import a model from an https URL (Ready Player Me, a CDN, ...).
+ * - application/json: `{ url, fields }` to import a model from an https URL (Ready Player Me, a CDN, ...);
+ * - application/json: `{ mode: "style", code, name, subject, height_m, is_default, image_data_url? }` to
+ *   build one with Meshy from the style's character image (the row starts processing; GET finishes it).
  * `fields` = code, name, subject, rig, height_m, sockets, is_default, params?.
  */
 export async function POST(request: Request) {
@@ -114,7 +136,20 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") ?? "";
 
     if (contentType.includes("application/json")) {
-      const body = urlBodySchema.parse(await request.json());
+      const json = (await request.json()) as { mode?: string };
+      if (json?.mode === "style") {
+        const body = styleBodySchema.parse(json);
+        const avatar = await generateStyledAvatar(token, {
+          code: body.code,
+          name: body.name,
+          subject: body.subject,
+          height_m: body.height_m,
+          is_default: body.is_default,
+          imageDataUrl: body.image_data_url ?? null,
+        });
+        return NextResponse.json({ avatar }, { status: avatar.status === "error" ? 502 : 201 });
+      }
+      const body = urlBodySchema.parse(json);
       const { bytes, kind } = await fetchModel(body.url);
       const avatar = await storeAvatar(token, body.fields, bytes, kind);
       return NextResponse.json({ avatar }, { status: 201 });
@@ -140,6 +175,7 @@ export async function POST(request: Request) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
     }
+    if (error instanceof MeshyError) return NextResponse.json({ error: error.message }, { status: error.status >= 400 && error.status < 600 ? error.status : 502 });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create the avatar" },
       { status: 500 },

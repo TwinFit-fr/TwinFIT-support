@@ -4,8 +4,8 @@
  */
 
 export const AVATAR_FIELDS = `
-  id code name subject file_id model_url rig height_m sockets params active is_default
-  inserted_at updated_at
+  id code name subject file_id model_url provider status progress task_id rig_task_id source_image_url
+  error usage rig height_m sockets params active is_default inserted_at updated_at
 `;
 
 export const VECTOR_FIELDS = `
@@ -257,5 +257,33 @@ export const STUDIO_AVATAR = `
 export const STUDIO_UPDATE_AVATAR = `
   mutation StudioUpdateAvatar($id: uuid!, $set: animation_studio_base_avatars_set_input!) {
     update_animation_studio_base_avatars_by_pk(pk_columns: { id: $id }, _set: $set) { ${AVATAR_FIELDS} }
+  }
+`;
+
+/** Avatars whose provider job still runs (the list route brings them up to date). */
+export const STUDIO_AVATARS_PROCESSING = `
+  query StudioAvatarsProcessing {
+    animation_studio_base_avatars(where: { status: { _in: ["pending", "processing"] }, provider: { _eq: "meshy" } }, order_by: { inserted_at: asc }, limit: 10) {
+      ${AVATAR_FIELDS}
+    }
+  }
+`;
+
+/** The reference image of the default style for a subject (images.style_characters). */
+export const STUDIO_STYLE_CHARACTER = `
+  query StudioStyleCharacter($subject: String!) {
+    images_style_characters(where: { subject: { _eq: $subject }, style: { is_default: { _eq: true } } }, limit: 1) {
+      subject file_id
+    }
+  }
+`;
+
+/** The catalog frames of an exercise (default style, one subject), start → mid → end. */
+export const STUDIO_EXERCISE_FRAMES = `
+  query StudioExerciseFrames($exoId: Int!, $subject: String!) {
+    images_exercise_images(
+      where: { exo_id: { _eq: $exoId }, active: { _eq: true }, subject: { _eq: $subject }, style: { is_default: { _eq: true } } }
+      order_by: { position: asc }
+    ) { position image_url }
   }
 `;

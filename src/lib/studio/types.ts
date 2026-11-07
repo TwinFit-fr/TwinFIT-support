@@ -45,13 +45,24 @@ export type PipelineParams = {
   model?: string;
 } & Record<string, unknown>;
 
+export type AvatarProvider = "upload" | "mannequin" | "meshy";
+
 export type BaseAvatar = {
   id: string;
   code: string;
   name: string;
   subject: AvatarSubject;
-  file_id: string;
-  model_url: string;
+  /** Null while a provider is still building the model. */
+  file_id: string | null;
+  model_url: string | null;
+  provider: AvatarProvider;
+  status: VectorStatus;
+  progress: number;
+  task_id: string | null;
+  rig_task_id: string | null;
+  source_image_url: string | null;
+  error: string | null;
+  usage: Record<string, unknown> | null;
   rig: AvatarRig;
   height_m: number | null;
   sockets: AvatarSocket[];
@@ -187,8 +198,12 @@ export type NewAvatarInput = {
   code: string;
   name: string;
   subject: AvatarSubject;
-  file_id: string;
-  model_url: string;
+  file_id?: string | null;
+  model_url?: string | null;
+  provider?: AvatarProvider;
+  status?: VectorStatus;
+  task_id?: string | null;
+  source_image_url?: string | null;
   rig: AvatarRig;
   height_m: number | null;
   sockets: AvatarSocket[];

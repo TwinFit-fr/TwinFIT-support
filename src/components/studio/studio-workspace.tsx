@@ -15,7 +15,7 @@ import { AvatarDialog } from "./avatar-dialog";
 import { EQUIPMENT_KEY, EquipmentDialog, type EquipmentResponse } from "./equipment-dialog";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { InspectorPanel, type GenerateInput, type VectorAction } from "./inspector-panel";
-import { PoseEditor } from "./pose-editor";
+import { PoseEditor, type DraftRequest, type SaveMode } from "./pose-editor";
 import { RigEditor } from "./rig-editor";
 import { NEUTRAL_POSE, isPoseClipJson, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
 import { StudioShell } from "./studio-shell";
@@ -48,9 +48,10 @@ function AvatarMenu({
         >
           {!avatars.length ? <option value="">No avatar</option> : null}
           {avatars.map((a) => (
-            <option key={a.id} value={a.id}>
+            <option key={a.id} value={a.id} disabled={a.status !== "ready"}>
               {a.name} · {a.subject} · {a.rig}
               {a.is_default ? " · default" : ""}
+              {a.status === "processing" || a.status === "pending" ? ` · building ${a.progress}%` : a.status === "error" ? " · failed" : ""}
             </option>
           ))}
         </select>
@@ -59,7 +60,7 @@ function AvatarMenu({
       <M3Button size="sm" variant="outlined" onClick={onUpload}>
         <Plus className="h-3.5 w-3.5" /> Avatar
       </M3Button>
-      {selected ? (
+      {selected?.model_url ? (
         <a
           href={selected.model_url}
           download={`${selected.code.toLowerCase()}.glb`}
@@ -75,7 +76,7 @@ function AvatarMenu({
 
 /** The scene slice for an avatar and the clip the viewer should play. */
 function sceneFor(avatar: BaseAvatar | null, vector: MovementVector | null): SceneSource {
-  if (!avatar) return EMPTY_SCENE;
+  if (!avatar || !avatar.model_url) return EMPTY_SCENE;
   return {
     avatarId: avatar.id,
     avatarName: avatar.name,
@@ -114,9 +115,10 @@ export function StudioWorkspace() {
   const { data: catalog, isLoading: catalogLoading, mutate: mutateCatalog } = useStaffSWR<{
     exercises: StudioExercise[];
   }>("/api/studio/exercises");
-  const { data: avatarData, mutate: mutateAvatars } = useStaffSWR<{ avatars: BaseAvatar[] }>(
-    "/api/studio/avatars",
-  );
+  // Polls while an avatar is being generated: the list route advances the Meshy job.
+  const { data: avatarData, mutate: mutateAvatars } = useStaffSWR<{ avatars: BaseAvatar[] }>("/api/studio/avatars", {
+    refreshInterval: (latest) => (latest?.avatars.some((a) => a.status === "pending" || a.status === "processing") ? 5000 : 0),
+  });
   const { data: settingsData } = useStaffSWR<{ settings: StudioSettings }>("/api/studio/settings");
   // Same key as the equipment dialog: one cache, one poll while a Meshy task runs.
   const { data: equipmentData, mutate: mutateEquipment } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY);
@@ -126,10 +128,12 @@ export function StudioWorkspace() {
   const settings = settingsData?.settings ?? null;
 
   const exercise = useMemo(() => exercises.find((e) => e.id === exerciseId) ?? null, [exercises, exerciseId]);
-  const avatar = useMemo(
-    () => avatars.find((a) => a.id === avatarId) ?? avatars.find((a) => a.is_default) ?? avatars[0] ?? null,
-    [avatars, avatarId],
-  );
+  const avatar = useMemo(() => {
+    const chosen = avatars.find((a) => a.id === avatarId);
+    if (chosen?.status === "ready") return chosen;
+    const ready = avatars.filter((a) => a.status === "ready");
+    return ready.find((a) => a.is_default) ?? ready[0] ?? null;
+  }, [avatars, avatarId]);
 
   const {
     data: vectorData,
@@ -189,6 +193,22 @@ export function StudioWorkspace() {
   useEffect(() => {
     if (!avatarId && avatar) setAvatar(avatar.id);
   }, [avatarId, avatar, setAvatar]);
+
+  // Tell the user when a generated avatar arrives (or fails) and switch to it.
+  const seenStatus = useRef<Record<string, string>>({});
+  useEffect(() => {
+    for (const a of avatars) {
+      const before = seenStatus.current[a.id];
+      seenStatus.current[a.id] = a.status;
+      if (!before || before === a.status || a.provider !== "meshy") continue;
+      if (a.status === "ready") {
+        toast.success(`${a.name} is ready (${Object.keys((a.params?.bones as object) ?? {}).length} bones recognised)`, "Avatar generated");
+        setAvatar(a.id);
+      } else if (a.status === "error") {
+        toast.error(a.error ?? "Generation failed", `${a.name} failed`);
+      }
+    }
+  }, [avatars, toast, setAvatar]);
 
   const [avatarDialog, setAvatarDialog] = useState(false);
   const [equipmentDialog, setEquipmentDialog] = useState(false);
@@ -269,8 +289,11 @@ export function StudioWorkspace() {
       if (!res.ok) throw new Error(`Clip download failed (${res.status})`);
       const json = (await res.json()) as unknown;
       if (!isPoseClipJson(json)) throw new Error("Only pose clips (generated or made in the editor) can be edited");
-      const { poses, mode } = posesFromClip(json);
+      const { poses, mode, weights } = posesFromClip(json);
+      const labels = Array.isArray(json.meta?.labels) && (json.meta.labels as unknown[]).every((l) => typeof l === "string") ? (json.meta.labels as string[]) : null;
       startPoseEdit({
+        weights,
+        labels: labels && labels.length === poses.length ? labels : null,
         vectorId: target.id,
         sourceSeq: target.seq,
         exerciseId: exercise.id,
@@ -311,23 +334,30 @@ export function StudioWorkspace() {
     [exercise, avatar, settings, startPoseEdit],
   );
   const onSavePoses = useCallback(
-    async (clipJson: PoseClipJson, label: string) => {
+    async (clipJson: PoseClipJson, label: string, mode: SaveMode) => {
       if (!poseEdit || !token) return;
       setSavingPoses(true);
       try {
         const form = new FormData();
         form.set("file", new File([JSON.stringify(clipJson)], "poses.json", { type: "application/json" }));
-        form.set(
-          "fields",
-          JSON.stringify({ exercise_id: poseEdit.exerciseId, avatar_id: poseEdit.avatarId, equipment: { items: poseEdit.items }, prompt: label, source: "pose-editor" }),
-        );
-        const res = await fetch("/api/studio/vectors/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+        let res: Response;
+        if (mode === "replace" && poseEdit.vectorId) {
+          // Overwrite the clip of the row being edited: no new row, no copies piling up.
+          form.set("meta", JSON.stringify({ model: "pose-editor" }));
+          res = await fetch(`/api/studio/vectors/${poseEdit.vectorId}/result`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+        } else {
+          form.set(
+            "fields",
+            JSON.stringify({ exercise_id: poseEdit.exerciseId, avatar_id: poseEdit.avatarId, equipment: { items: poseEdit.items }, prompt: label, source: "pose-editor" }),
+          );
+          res = await fetch("/api/studio/vectors/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+        }
         const body = (await res.json()) as { vector?: MovementVector; error?: string };
         if (!res.ok || !body.vector) throw new Error(body.error ?? `Save failed (${res.status})`);
         stopPoseEdit();
         await refresh();
         setVector(body.vector.id);
-        toast.success(`Saved as #${body.vector.seq}`, "Poses saved");
+        toast.success(mode === "replace" ? `#${body.vector.seq} updated` : `Saved as #${body.vector.seq}`, "Poses saved");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Could not save the poses");
       } finally {
@@ -335,6 +365,34 @@ export function StudioWorkspace() {
       }
     },
     [poseEdit, token, stopPoseEdit, refresh, setVector, toast],
+  );
+  const [drafting, setDrafting] = useState(false);
+  const replacePoses = useStudioStore((s) => s.replacePoses);
+  const onDraftPoses = useCallback(
+    async (request: DraftRequest) => {
+      if (!poseEdit) return;
+      setDrafting(true);
+      try {
+        const body = (await staffFetch("/api/studio/poses/draft", {
+          method: "POST",
+          body: JSON.stringify({
+            exercise_id: poseEdit.exerciseId,
+            avatar_id: poseEdit.avatarId,
+            items: poseEdit.items,
+            two_handed: poseEdit.twoHanded,
+            instructions: request.instructions || null,
+            pose_count: request.poseCount,
+          }),
+        })) as { draft: { poses: PoseClipJson["keyframes"][number]["angles"][]; labels: string[]; weights: number[]; mode: "pingpong" | "cycle"; notes: string; grip: string | null } };
+        replacePoses({ poses: body.draft.poses, mode: body.draft.mode, weights: body.draft.weights, labels: body.draft.labels, grip: body.draft.grip });
+        toast.success(body.draft.notes || `${body.draft.poses.length} poses drafted`, "AI draft");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not draft the poses");
+      } finally {
+        setDrafting(false);
+      }
+    },
+    [poseEdit, staffFetch, replacePoses, toast],
   );
 
   // A finished clip from elsewhere as a new ready row of this exercise.
@@ -454,7 +512,7 @@ export function StudioWorkspace() {
         }
         right={
           poseEdit ? (
-            <PoseEditor onSave={onSavePoses} saving={savingPoses} />
+            <PoseEditor onSave={onSavePoses} saving={savingPoses} onDraft={onDraftPoses} drafting={drafting} />
           ) : (
           <InspectorPanel
             key={`${exercise?.id ?? "none"}:${avatar?.id ?? "none"}`}

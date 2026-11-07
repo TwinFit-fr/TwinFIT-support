@@ -12,6 +12,7 @@ import {
   type PoseAngles,
   type PoseClipJson,
 } from "./anatomy";
+import { canonicalBoneName } from "./bone-names";
 import type { AvatarSocket } from "./types";
 
 /**
@@ -59,7 +60,10 @@ const LOGICAL = [
 ] as const;
 type Logical = (typeof LOGICAL)[number];
 
-/** Resolve the rig's bone name for a logical Mixamo name. */
+/**
+ * Resolve the rig's bone name for each logical Mixamo bone: exact Mixamo names first, then any
+ * bone whose name reads as that joint (Meshy's `Spine01` / `neck`, DeepMotion's `l_arm_JNT`, …).
+ */
 function resolveNames(model: THREE.Object3D): Partial<Record<Logical, string>> {
   const names: Partial<Record<Logical, string>> = {};
   for (const logical of LOGICAL) {
@@ -70,6 +74,11 @@ function resolveNames(model: THREE.Object3D): Partial<Record<Logical, string>> {
       }
     }
   }
+  model.traverse((o) => {
+    if (!(o as THREE.Bone).isBone) return;
+    const canonical = canonicalBoneName(o.name);
+    if (canonical && (LOGICAL as readonly string[]).includes(canonical) && !names[canonical as Logical]) names[canonical as Logical] = o.name;
+  });
   return names;
 }
 
@@ -82,24 +91,40 @@ const qy = (deg: number) => new THREE.Quaternion().setFromAxisAngle(Y, rad(deg))
 const qz = (deg: number) => new THREE.Quaternion().setFromAxisAngle(Z, rad(deg));
 const mul = (...qs: THREE.Quaternion[]) => qs.reduce((acc, q) => acc.multiply(q), new THREE.Quaternion());
 
+/**
+ * The pose the rig rests in, as anatomical angles per side (left, right): what a slider value of
+ * "abduction 90" has to be measured against. A T-pose rig gives 90 / 0 / 0 for the arms and
+ * 0 / 0 / 0 for the legs; an A-pose or a slightly bent rig gives its own numbers, so the same
+ * angles mean the same posture on every avatar.
+ */
+type RestOffsets = {
+  armAbd: [number, number];
+  armFlex: [number, number];
+  elbow: [number, number];
+  legAbd: [number, number];
+  legFlex: [number, number];
+  knee: [number, number];
+};
+const T_POSE_OFFSETS: RestOffsets = { armAbd: [90, 90], armFlex: [0, 0], elbow: [0, 0], legAbd: [0, 0], legFlex: [0, 0], knee: [0, 0] };
+
 /** Character-frame rotation of every bone for one pose (s = +1 left side, -1 right side). */
-function characterDeltas(p: PoseAngles): Partial<Record<Logical, THREE.Quaternion>> {
+function characterDeltas(p: PoseAngles, rest: RestOffsets = T_POSE_OFFSETS): Partial<Record<Logical, THREE.Quaternion>> {
   // Rotations about the arm's own axis happen about world X for both arms in the T-pose, so they
   // take no side sign: palm forward (external rotation, supination) is -X for either arm.
-  const arm = (a: ArmAngles, s: 1 | -1) => ({
-    upper: mul(qz(s * (a.shoulder_abduction - 90)), qy(-s * a.shoulder_flexion), qx(-a.shoulder_rotation)),
-    fore: mul(qy(-s * a.elbow_flexion), qx(a.forearm_pronation)),
+  const arm = (a: ArmAngles, s: 1 | -1, i: 0 | 1) => ({
+    upper: mul(qz(s * (a.shoulder_abduction - rest.armAbd[i])), qy(-s * (a.shoulder_flexion - rest.armFlex[i])), qx(-a.shoulder_rotation)),
+    fore: mul(qy(-s * (a.elbow_flexion - rest.elbow[i])), qx(a.forearm_pronation)),
     hand: qz(-s * a.wrist_flexion),
   });
-  const leg = (l: LegAngles, s: 1 | -1) => ({
-    upper: mul(qz(s * l.hip_abduction), qx(-l.hip_flexion), qy(s * l.hip_rotation)),
-    lower: qx(l.knee_flexion),
+  const leg = (l: LegAngles, s: 1 | -1, i: 0 | 1) => ({
+    upper: mul(qz(s * (l.hip_abduction - rest.legAbd[i])), qx(-(l.hip_flexion - rest.legFlex[i])), qy(s * l.hip_rotation)),
+    lower: qx(l.knee_flexion - rest.knee[i]),
     foot: qx(-l.ankle_dorsiflexion),
   });
-  const la = arm(p.left_arm, 1);
-  const ra = arm(p.right_arm, -1);
-  const ll = leg(p.left_leg, 1);
-  const rl = leg(p.right_leg, -1);
+  const la = arm(p.left_arm, 1, 0);
+  const ra = arm(p.right_arm, -1, 1);
+  const ll = leg(p.left_leg, 1, 0);
+  const rl = leg(p.right_leg, -1, 1);
   const spine = mul(qx(p.torso.flexion / 3), qz(-p.torso.lateral / 3), qy(p.torso.twist / 3));
   return {
     Hips: mul(qy(p.hips.yaw), qx(p.hips.pitch), qz(-p.hips.roll)),
@@ -139,7 +164,34 @@ type Rig = {
   parentWorld: Map<string, THREE.Quaternion>;
   hipsRestY: number;
   legs: { thigh: number; shank: number }[];
+  restOffsets: RestOffsets;
 };
+
+/** Anatomical angles of the rig's rest pose, from the rest world positions of its joints. */
+function restOffsetsOf(rest: RestPose, names: Partial<Record<Logical, string>>): RestOffsets {
+  const pos = (logical: Logical) => (names[logical] ? rest.get(names[logical]!)?.worldPosition : undefined);
+  const deg = THREE.MathUtils.radToDeg;
+  const out: RestOffsets = structuredClone(T_POSE_OFFSETS);
+  (["Left", "Right"] as const).forEach((side, i) => {
+    const sh = pos(`${side}Arm`), el = pos(`${side}ForeArm`), wr = pos(`${side}Hand`);
+    if (sh && el && wr) {
+      const u = el.clone().sub(sh).normalize();
+      const f = wr.clone().sub(el).normalize();
+      out.armAbd[i] = deg(Math.atan2(Math.hypot(u.x, u.z), -u.y)); // from hanging down
+      out.armFlex[i] = deg(Math.atan2(u.z, Math.hypot(u.x, u.y)));
+      out.elbow[i] = deg(Math.acos(THREE.MathUtils.clamp(u.dot(f), -1, 1)));
+    }
+    const hp = pos(`${side}UpLeg`), kn = pos(`${side}Leg`), an = pos(`${side}Foot`);
+    if (hp && kn && an) {
+      const d = kn.clone().sub(hp).normalize();
+      const sk = an.clone().sub(kn).normalize();
+      out.legAbd[i] = deg(Math.atan2(Math.abs(d.x), -d.y));
+      out.legFlex[i] = deg(Math.atan2(d.z, Math.hypot(d.x, d.y)));
+      out.knee[i] = deg(Math.acos(THREE.MathUtils.clamp(d.dot(sk), -1, 1)));
+    }
+  });
+  return out;
+}
 
 function buildRig(model: THREE.Object3D, rest: RestPose): Rig {
   const names = resolveNames(model);
@@ -160,7 +212,7 @@ function buildRig(model: THREE.Object3D, rest: RestPose): Rig {
     if (a && b && c) legs.push({ thigh: a.distanceTo(b), shank: b.distanceTo(c) });
   }
   if (!legs.length) legs.push({ thigh: hipsRestY * 0.47, shank: hipsRestY * 0.45 });
-  return { names, rest, parentWorld, hipsRestY, legs };
+  return { names, rest, parentWorld, hipsRestY, legs, restOffsets: restOffsetsOf(rest, names) };
 }
 
 /**
@@ -330,7 +382,7 @@ function chainPositions(rig: Rig, fk: Map<string, WorldTransform>, pose: PoseAng
   const chain = LIMB_CHAIN[limb];
   const names = [rig.names[chain.root], rig.names[chain.mid], rig.names[chain.end]];
   if (names.some((n) => !n)) return null;
-  const deltas = characterDeltas(pose);
+  const deltas = characterDeltas(pose, rig.restOffsets);
   const logicals: Logical[] = [chain.root, chain.mid, chain.end];
   const rootRest = rig.rest.get(names[0]!)!;
   let parent: WorldTransform | undefined = rootRest.parent ? fk.get(rootRest.parent) : undefined;
@@ -436,7 +488,7 @@ function solvePose(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
 
 /** Angles → bone rotations and hips position (plus the bar IK); the anchors are applied before this. */
 function solvePoseCore(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
-  const deltas = characterDeltas(p);
+  const deltas = characterDeltas(p, rig.restOffsets);
   const local = new Map<string, THREE.Quaternion>();
   for (const logical of LOGICAL) {
     const name = rig.names[logical];
