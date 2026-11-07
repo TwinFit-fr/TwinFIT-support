@@ -28,6 +28,8 @@ export type PoseEditState = {
   keyframe: number;
   /** Edits of a left-side field apply to the right side too, and vice versa. */
   mirror: boolean;
+  /** Handle being dragged in the viewport (left_hand, right_foot, hips, …), or null. */
+  dragTarget: string | null;
   dirty: boolean;
   meta: Record<string, unknown>;
 };
@@ -151,7 +153,8 @@ export type StudioState = {
   setCameraPreset: (preset: CameraPreset) => void;
   resetView: () => void;
   setEdit: (edit: Partial<EditState>) => void;
-  startPoseEdit: (state: Omit<PoseEditState, "keyframe" | "dirty"> & Partial<Pick<PoseEditState, "keyframe" | "dirty">>) => void;
+  startPoseEdit: (state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget"> & Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget">>) => void;
+  setPoseDragTarget: (target: string | null) => void;
   stopPoseEdit: () => void;
   setPoseKeyframe: (index: number) => void;
   updatePose: (index: number, pose: PoseAngles) => void;
@@ -204,7 +207,8 @@ export const useStudioStore = create<StudioState>((set) => ({
   setCameraPreset: (cameraPreset) => set((s) => ({ cameraPreset, viewNonce: s.viewNonce + 1 })),
   resetView: () => set((s) => ({ viewNonce: s.viewNonce + 1 })),
   setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
-  startPoseEdit: (state) => set({ poseEdit: { keyframe: 0, dirty: false, ...state }, playing: false }),
+  startPoseEdit: (state) => set({ poseEdit: { keyframe: 0, dirty: false, dragTarget: null, ...state }, playing: false }),
+  setPoseDragTarget: (dragTarget) => set((s) => (s.poseEdit && s.poseEdit.dragTarget !== dragTarget ? { poseEdit: { ...s.poseEdit, dragTarget } } : s)),
   stopPoseEdit: () => set({ poseEdit: null, playing: true }),
   setPoseKeyframe: (index) =>
     set((s) => (s.poseEdit ? { poseEdit: { ...s.poseEdit, keyframe: Math.max(0, Math.min(index, s.poseEdit.poses.length - 1)) }, playing: false } : s)),

@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, Fragment, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Component, Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, createPortal, useFrame, useThree } from "@react-three/fiber";
 import {
   ContactShadows,
@@ -18,7 +18,7 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { isPoseClipJson, poseClipFromDraft } from "@/lib/studio/anatomy";
 import { DEFAULT_CLEANUP, cleanupClip } from "@/lib/studio/clip-cleanup";
 import { isMocapClip, retargetToAvatar } from "@/lib/studio/mocap";
-import { buildPoseClip, captureRestPose, probePose, type RestPose } from "@/lib/studio/pose-clip";
+import { buildPoseClip, captureRestPose, probePose, solveLimbToTarget, type Limb, type LimbEffector, type RestPose } from "@/lib/studio/pose-clip";
 import { useStudioStore, type CameraPreset } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
 import type { LoadedClip } from "./movement-clip";
@@ -383,6 +383,7 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
             />
           ))
         : null}
+      <PoseHandles model={model} rest={rest} sockets={liveSockets} />
       {editing && editObject ? (
         <TransformControls
           object={editObject}
@@ -393,6 +394,91 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
           translationSnap={edit.snap ? 0.005 : null}
           onMouseUp={commitEdit}
         />
+      ) : null}
+    </>
+  );
+}
+
+const HANDLE_LIMB: Record<string, { limb: Limb; effector: LimbEffector }> = {
+  left_hand: { limb: "left_arm", effector: "end" },
+  right_hand: { limb: "right_arm", effector: "end" },
+  left_foot: { limb: "left_leg", effector: "end" },
+  right_foot: { limb: "right_leg", effector: "end" },
+  left_knee: { limb: "left_leg", effector: "mid" },
+  right_knee: { limb: "right_leg", effector: "mid" },
+};
+
+/**
+ * Pose editor handles: a dot on each hand, foot, knee and the hips of the held pose. Click one to
+ * get a gizmo; dragging it moves that limb inside its joints' range of motion (the hips handle
+ * sets the pelvis height and forward offset). The solved pose is written to the draft, so the
+ * sliders follow, and the handle snaps back to where the limb could actually reach.
+ */
+function PoseHandles({ model, rest, sockets }: { model: THREE.Object3D; rest: RestPose; sockets: AvatarSocket[] }) {
+  const poseEdit = useStudioStore((s) => s.poseEdit);
+  const probe = useStudioStore((s) => s.poseProbe);
+  const editMode = useStudioStore((s) => s.edit.mode);
+  const [handle, setHandle] = useState<THREE.Object3D | null>(null);
+  const handleRef = useCallback((o: THREE.Object3D | null) => setHandle(o), []);
+  const lastSolve = useRef(0);
+
+  const applyDrag = useCallback(
+    (final: boolean) => {
+      const state = useStudioStore.getState();
+      const edit = state.poseEdit;
+      if (!edit || !edit.dragTarget || !handle) return;
+      const now = performance.now();
+      if (!final && now - lastSolve.current < 60) return;
+      lastSolve.current = now;
+      const pose = edit.poses[edit.keyframe];
+      const p = handle.position;
+      if (edit.dragTarget === "hips") {
+        state.updatePose(edit.keyframe, {
+          ...pose,
+          hips: { ...pose.hips, height_m: +Math.max(0.05, p.y).toFixed(3), forward_m: +THREE.MathUtils.clamp(p.z, -0.6, 0.6).toFixed(3) },
+        });
+        return;
+      }
+      const map = HANDLE_LIMB[edit.dragTarget];
+      if (!map) return;
+      const solved = solveLimbToTarget(model, rest, pose, { twoHanded: edit.twoHanded, grip: edit.grip, sockets }, map.limb, map.effector, [p.x, p.y, p.z]);
+      state.updatePose(edit.keyframe, solved);
+    },
+    [handle, model, rest, sockets],
+  );
+
+  if (!poseEdit || editMode !== "off") return null;
+  const ids = Object.keys(probe);
+  return (
+    <>
+      {ids.map((id) => {
+        const pos = probe[id];
+        const selected = poseEdit.dragTarget === id;
+        const isHips = id === "hips";
+        return (
+          <mesh
+            key={id}
+            ref={selected ? handleRef : undefined}
+            position={pos}
+            renderOrder={998}
+            onClick={(e) => {
+              e.stopPropagation();
+              useStudioStore.getState().setPoseDragTarget(selected ? null : id);
+            }}
+            onPointerOver={() => {
+              document.body.style.cursor = "grab";
+            }}
+            onPointerOut={() => {
+              document.body.style.cursor = "";
+            }}
+          >
+            <sphereGeometry args={[isHips ? 0.035 : 0.025, 16, 12]} />
+            <meshBasicMaterial color={selected ? "#7fe0c4" : isHips ? "#ffb86b" : "#7fa6ff"} depthTest={false} transparent opacity={selected ? 0.95 : 0.7} />
+          </mesh>
+        );
+      })}
+      {handle && poseEdit.dragTarget ? (
+        <TransformControls object={handle} mode="translate" space="world" size={0.6} translationSnap={null} onObjectChange={() => applyDrag(false)} onMouseUp={() => applyDrag(true)} />
       ) : null}
     </>
   );

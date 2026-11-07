@@ -395,20 +395,63 @@ export type PoseField = {
 
 export type PoseGroup = { id: string; label: string; fields: PoseField[]; /** Mirrored counterpart group (left ↔ right). */ mirror?: string };
 
+/**
+ * Range of motion of every joint angle, degrees (metres for the pelvis and the bar). The sliders
+ * stop here and the limb solver never leaves these ranges when a hand, foot or knee is dragged
+ * or pinned. Side-less keys: the same range applies to both sides.
+ */
+export const JOINT_LIMITS: Record<string, { min: number; max: number }> = {
+  "arm.shoulder_abduction": { min: -30, max: 180 },
+  "arm.shoulder_flexion": { min: -60, max: 180 },
+  "arm.shoulder_rotation": { min: -90, max: 90 },
+  "arm.elbow_flexion": { min: 0, max: 150 },
+  "arm.forearm_pronation": { min: -90, max: 90 },
+  "arm.wrist_flexion": { min: -70, max: 70 },
+  "leg.hip_flexion": { min: -30, max: 140 },
+  "leg.hip_abduction": { min: -30, max: 60 },
+  "leg.hip_rotation": { min: -45, max: 45 },
+  "leg.knee_flexion": { min: 0, max: 150 },
+  "leg.ankle_dorsiflexion": { min: -50, max: 40 },
+  "hips.pitch": { min: -180, max: 180 },
+  "hips.yaw": { min: -180, max: 180 },
+  "hips.roll": { min: -90, max: 90 },
+  "hips.forward_m": { min: -0.6, max: 0.6 },
+  "hips.height_m": { min: 0.05, max: 2.2 },
+  "torso.flexion": { min: -45, max: 90 },
+  "torso.lateral": { min: -45, max: 45 },
+  "torso.twist": { min: -60, max: 60 },
+  "head.pitch": { min: -60, max: 60 },
+  "head.yaw": { min: -80, max: 80 },
+  "implement.height_m": { min: 0, max: 2.6 },
+  "implement.forward_m": { min: -0.6, max: 1.0 },
+  "implement.grip_width_m": { min: 0.05, max: 1.4 },
+};
+
+/** The range of a pose field path (`left_arm.elbow_flexion` → the `arm.elbow_flexion` range). */
+export function limitOf(path: string): { min: number; max: number } {
+  const key = path.replace(/^(left|right)_/, "");
+  return JOINT_LIMITS[key] ?? { min: -180, max: 180 };
+}
+
+export function clampToLimit(path: string, value: number): number {
+  const { min, max } = limitOf(path);
+  return Math.min(max, Math.max(min, value));
+}
+
 const armFields = (side: "left" | "right"): PoseField[] => [
-  { path: `${side}_arm.shoulder_abduction`, label: "Shoulder abduction", min: -30, max: 180, unit: "°" },
-  { path: `${side}_arm.shoulder_flexion`, label: "Shoulder flexion", min: -60, max: 180, unit: "°" },
-  { path: `${side}_arm.shoulder_rotation`, label: "Shoulder rotation", min: -90, max: 90, unit: "°" },
-  { path: `${side}_arm.elbow_flexion`, label: "Elbow flexion", min: 0, max: 150, unit: "°" },
-  { path: `${side}_arm.forearm_pronation`, label: "Forearm pronation", min: -90, max: 90, unit: "°" },
-  { path: `${side}_arm.wrist_flexion`, label: "Wrist flexion", min: -70, max: 70, unit: "°" },
+  { path: `${side}_arm.shoulder_abduction`, label: "Shoulder abduction", ...limitOf(`${side}_arm.shoulder_abduction`), unit: "°" },
+  { path: `${side}_arm.shoulder_flexion`, label: "Shoulder flexion", ...limitOf(`${side}_arm.shoulder_flexion`), unit: "°" },
+  { path: `${side}_arm.shoulder_rotation`, label: "Shoulder rotation", ...limitOf(`${side}_arm.shoulder_rotation`), unit: "°" },
+  { path: `${side}_arm.elbow_flexion`, label: "Elbow flexion", ...limitOf(`${side}_arm.elbow_flexion`), unit: "°" },
+  { path: `${side}_arm.forearm_pronation`, label: "Forearm pronation", ...limitOf(`${side}_arm.forearm_pronation`), unit: "°" },
+  { path: `${side}_arm.wrist_flexion`, label: "Wrist flexion", ...limitOf(`${side}_arm.wrist_flexion`), unit: "°" },
 ];
 const legFields = (side: "left" | "right"): PoseField[] => [
-  { path: `${side}_leg.hip_flexion`, label: "Hip flexion", min: -30, max: 140, unit: "°" },
-  { path: `${side}_leg.hip_abduction`, label: "Hip abduction", min: -30, max: 60, unit: "°" },
-  { path: `${side}_leg.hip_rotation`, label: "Hip rotation", min: -45, max: 45, unit: "°" },
-  { path: `${side}_leg.knee_flexion`, label: "Knee flexion", min: 0, max: 150, unit: "°" },
-  { path: `${side}_leg.ankle_dorsiflexion`, label: "Ankle dorsiflexion", min: -50, max: 40, unit: "°" },
+  { path: `${side}_leg.hip_flexion`, label: "Hip flexion", ...limitOf(`${side}_leg.hip_flexion`), unit: "°" },
+  { path: `${side}_leg.hip_abduction`, label: "Hip abduction", ...limitOf(`${side}_leg.hip_abduction`), unit: "°" },
+  { path: `${side}_leg.hip_rotation`, label: "Hip rotation", ...limitOf(`${side}_leg.hip_rotation`), unit: "°" },
+  { path: `${side}_leg.knee_flexion`, label: "Knee flexion", ...limitOf(`${side}_leg.knee_flexion`), unit: "°" },
+  { path: `${side}_leg.ankle_dorsiflexion`, label: "Ankle dorsiflexion", ...limitOf(`${side}_leg.ankle_dorsiflexion`), unit: "°" },
 ];
 
 export const POSE_GROUPS: PoseGroup[] = [
@@ -416,22 +459,22 @@ export const POSE_GROUPS: PoseGroup[] = [
     id: "hips",
     label: "Hips & body",
     fields: [
-      { path: "hips.pitch", label: "Body pitch (forward lean)", min: -180, max: 180, unit: "°" },
-      { path: "hips.yaw", label: "Body yaw", min: -180, max: 180, unit: "°" },
-      { path: "hips.roll", label: "Body roll", min: -90, max: 90, unit: "°" },
-      { path: "hips.forward_m", label: "Pelvis forward", min: -0.6, max: 0.6, step: 0.01, unit: "m" },
-      { path: "hips.height_m", label: "Pelvis height", min: 0.05, max: 2.2, step: 0.01, unit: "m" },
+      { path: "hips.pitch", label: "Body pitch (forward lean)", ...limitOf("hips.pitch"), unit: "°" },
+      { path: "hips.yaw", label: "Body yaw", ...limitOf("hips.yaw"), unit: "°" },
+      { path: "hips.roll", label: "Body roll", ...limitOf("hips.roll"), unit: "°" },
+      { path: "hips.forward_m", label: "Pelvis forward", ...limitOf("hips.forward_m"), step: 0.01, unit: "m" },
+      { path: "hips.height_m", label: "Pelvis height", ...limitOf("hips.height_m"), step: 0.01, unit: "m" },
     ],
   },
   {
     id: "torso",
     label: "Torso & head",
     fields: [
-      { path: "torso.flexion", label: "Spine flexion", min: -45, max: 90, unit: "°" },
-      { path: "torso.lateral", label: "Spine lateral", min: -45, max: 45, unit: "°" },
-      { path: "torso.twist", label: "Spine twist", min: -60, max: 60, unit: "°" },
-      { path: "head.pitch", label: "Head pitch", min: -60, max: 60, unit: "°" },
-      { path: "head.yaw", label: "Head yaw", min: -80, max: 80, unit: "°" },
+      { path: "torso.flexion", label: "Spine flexion", ...limitOf("torso.flexion"), unit: "°" },
+      { path: "torso.lateral", label: "Spine lateral", ...limitOf("torso.lateral"), unit: "°" },
+      { path: "torso.twist", label: "Spine twist", ...limitOf("torso.twist"), unit: "°" },
+      { path: "head.pitch", label: "Head pitch", ...limitOf("head.pitch"), unit: "°" },
+      { path: "head.yaw", label: "Head yaw", ...limitOf("head.yaw"), unit: "°" },
     ],
   },
   { id: "left_arm", label: "Left arm", fields: armFields("left"), mirror: "right_arm" },
@@ -442,9 +485,9 @@ export const POSE_GROUPS: PoseGroup[] = [
     id: "implement",
     label: "Implement (two hands)",
     fields: [
-      { path: "implement.height_m", label: "Bar height", min: 0, max: 2.6, step: 0.01, unit: "m" },
-      { path: "implement.forward_m", label: "Bar forward", min: -0.6, max: 1.0, step: 0.01, unit: "m" },
-      { path: "implement.grip_width_m", label: "Grip width", min: 0.05, max: 1.4, step: 0.01, unit: "m" },
+      { path: "implement.height_m", label: "Bar height", ...limitOf("implement.height_m"), step: 0.01, unit: "m" },
+      { path: "implement.forward_m", label: "Bar forward", ...limitOf("implement.forward_m"), step: 0.01, unit: "m" },
+      { path: "implement.grip_width_m", label: "Grip width", ...limitOf("implement.grip_width_m"), step: 0.01, unit: "m" },
     ],
   },
 ];
