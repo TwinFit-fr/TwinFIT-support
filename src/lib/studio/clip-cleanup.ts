@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import { avatarBoneName, type CanonicalBone } from "./mocap";
-import type { RestPose } from "./pose-clip";
+import { restoreRestPose, type RestPose } from "./rest-pose";
 
 /**
  * Clean-up of a motion-capture clip once it sits on the avatar's rig, the way a Blender batch
@@ -71,14 +71,8 @@ function bonesOf(model: THREE.Object3D): THREE.Bone[] {
   return out;
 }
 
-function restPose(model: THREE.Object3D) {
-  model.traverse((o) => {
-    if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.pose();
-  });
-}
-
 /** Sample the clip on the avatar at a fixed rate; the avatar is left in its rest pose afterwards. */
-function bake(model: THREE.Object3D, clip: THREE.AnimationClip, fps: number, sampled: string[], hips: string): Baked {
+function bake(model: THREE.Object3D, rest: RestPose, clip: THREE.AnimationClip, fps: number, sampled: string[], hips: string): Baked {
   const bones = bonesOf(model);
   const frames = Math.max(2, Math.round(clip.duration * fps) + 1);
   const times = new Float32Array(frames);
@@ -93,7 +87,7 @@ function bake(model: THREE.Object3D, clip: THREE.AnimationClip, fps: number, sam
   action.setLoop(THREE.LoopOnce, 1);
   action.clampWhenFinished = true;
   action.play();
-  restPose(model);
+  restoreRestPose(model, rest);
   for (let f = 0; f < frames; f += 1) {
     const t = Math.min(clip.duration - 1e-4, f / fps);
     times[f] = t;
@@ -111,7 +105,7 @@ function bake(model: THREE.Object3D, clip: THREE.AnimationClip, fps: number, sam
   }
   action.stop();
   mixer.uncacheClip(clip);
-  restPose(model);
+  restoreRestPose(model, rest);
   model.updateMatrixWorld(true);
   return { times, quats, hips, hipsPos, world, hipsWorldQuat };
 }
@@ -166,7 +160,7 @@ export function cleanupClip(
     return { side, ...resolved };
   });
   const sampled = [hips, ...legs.flatMap((l) => [l.up, l.leg, l.foot, l.toe].filter((n): n is string => Boolean(n)))];
-  const baked = bake(model, clip, fps, sampled, hips);
+  const baked = bake(model, rest, clip, fps, sampled, hips);
   const frames = baked.times.length;
   const hipsRest = rest.get(hips)!;
 
