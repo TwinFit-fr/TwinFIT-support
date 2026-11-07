@@ -129,6 +129,8 @@ function Hud({
   info: ModelInfo | null;
 }) {
   const commits = useCanvasCommits();
+  const issues = useStudioStore((s) => s.poseIssues);
+  const errors = issues.filter((i) => i.severity === "error");
   const clipText = !scene.vectorId
     ? "No clip selected"
     : scene.vectorStatus !== "ready"
@@ -168,6 +170,14 @@ function Hud({
         />
         {clipText}
       </div>
+      {issues.length ? (
+        <div
+          className={cn("studio-glass max-w-[38ch] rounded-2xl px-3 py-1.5 text-[11px]", errors.length ? "text-(--m3-error)" : "text-(--m3-warning)")}
+          title={issues.map((i) => i.message).join("\n")}
+        >
+          {errors.length ? `${errors.length} body check${errors.length === 1 ? "" : "s"} failed: ${errors[0].message}` : `${issues.length} warning${issues.length === 1 ? "" : "s"}: ${issues[0].message}`}
+        </div>
+      ) : null}
       {info?.missingSockets.length ? (
         <div className="studio-glass rounded-full px-3 py-1.5 text-[11px] text-(--m3-warning)">
           Sockets without a bone: {info.missingSockets.join(", ")}

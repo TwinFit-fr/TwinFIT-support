@@ -130,9 +130,32 @@ export function usePoseSave(input: {
             instructions: request.instructions || null,
             pose_count: request.poseCount,
           }),
-        })) as { draft: { poses: PoseClipJson["keyframes"][number]["angles"][]; labels: string[]; weights: number[]; mode: "pingpong" | "cycle"; notes: string; grip: string | null } };
-        replacePoses({ poses: body.draft.poses, mode: body.draft.mode, weights: body.draft.weights, labels: body.draft.labels, grip: body.draft.grip });
-        toast.success(body.draft.notes || `${body.draft.poses.length} poses drafted`, "AI draft");
+        })) as {
+          draft: {
+            poses: PoseClipJson["keyframes"][number]["angles"][];
+            labels: string[];
+            weights: number[];
+            mode: "pingpong" | "cycle";
+            notes: string;
+            grip: string | null;
+            template: string | null;
+            params: Record<string, unknown> | null;
+            unilateral: boolean;
+            airborne: boolean;
+            moving: boolean;
+          };
+        };
+        const proposal = body.draft;
+        replacePoses({
+          poses: proposal.poses,
+          mode: proposal.mode,
+          weights: proposal.weights,
+          labels: proposal.labels,
+          grip: proposal.grip,
+          ...(proposal.template ? { twoHanded: false } : {}),
+          meta: { template: proposal.template, template_params: proposal.params, unilateral: proposal.unilateral, airborne: proposal.airborne, moving: proposal.moving },
+        });
+        toast.success(proposal.notes || `${proposal.poses.length} poses from ${proposal.template ?? "the model"}`, "AI draft");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Could not draft the poses");
       } finally {

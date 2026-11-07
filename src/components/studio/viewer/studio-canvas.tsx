@@ -21,6 +21,7 @@ import { studioAssetHeaders } from "@/lib/studio/asset-auth";
 import { DEFAULT_CLEANUP, cleanupClip } from "@/lib/studio/clip-cleanup";
 import { isMocapClip, retargetToAvatar } from "@/lib/studio/mocap";
 import { buildPoseClip, captureRestPose, probePose, restoreRestPose, solveLimbToTarget, type Limb, type LimbEffector, type RestPose } from "@/lib/studio/pose-clip";
+import { validatePoseClip } from "@/lib/studio/pose-validate";
 import { useStudioStore, type CameraPreset } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
 import type { LoadedClip } from "./movement-clip";
@@ -258,6 +259,24 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   useEffect(() => {
     if (clipError) onClipError?.(clipError);
   }, [clipError, onClipError]);
+
+  // The clip on screen, checked as a body on this rig; after the sliders settle, not on every tick.
+  useEffect(() => {
+    const source = draft ?? (clip && isPoseClipJson(clip) ? clip : null);
+    const { setPoseIssues } = useStudioStore.getState();
+    if (!source) {
+      setPoseIssues([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      try {
+        setPoseIssues(validatePoseClip(model, source, rest, liveSockets).issues);
+      } catch {
+        setPoseIssues([]);
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [draft, clip, model, rest, liveSockets]);
 
   // The pose editor pins to where the held pose puts feet, hands and knees: computed off the rig.
   useEffect(() => {
@@ -499,7 +518,7 @@ function PoseHandles({ model, rest, sockets }: { model: THREE.Object3D; rest: Re
         const forward = pose.hips.forward_m + p.z - (state.poseProbe.hips?.[2] ?? p.z);
         state.updatePose(
           edit.keyframe,
-          { ...pose, hips: { ...pose.hips, height_m: +Math.max(0.05, p.y).toFixed(3), forward_m: +THREE.MathUtils.clamp(forward, -0.6, 0.6).toFixed(3) } },
+          { ...pose, goal: undefined, hips: { ...pose.hips, height_m: +Math.max(0.05, p.y).toFixed(3), forward_m: +THREE.MathUtils.clamp(forward, -0.6, 0.6).toFixed(3) } },
           true,
         );
       } else {

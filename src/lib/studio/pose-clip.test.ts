@@ -2,117 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import * as THREE from "three";
 import { NEUTRAL_POSE, poseClipFromDraft, posesFromClip, setPoseValue, upgradePoseClip, type PoseAngles, type PoseClipJson } from "./anatomy.ts";
-import { buildMannequin } from "./mannequin.ts";
 import { buildPoseClip, captureRestPose, solveWorld, type RestPose } from "./pose-clip.ts";
-
-type Joint = { name: string; parent: string | null; at: [number, number, number] };
-
-/**
- * A rig with everything that made the Meshy avatar come out crooked: centimetres under an Armature
- * scaled 0.01, each bone's own Y along the bone, arms 17° below the horizontal and a little
- * forward, knees bent at rest, feet turned out, the trunk leaning back, a hand whose palm is
- * turned 30° from facing down, a spine numbered upside down (Spine2 lowest, as Meshy does) and an
- * elbow that "bends" upwards: a joint misplaced by the auto-rigger, not a hinge. Positions in metres.
- */
-function crookedRig(): { model: THREE.Object3D; palms: Record<"Left" | "Right", THREE.Vector3> } {
-  const joints: Joint[] = [
-    { name: "Hips", parent: null, at: [0, 0.95, 0] },
-    { name: "Spine2", parent: "Hips", at: [0, 1.07, -0.01] },
-    { name: "Spine1", parent: "Spine2", at: [0, 1.19, -0.02] },
-    { name: "Spine", parent: "Spine1", at: [0, 1.31, -0.03] },
-    { name: "Neck", parent: "Spine", at: [0, 1.46, -0.045] },
-    { name: "Head", parent: "Neck", at: [0, 1.55, -0.05] },
-  ];
-  for (const [side, s] of [["Left", 1], ["Right", -1]] as const) {
-    const arm = (len: number, down: number, fwd: number) => [s * len * Math.cos(down), -len * Math.sin(down), fwd] as const;
-    const sh: [number, number, number] = [s * 0.18, 1.42, -0.04];
-    const up = arm(0.28, THREE.MathUtils.degToRad(17), 0.0);
-    const el: [number, number, number] = [sh[0] + up[0], sh[1] + up[1], sh[2] + up[2]];
-    const fo = arm(0.26, 0, 0.03); // straight on, so the "bend" points up
-    const wr: [number, number, number] = [el[0] + fo[0], el[1] + fo[1], el[2] + fo[2]];
-    joints.push(
-      { name: `${side}Arm`, parent: "Spine", at: sh },
-      { name: `${side}ForeArm`, parent: `${side}Arm`, at: el },
-      { name: `${side}Hand`, parent: `${side}ForeArm`, at: wr },
-      { name: `${side}UpLeg`, parent: "Hips", at: [s * 0.09, 0.87, 0] },
-      { name: `${side}Leg`, parent: `${side}UpLeg`, at: [s * 0.11, 0.49, 0.06] }, // knee forward: bent
-      { name: `${side}Foot`, parent: `${side}Leg`, at: [s * 0.12, 0.09, -0.02] },
-      { name: `${side}ToeBase`, parent: `${side}Foot`, at: [s * 0.12 + s * 0.035, 0.03, 0.13] }, // turned out
-    );
-  }
-  const byName = new Map(joints.map((j) => [j.name, j]));
-  const childOf = (name: string) => joints.find((j) => j.parent === name);
-  const world = (j: Joint) => {
-    const child = childOf(j.name);
-    const to = child ? new THREE.Vector3(...child.at) : new THREE.Vector3(...j.at).sub(new THREE.Vector3(...byName.get(j.parent!)!.at)).add(new THREE.Vector3(...j.at));
-    const axis = to.sub(new THREE.Vector3(...j.at)).normalize();
-    return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
-  };
-  const root = new THREE.Group();
-  const armature = new THREE.Group();
-  armature.name = "Armature";
-  armature.scale.setScalar(0.01);
-  root.add(armature);
-  const bones = new Map<string, THREE.Bone>();
-  for (const j of joints) {
-    const bone = new THREE.Bone();
-    bone.name = j.name;
-    const q = world(j);
-    if (j.parent) {
-      const parent = byName.get(j.parent)!;
-      const pq = world(parent);
-      bone.position.set(...j.at).sub(new THREE.Vector3(...parent.at)).applyQuaternion(pq.clone().invert()).multiplyScalar(100);
-      bone.quaternion.copy(pq.clone().invert().multiply(q));
-      bones.get(j.parent)!.add(bone);
-    } else {
-      bone.position.set(...j.at).multiplyScalar(100);
-      bone.quaternion.copy(q);
-      armature.add(bone);
-    }
-    bones.set(j.name, bone);
-  }
-  // Two flat hands: wide across, thin along the palm's normal, in the mesh's own (bind) space.
-  const positions: number[] = [];
-  const index: number[] = [];
-  const weight: number[] = [];
-  const skeletonBones = [...bones.values()];
-  const palms = {} as Record<"Left" | "Right", THREE.Vector3>;
-  for (const side of ["Left", "Right"] as const) {
-    const wrist = new THREE.Vector3(...byName.get(`${side}Hand`)!.at);
-    const fore = wrist.clone().sub(new THREE.Vector3(...byName.get(`${side}ForeArm`)!.at)).normalize();
-    const down = new THREE.Vector3(0, -1, 0).addScaledVector(fore, fore.y).normalize();
-    const palm = down.clone().applyAxisAngle(fore, THREE.MathUtils.degToRad(30));
-    palms[side] = palm;
-    const across = fore.clone().cross(palm).normalize();
-    const bone = skeletonBones.indexOf(bones.get(`${side}Hand`)!);
-    for (let i = 0; i < 40; i += 1) {
-      const p = wrist.clone()
-        .addScaledVector(fore, 0.02 + (i % 8) * 0.02)
-        .addScaledVector(across, ((Math.floor(i / 8) % 5) - 2) * 0.02)
-        .addScaledVector(palm, (i % 2 ? 1 : -1) * 0.006)
-        .multiplyScalar(100);
-      positions.push(p.x, p.y, p.z);
-      index.push(bone, 0, 0, 0);
-      weight.push(1, 0, 0, 0);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(index, 4));
-  geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(weight, 4));
-  const mesh = new THREE.SkinnedMesh(geometry, new THREE.MeshBasicMaterial());
-  armature.add(mesh);
-  root.updateMatrixWorld(true);
-  mesh.bind(new THREE.Skeleton(skeletonBones));
-  return { model: root, palms };
-}
-
-function mannequin(): THREE.Object3D {
-  const root = new THREE.Group();
-  root.add(buildMannequin(1.75));
-  root.updateMatrixWorld(true);
-  return root;
-}
+import { crookedRig, mannequin } from "./test-rigs.ts";
 
 type Solved = ReturnType<typeof solveWorld>;
 const CTX = { twoHanded: false, grip: null, sockets: [] };
@@ -166,11 +57,11 @@ describe("pure motions go where their name says, on both sides", () => {
       const arm = `${side}_arm`;
       const leg = `${side}_leg`;
       it(`${S} arm on the ${r.name}`, () => {
-        near(dir(r.solve(pose([`${arm}.shoulder_flexion`, 90])), `${S}Arm`, `${S}ForeArm`), V(0, 0, 1), "flexion 90");
-        near(dir(r.solve(pose([`${arm}.shoulder_flexion`, 180])), `${S}Arm`, `${S}ForeArm`), V(0, 1, 0), "flexion 180");
-        near(dir(r.solve(pose([`${arm}.shoulder_flexion`, -45])), `${S}Arm`, `${S}ForeArm`), V(0, -1, -1), "extension 45");
-        near(dir(r.solve(pose([`${arm}.shoulder_abduction`, 90])), `${S}Arm`, `${S}ForeArm`), V(x, 0, 0), "abduction 90");
-        near(dir(r.solve(pose([`${arm}.shoulder_abduction`, 180])), `${S}Arm`, `${S}ForeArm`), V(0, 1, 0), "abduction 180");
+        near(dir(r.solve(pose([`${arm}.shoulder_plane`, 90], [`${arm}.shoulder_elevation`, 90])), `${S}Arm`, `${S}ForeArm`), V(0, 0, 1), "flexion 90");
+        near(dir(r.solve(pose([`${arm}.shoulder_plane`, 90], [`${arm}.shoulder_elevation`, 180])), `${S}Arm`, `${S}ForeArm`), V(0, 1, 0), "flexion 180");
+        near(dir(r.solve(pose([`${arm}.shoulder_plane`, -90], [`${arm}.shoulder_elevation`, 45])), `${S}Arm`, `${S}ForeArm`), V(0, -1, -1), "extension 45");
+        near(dir(r.solve(pose([`${arm}.shoulder_elevation`, 90])), `${S}Arm`, `${S}ForeArm`), V(x, 0, 0), "abduction 90");
+        near(dir(r.solve(pose([`${arm}.shoulder_elevation`, 180])), `${S}Arm`, `${S}ForeArm`), V(0, 1, 0), "abduction 180");
         near(dir(r.solve(pose([`${arm}.elbow_flexion`, 90])), `${S}ForeArm`, `${S}Hand`), V(0, 0, 1), "elbow 90");
         const external = r.solve(pose([`${arm}.shoulder_rotation`, 90], [`${arm}.elbow_flexion`, 90]));
         near(dir(external, `${S}Arm`, `${S}ForeArm`), V(0, -1, 0), "external rotation leaves the humerus alone");
@@ -339,24 +230,24 @@ describe("the prompt's worked examples", () => {
 
   for (const r of rigs()) {
     it(`come out as they say on the ${r.name}`, () => {
-      const press = r.solve(both(NEUTRAL_POSE, "arm", { shoulder_abduction: 80, shoulder_flexion: 20, shoulder_rotation: 90, elbow_flexion: 110, forearm_pronation: 90 }));
+      const press = r.solve(both(NEUTRAL_POSE, "arm", { shoulder_plane: 20, shoulder_elevation: 85, shoulder_rotation: 70, elbow_flexion: 90, forearm_pronation: 90 }));
       near(dir(press, "LeftForeArm", "LeftHand"), V(0, 1, 0), "press: forearm vertical", 15);
       near(palmOf(r, press, "Left"), V(0, 0, 1), "press: palm forward", 25);
-      near(palmOf(r, r.solve(both(NEUTRAL_POSE, "arm", { shoulder_flexion: 90, forearm_pronation: 170 })), "Left"), V(0, -1, 0), "front raise: palm down", 12);
-      near(palmOf(r, r.solve(both(NEUTRAL_POSE, "arm", { shoulder_abduction: 90, forearm_pronation: 90 })), "Left"), V(0, -1, 0), "lateral raise: palm down");
+      near(palmOf(r, r.solve(both(NEUTRAL_POSE, "arm", { shoulder_plane: 90, shoulder_elevation: 90, forearm_pronation: 170 })), "Left"), V(0, -1, 0), "front raise: palm down", 12);
+      near(palmOf(r, r.solve(both(NEUTRAL_POSE, "arm", { shoulder_elevation: 90, forearm_pronation: 90 })), "Left"), V(0, -1, 0), "lateral raise: palm down");
 
       const squat = r.solve(both(hips({ pitch: 35 }), "leg", { hip_flexion: 125, knee_flexion: 110 }));
       near(dir(squat, "LeftUpLeg", "LeftLeg"), V(0, 0, 1), "squat: thigh parallel to the floor", 2);
 
-      const rdl = r.solve(both(both(hips({ pitch: 60 }), "leg", { hip_flexion: 75, knee_flexion: 20 }), "arm", { shoulder_flexion: 60 }));
+      const rdl = r.solve(both(both(hips({ pitch: 60 }), "leg", { hip_flexion: 75, knee_flexion: 20 }), "arm", { shoulder_plane: 90, shoulder_elevation: 60 }));
       near(dir(rdl, "LeftArm", "LeftForeArm"), V(0, -1, 0), "RDL: arms hang vertical", 2);
 
-      const plank = r.solve(both({ ...hips({ pitch: 70, height_m: 0.4 }, "prone") }, "arm", { shoulder_flexion: 70 }));
+      const plank = r.solve(both({ ...hips({ pitch: 70, height_m: 0.4 }, "prone") }, "arm", { shoulder_plane: 90, shoulder_elevation: 70 }));
       near(dir(plank, "LeftArm", "LeftForeArm"), V(0, -1, 0), "plank: arms vertical", 2);
       assert.ok(Math.abs(plank.LeftHand!.position.y) < 0.12, `plank: hands near the floor (${plank.LeftHand!.position.y.toFixed(2)})`);
       assert.ok(Math.abs(plank.LeftFoot!.position.y) < 0.2, `plank: feet near the floor (${plank.LeftFoot!.position.y.toFixed(2)})`);
 
-      const bench = r.solve(both(both(hips({ pitch: -90, height_m: 0.55 }, "supine"), "leg", { knee_flexion: 90 }), "arm", { shoulder_flexion: 90 }));
+      const bench = r.solve(both(both(hips({ pitch: -90, height_m: 0.55 }, "supine"), "leg", { knee_flexion: 90 }), "arm", { shoulder_plane: 90, shoulder_elevation: 90 }));
       near(dir(bench, "LeftArm", "LeftForeArm"), V(0, 1, 0), "bench: arms up", 2);
       assert.ok(bench.LeftFoot!.position.y < 0.2, `bench: feet on the floor (${bench.LeftFoot!.position.y.toFixed(2)})`);
     });
@@ -379,20 +270,28 @@ describe("a bar in both hands", () => {
 });
 
 describe("saved clips", () => {
-  const v1: PoseClipJson = {
-    kind: "pose-angles",
-    fps: 30,
-    duration: 1,
-    loop: false,
-    keyframes: [{ t: 0, position: 0, angles: { ...NEUTRAL_POSE, left_arm: { ...NEUTRAL_POSE.left_arm, forearm_pronation: 0 }, right_arm: { ...NEUTRAL_POSE.right_arm, forearm_pronation: -90 } } }],
+  /** Shoulders as versions 1 and 2 wrote them. */
+  const legacyArm = (abduction: number, flexion: number, forearm: number) => ({ shoulder_abduction: abduction, shoulder_flexion: flexion, shoulder_rotation: 0, elbow_flexion: 0, forearm_pronation: forearm, wrist_flexion: 0 });
+  const legacy = (version: number | undefined, forearm: number): PoseClipJson => {
+    const { lumbar: _l, thoracic: _t, ...rest } = NEUTRAL_POSE;
+    const angles = { ...rest, torso: { flexion: 10, lateral: 0, twist: 0 }, head: { pitch: 0, yaw: 0 }, left_arm: legacyArm(90, 0, forearm), right_arm: legacyArm(0, 90, forearm) } as unknown as PoseAngles;
+    return { kind: "pose-angles", ...(version ? { version } : {}), fps: 30, duration: 1, loop: false, keyframes: [{ t: 0, position: 0, angles }] };
   };
 
   it("version 1 forearms move to the anatomical zero, once", () => {
-    const up = upgradePoseClip(v1);
-    assert.equal(up.version, 2);
+    const up = upgradePoseClip(legacy(undefined, 0));
+    assert.equal(up.version, 3);
     assert.equal(up.keyframes[0].angles.left_arm.forearm_pronation, 90);
-    assert.equal(up.keyframes[0].angles.right_arm.forearm_pronation, 0);
     assert.equal(upgradePoseClip(up), up);
-    assert.equal(posesFromClip(v1).poses[0].left_arm.forearm_pronation, 90);
+    assert.equal(posesFromClip(legacy(undefined, -90)).poses[0].left_arm.forearm_pronation, 0);
+  });
+
+  it("version 2 shoulders become plane and elevation, and the arm stays where it was", () => {
+    const { left_arm: left, right_arm: right, lumbar, thoracic } = upgradePoseClip(legacy(2, 0)).keyframes[0].angles;
+    assert.ok(Math.abs(left.shoulder_plane) < 0.01 && Math.abs(left.shoulder_elevation - 90) < 0.01, "abduction 90 is the side plane");
+    assert.ok(Math.abs(right.shoulder_plane - 90) < 0.01 && Math.abs(right.shoulder_elevation - 90) < 0.01, "flexion 90 is the front plane");
+    assert.ok(Math.abs(left.shoulder_rotation) < 0.01 && Math.abs(right.shoulder_rotation) < 0.01);
+    assert.equal(left.forearm_pronation, 0);
+    assert.ok(Math.abs(lumbar.flexion + thoracic.flexion - 10) < 1e-9, "the spine's bend is shared out");
   });
 });
