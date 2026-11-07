@@ -298,7 +298,7 @@ export function StudioWorkspace() {
         exerciseId: exercise.id,
         avatarId: avatar.id,
         items,
-        poses: [structuredClone(NEUTRAL_POSE), structuredClone(NEUTRAL_POSE), structuredClone(NEUTRAL_POSE)],
+        poses: [structuredClone(NEUTRAL_POSE)],
         mode: "pingpong",
         durationS: Number(settings?.pipeline.duration_s ?? 4),
         fps: Number(settings?.pipeline.fps ?? 30),

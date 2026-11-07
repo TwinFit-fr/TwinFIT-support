@@ -8,7 +8,7 @@ import { equipmentKey } from "@/lib/studio/equipment";
 import { useStudioStore, type EditMode, type EditTool } from "@/lib/studio/store";
 import type { BaseAvatar } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
-import { IconButton, M3Button, Segmented, Select } from "./ui";
+import { Chip, IconButton, M3Button, Segmented, Select } from "./ui";
 
 const MODES: { value: EditMode; label: string; title: string }[] = [
   { value: "off", label: "Off", title: "Leave the rig editor" },
@@ -122,7 +122,7 @@ export function RigEditor({ avatar, onSaved }: { avatar: BaseAvatar | null; onSa
         </IconButton>
       </div>
       <p className="mt-1 text-[11px] leading-snug text-(--m3-on-surface-variant)">
-        The avatar holds its bind pose while you edit. Drag the gizmo in the viewport; values are metres and degrees in the socket&apos;s frame.
+        The avatar holds its bind pose while you edit. Drag the gizmo in the viewport; values are metres and degrees in the socket&apos;s frame. A model&apos;s grip is defined on the right hand and mirrored to the left, and is kept for every exercise that uses it.
       </p>
       <div className="mt-3 space-y-2">
         <Segmented value={edit.mode} onChange={changeMode} size="sm" options={MODES} className="w-full justify-between" />
@@ -144,7 +144,12 @@ export function RigEditor({ avatar, onSaved }: { avatar: BaseAvatar | null; onSa
             ))}
           </Select>
         )}
-        <Segmented value={edit.tool} onChange={(tool) => setEdit({ tool })} size="sm" options={TOOLS} className="w-full justify-between" />
+        <div className="flex items-center gap-2">
+          <Segmented value={edit.tool} onChange={(tool) => setEdit({ tool })} size="sm" options={TOOLS} className="flex-1 justify-between" />
+          <Chip selected={edit.snap} onClick={() => setEdit({ snap: !edit.snap })} title="Snap rotations to 45° and moves to 5 mm">
+            Snap 45°
+          </Chip>
+        </div>
         <div className="grid grid-cols-2 gap-2 rounded-xl bg-(--m3-surface-container) p-2 font-mono text-[11px] text-(--m3-on-surface-variant)">
           <div>
             <div className="text-[10px] uppercase tracking-wider">offset m</div>

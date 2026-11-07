@@ -18,7 +18,7 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { isPoseClipJson, poseClipFromDraft } from "@/lib/studio/anatomy";
 import { DEFAULT_CLEANUP, cleanupClip } from "@/lib/studio/clip-cleanup";
 import { isMocapClip, retargetToAvatar } from "@/lib/studio/mocap";
-import { buildPoseClip, captureRestPose, type RestPose } from "@/lib/studio/pose-clip";
+import { buildPoseClip, captureRestPose, probePose, type RestPose } from "@/lib/studio/pose-clip";
 import { useStudioStore, type CameraPreset } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
 import type { LoadedClip } from "./movement-clip";
@@ -204,6 +204,18 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
     if (clipError) onClipError?.(clipError);
   }, [clipError, onClipError]);
 
+  // The pose editor pins to where the held pose puts feet, hands and knees: computed off the rig.
+  useEffect(() => {
+    if (!poseEdit) return;
+    const pose = poseEdit.poses[poseEdit.keyframe];
+    if (!pose) return;
+    try {
+      useStudioStore.getState().setPoseProbe(probePose(model, rest, pose, { twoHanded: poseEdit.twoHanded, grip: poseEdit.grip, sockets }));
+    } catch {
+      // A rig without the legs or arms: nothing to pin.
+    }
+  }, [poseEdit, model, rest, sockets]);
+
   useEffect(() => {
     onModelInfo?.(info);
     return () => onModelInfo?.(null);
@@ -330,6 +342,8 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
                           index={i}
                           model={modelFor("load", item.code)}
                           editRef={isModelTarget("load", item.code) ? editRef : undefined}
+                          // A grip is defined for the right hand; the left hand gets its mirror image.
+                          mirrored={g.socket.id === "hand_l" || /left/i.test(g.socket.bone)}
                         />
                       ))
                     : null}
@@ -370,7 +384,15 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
           ))
         : null}
       {editing && editObject ? (
-        <TransformControls object={editObject} mode={edit.tool} space="local" size={0.7} onMouseUp={commitEdit} />
+        <TransformControls
+          object={editObject}
+          mode={edit.tool}
+          space="local"
+          size={0.7}
+          rotationSnap={edit.snap ? Math.PI / 4 : null}
+          translationSnap={edit.snap ? 0.005 : null}
+          onMouseUp={commitEdit}
+        />
       ) : null}
     </>
   );
