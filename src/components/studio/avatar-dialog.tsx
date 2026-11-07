@@ -2,7 +2,7 @@
 
 import { useAccessToken } from "@nhost/react";
 import { useState } from "react";
-import { Bone, Link2, Upload, X } from "lucide-react";
+import { Bone, ImagePlus, Link2, Sparkles, Upload, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { codeFromFileName, defaultSockets } from "@/lib/studio/prompt";
@@ -10,10 +10,11 @@ import type { AvatarRig, AvatarSocket, AvatarSubject, BaseAvatar } from "@/lib/s
 import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
 import { Field, M3Button, Segmented, Select, TextArea, TextInput } from "./ui";
 
-type Mode = "generate" | "upload" | "url";
+type Mode = "style" | "generate" | "upload" | "url";
 
 const MODES: { value: Mode; label: React.ReactNode; title: string }[] = [
-  { value: "generate", label: "Generate", title: "Build a mannequin with the Mixamo skeleton, no file needed" },
+  { value: "style", label: "TwinFIT style", title: "Build the catalog's character with Meshy from its reference image, auto-rigged (about 35 credits)" },
+  { value: "generate", label: "Mannequin", title: "Build a mannequin with the Mixamo skeleton, no file needed" },
   { value: "upload", label: "Upload", title: "Upload a rigged .glb / .gltf" },
   { value: "url", label: "From URL", title: "Import a .glb from an https URL (Ready Player Me, a CDN…)" },
 ];
@@ -29,7 +30,18 @@ type Fields = {
   params?: Record<string, unknown>;
 };
 
-async function postAvatar(token: string, body: FormData | { url: string; fields: Fields }): Promise<BaseAvatar> {
+type StyleBody = { mode: "style"; code: string; name: string; subject: "man" | "woman"; height_m: number; is_default: boolean; image_data_url?: string | null };
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read the image"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function postAvatar(token: string, body: FormData | { url: string; fields: Fields } | StyleBody): Promise<BaseAvatar> {
   const res = await fetch("/api/studio/avatars", {
     method: "POST",
     headers:
@@ -55,12 +67,13 @@ export function AvatarDialog({
 }) {
   const token = useAccessToken();
   const toast = useToast();
-  const [mode, setMode] = useState<Mode>("generate");
+  const [mode, setMode] = useState<Mode>("style");
   const [file, setFile] = useState<File | null>(null);
+  const [image, setImage] = useState<File | null>(null);
   const [url, setUrl] = useState("");
-  const [code, setCode] = useState("MANNEQUIN_MIXAMO");
-  const [name, setName] = useState("Mannequin (Mixamo rig)");
-  const [subject, setSubject] = useState<AvatarSubject>("neutral");
+  const [code, setCode] = useState("TWINFIT_MAN");
+  const [name, setName] = useState("TwinFIT man");
+  const [subject, setSubject] = useState<AvatarSubject>("man");
   const [rig, setRig] = useState<AvatarRig>("mixamo");
   const [height, setHeight] = useState("1.75");
   const [socketsText, setSocketsText] = useState(() => JSON.stringify(defaultSockets("mixamo"), null, 2));
@@ -72,11 +85,24 @@ export function AvatarDialog({
     if (next === "generate") {
       setCode("MANNEQUIN_MIXAMO");
       setName("Mannequin (Mixamo rig)");
+      setSubject("neutral");
       setRig("mixamo");
       setSocketsText(JSON.stringify(defaultSockets("mixamo"), null, 2));
-    } else if (code === "MANNEQUIN_MIXAMO") {
+    } else if (next === "style") {
+      const s = subject === "woman" ? "woman" : "man";
+      setSubject(s);
+      setCode(`TWINFIT_${s.toUpperCase()}`);
+      setName(`TwinFIT ${s}`);
+    } else if (code === "MANNEQUIN_MIXAMO" || code.startsWith("TWINFIT_")) {
       setCode("");
       setName("");
+    }
+  };
+  const changeSubject = (next: AvatarSubject) => {
+    setSubject(next);
+    if (mode === "style" && next !== "neutral") {
+      setCode(`TWINFIT_${next.toUpperCase()}`);
+      setName(`TwinFIT ${next}`);
     }
   };
 
@@ -117,6 +143,22 @@ export function AvatarDialog({
     setBusy(true);
     try {
       let avatar: BaseAvatar;
+      if (mode === "style") {
+        if (subject === "neutral") throw new Error("Pick man or woman: the style has a character for each");
+        const image_data_url = image ? await readAsDataUrl(image) : null;
+        avatar = await postAvatar(token, {
+          mode: "style",
+          code: fields.code,
+          name: fields.name,
+          subject,
+          height_m: fields.height_m ?? 1.75,
+          is_default: isDefault,
+          image_data_url,
+        });
+        toast.success(`${avatar.name}: Meshy is building it (about 3–5 minutes). It appears in the avatar menu when ready.`, "Avatar started");
+        onCreated(avatar);
+        return;
+      }
       if (mode === "generate") {
         // three.js only loads when the mannequin is asked for.
         const { exportMannequinGlb, mannequinSockets } = await import("@/lib/studio/mannequin");
@@ -154,7 +196,10 @@ export function AvatarDialog({
 
   const canSubmit =
     Boolean(code.trim() && name.trim()) &&
-    (mode === "generate" || (mode === "upload" && Boolean(file)) || (mode === "url" && /^https:\/\/\S+/.test(url.trim())));
+    (mode === "generate" ||
+      (mode === "style" && subject !== "neutral") ||
+      (mode === "upload" && Boolean(file)) ||
+      (mode === "url" && /^https:\/\/\S+/.test(url.trim())));
 
   return (
     <Modal
@@ -179,6 +224,28 @@ export function AvatarDialog({
       </div>
       <div className="studio-scroll max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
         <Segmented value={mode} onChange={changeMode} options={MODES} className="w-full justify-between" />
+
+        {mode === "style" ? (
+          <div className="space-y-3 rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-low) px-4 py-3">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-(--m3-primary-container) text-(--m3-on-primary-container)">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <p className="text-xs leading-relaxed text-(--m3-on-surface-variant)">
+                Takes the character reference image of the default style (Images → Styles) for the subject, asks Meshy for the model in a
+                T-pose with PBR textures, auto-rigs it and stores the rigged <code className="font-mono">.glb</code>. Sockets land on the
+                rig&apos;s own hand, back and hip bones. About 35 credits; 3 to 5 minutes. The avatar shows as “building” in the menu meanwhile.
+              </p>
+            </div>
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-(--m3-outline) px-3 py-2 text-xs transition-colors hover:border-(--m3-primary)">
+              <ImagePlus className="h-4 w-4 shrink-0 text-(--m3-primary)" />
+              <span className="min-w-0 flex-1 truncate text-(--m3-on-surface-variant)">
+                {image ? image.name : "Optional: another reference image instead of the style's (full body, plain background)"}
+              </span>
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
+            </label>
+          </div>
+        ) : null}
 
         {mode === "generate" ? (
           <div className="flex items-start gap-3 rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-low) px-4 py-3">
@@ -228,15 +295,15 @@ export function AvatarDialog({
           <Field label="Subject">
             <Segmented
               value={subject}
-              onChange={setSubject}
-              options={AVATAR_SUBJECTS.map((s) => ({ value: s, label: s }))}
+              onChange={changeSubject}
+              options={AVATAR_SUBJECTS.filter((s) => mode !== "style" || s !== "neutral").map((s) => ({ value: s, label: s }))}
               className="w-full justify-between"
             />
           </Field>
-          <Field label="Height (m)" hint={mode === "generate" ? "Size of the mannequin" : "Scales the model; empty keeps its own units"}>
+          <Field label="Height (m)" hint={mode === "generate" ? "Size of the mannequin" : mode === "style" ? "Height Meshy rigs the character at" : "Scales the model; empty keeps its own units"}>
             <TextInput type="number" min={0.5} max={2.5} step={0.01} value={height} onChange={(e) => setHeight(e.target.value)} />
           </Field>
-          {mode !== "generate" ? (
+          {mode !== "generate" && mode !== "style" ? (
             <>
               <Field label="Rig" className="col-span-2">
                 <Select value={rig} onChange={(e) => changeRig(e.target.value as AvatarRig)}>
@@ -267,7 +334,7 @@ export function AvatarDialog({
           Cancel
         </M3Button>
         <M3Button variant="filled" onClick={submit} busy={busy} disabled={!canSubmit}>
-          {mode === "generate" ? "Generate mannequin" : mode === "upload" ? "Upload avatar" : "Import avatar"}
+          {mode === "style" ? "Build with Meshy" : mode === "generate" ? "Generate mannequin" : mode === "upload" ? "Upload avatar" : "Import avatar"}
         </M3Button>
       </div>
     </Modal>

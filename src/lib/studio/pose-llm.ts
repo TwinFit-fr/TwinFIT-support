@@ -6,7 +6,7 @@
  */
 
 import { createOpenAIClient } from "@/lib/images/openai";
-import { POSE_SET_SCHEMA, sanitizePose, type PoseAngles } from "./anatomy";
+import { POSE_DRAFT_SCHEMA, POSE_SET_SCHEMA, jointLimitsText, sanitizePose, type LoopMode, type PoseAngles } from "./anatomy";
 
 export const DEFAULT_POSE_LLM_MODEL = "gpt-5-mini";
 
@@ -84,5 +84,95 @@ export async function extractPoseAngles(input: {
       prompt_tokens: completion.usage?.prompt_tokens ?? null,
       completion_tokens: completion.usage?.completion_tokens ?? null,
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Drafts for the editor: the key poses of a repetition, with timing, read from the catalog's
+// three frames (images) and pose texts, inside the joint ranges. Also what the worker uses.
+// ---------------------------------------------------------------------------
+
+const DRAFT_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
+
+You are drafting the KEY POSES of one repetition for an animator who will correct them by hand. Return 2 to 6 poses in order, the first being the start position, each with a short label and transition_s (seconds taken to move into it; lowering phases are usually slower than lifting). Choose loop_mode pingpong when the repetition retraces the same poses backwards (presses, squats, curls, rows) and cycle when it returns to the start another way.
+
+Joint ranges of motion, degrees (never exceed them): ${jointLimitsText()}.
+
+When images are attached they show the start, middle and end of the repetition: read torso lean, knee and elbow angles, stance width, where the hands and the bar are, and prefer them over the text when the two disagree. Keep poses physically consistent with each other and symmetric unless the exercise is unilateral.`;
+
+export type PoseDraftResult = {
+  poses: PoseAngles[];
+  labels: string[];
+  /** Relative time into each pose (transition seconds as given). */
+  weights: number[];
+  mode: LoopMode;
+  notes: string;
+  usage: Record<string, unknown>;
+};
+
+type DraftContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };
+
+export async function draftPoses(input: {
+  model?: string | null;
+  exerciseName: string;
+  description: string;
+  equipment: string;
+  avatarHeightM: number | null;
+  poses: { position: number; pose: string }[];
+  twoHanded: boolean;
+  grip: string | null;
+  /** Catalog frames as data URIs or public URLs, start → mid → end. */
+  images: string[];
+  /** Free instructions from the animator ("5 poses", "deeper squat", "elbows tucked"). */
+  instructions?: string | null;
+  poseCount?: number | null;
+}): Promise<PoseDraftResult> {
+  const model = input.model?.trim() || DEFAULT_POSE_LLM_MODEL;
+  const frames = [...input.poses]
+    .sort((a, b) => a.position - b.position)
+    .map((p) => `Frame ${p.position} (${["start", "mid", "end"][p.position] ?? p.position}):\n${p.pose.trim()}`)
+    .join("\n\n");
+  const text = [
+    `Exercise: ${input.exerciseName}`,
+    `Equipment: ${input.equipment}`,
+    input.twoHanded
+      ? `The load is a two-handed implement held in both hands${input.grip ? ` with a ${input.grip.toLowerCase()} grip` : ""}: fill "implement" in every pose.`
+      : `No two-handed implement: "implement" is null.`,
+    input.avatarHeightM ? `Avatar height: ${input.avatarHeightM.toFixed(2)} m` : null,
+    input.description.trim() ? `Description: ${input.description.trim()}` : null,
+    input.poseCount ? `Return exactly ${input.poseCount} poses.` : "Return as many poses as the movement needs (usually 3; 4 or 5 when there are distinct phases).",
+    input.instructions?.trim() ? `Animator's instructions: ${input.instructions.trim()}` : null,
+    "",
+    frames,
+    input.images.length ? `\nAttached: ${input.images.length} catalog frame(s) of this exercise, in order.` : null,
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+  const content: DraftContentPart[] = [{ type: "text", text }, ...input.images.map((url) => ({ type: "image_url" as const, image_url: { url, detail: "low" as const } }))];
+
+  const completion = await createOpenAIClient().chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: DRAFT_SYSTEM_PROMPT },
+      { role: "user", content },
+    ],
+    response_format: { type: "json_schema", json_schema: POSE_DRAFT_SCHEMA },
+  });
+  const raw = completion.choices[0]?.message?.content ?? "";
+  let parsed: { poses?: (PoseAngles & { label?: string; transition_s?: number })[]; loop_mode?: string; notes?: string };
+  try {
+    parsed = JSON.parse(raw) as typeof parsed;
+  } catch {
+    throw new Error("The pose model returned no JSON");
+  }
+  const items = parsed.poses ?? [];
+  if (items.length < 2) throw new Error(`The pose model returned ${items.length} poses`);
+  return {
+    poses: items.map((p) => sanitizePose(p)),
+    labels: items.map((p, i) => p.label?.trim() || `Pose ${i + 1}`),
+    weights: items.map((p) => (typeof p.transition_s === "number" && p.transition_s > 0 ? Math.min(10, p.transition_s) : 1)),
+    mode: parsed.loop_mode === "cycle" ? "cycle" : "pingpong",
+    notes: parsed.notes?.trim() ?? "",
+    usage: { model, prompt_tokens: completion.usage?.prompt_tokens ?? null, completion_tokens: completion.usage?.completion_tokens ?? null, images: input.images.length },
   };
 }

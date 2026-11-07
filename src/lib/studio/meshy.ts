@@ -29,6 +29,8 @@ export type MeshyRequest = {
   texturePrompt?: string;
   /** Scale to a real-world size on their side as well; the viewer re-measures anyway. */
   originAt: "bottom" | "center";
+  /** Characters: ask for a rig-ready pose. */
+  poseMode?: "t-pose" | "a-pose";
 };
 
 /** The request body sent for every equipment model; stored in params so a run can be repeated. */
@@ -101,6 +103,7 @@ export async function createImageTo3dTask(input: MeshyRequest): Promise<string> 
     ...MESHY_DEFAULTS,
     image_url: input.imageUrl,
     origin_at: input.originAt,
+    ...(input.poseMode ? { pose_mode: input.poseMode } : {}),
     ...(input.texturePrompt ? { texture_prompt: input.texturePrompt.slice(0, 800) } : {}),
   };
   const res = await meshyFetch<{ result: string }>("/v1/image-to-3d", { method: "POST", body: JSON.stringify(body) });
@@ -136,4 +139,26 @@ export async function imageUrlToDataUri(url: string): Promise<string> {
   const bytes = Buffer.from(await res.arrayBuffer());
   if (bytes.byteLength > 20 * 1024 * 1024) throw new MeshyError("Reference image larger than 20 MB", 400);
   return `data:${type};base64,${bytes.toString("base64")}`;
+}
+
+export type MeshyRiggingTask = MeshyTask & {
+  result?: {
+    rigged_character_glb_url?: string;
+    rigged_character_fbx_url?: string;
+    basic_animations?: Record<string, string>;
+  };
+};
+
+/** Auto-rig a succeeded image-to-3D task (a humanoid facing +Z); returns the rigging task id. */
+export async function createRiggingTask(input: { inputTaskId: string; heightMeters: number }): Promise<string> {
+  const res = await meshyFetch<{ result: string }>("/v1/rigging", {
+    method: "POST",
+    body: JSON.stringify({ input_task_id: input.inputTaskId, height_meters: input.heightMeters }),
+  });
+  if (!res?.result) throw new MeshyError("Meshy returned no rigging task id", 502);
+  return res.result;
+}
+
+export async function getRiggingTask(id: string): Promise<MeshyRiggingTask> {
+  return meshyFetch<MeshyRiggingTask>(`/v1/rigging/${encodeURIComponent(id)}`);
 }

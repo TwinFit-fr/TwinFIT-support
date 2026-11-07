@@ -4,6 +4,8 @@ import {
   STUDIO_ACTIVATE_VECTOR,
   STUDIO_AVATAR,
   STUDIO_AVATARS,
+  STUDIO_AVATARS_PROCESSING,
+  STUDIO_STYLE_CHARACTER,
   STUDIO_CLAIM,
   STUDIO_CLAIM_EQUIPMENT_FINISH,
   STUDIO_CREATE_EQUIPMENT_MODEL,
@@ -22,6 +24,7 @@ import {
   STUDIO_UPDATE_VECTOR,
   STUDIO_VECTOR,
   STUDIO_VECTORS,
+  STUDIO_EXERCISE_FRAMES,
   STUDIO_WORKER_EXERCISE,
   STUDIO_WORKER_POSES,
 } from "./graphql";
@@ -98,15 +101,30 @@ export async function listAvatars(token: string): Promise<BaseAvatar[]> {
 }
 
 export async function createAvatar(token: string, input: NewAvatarInput): Promise<BaseAvatar> {
+  // A default must be a ready avatar: a processing one is made default when it finishes.
+  const ready = (input.status ?? "ready") === "ready";
   const data = await staffGql<{ insert_animation_studio_base_avatars_one: BaseAvatar }>(
     token,
-    input.is_default ? STUDIO_CREATE_DEFAULT_AVATAR : STUDIO_CREATE_AVATAR,
-    { object: { ...input, active: true } },
+    input.is_default && ready ? STUDIO_CREATE_DEFAULT_AVATAR : STUDIO_CREATE_AVATAR,
+    { object: { ...input, is_default: input.is_default && ready, active: true } },
   );
   return data.insert_animation_studio_base_avatars_one;
 }
 
-export type AvatarPatch = Partial<Pick<BaseAvatar, "name" | "height_m" | "sockets" | "params" | "active">>;
+export type AvatarPatch = Partial<
+  Pick<BaseAvatar, "name" | "height_m" | "sockets" | "params" | "active" | "file_id" | "model_url" | "status" | "progress" | "task_id" | "rig_task_id" | "error" | "usage" | "is_default">
+>;
+
+export async function listProcessingAvatars(token: string): Promise<BaseAvatar[]> {
+  const data = await staffGql<{ animation_studio_base_avatars: BaseAvatar[] }>(token, STUDIO_AVATARS_PROCESSING);
+  return data.animation_studio_base_avatars;
+}
+
+/** The file id of the default style's character reference image for a subject, or null. */
+export async function getStyleCharacterFileId(token: string, subject: string): Promise<string | null> {
+  const data = await staffGql<{ images_style_characters: { subject: string; file_id: string }[] }>(token, STUDIO_STYLE_CHARACTER, { subject });
+  return data.images_style_characters[0]?.file_id ?? null;
+}
 
 export async function updateAvatar(token: string, id: string, set: AvatarPatch): Promise<BaseAvatar> {
   const data = await staffGql<{ update_animation_studio_base_avatars_by_pk: BaseAvatar | null }>(token, STUDIO_UPDATE_AVATAR, { id, set });
@@ -368,4 +386,9 @@ export async function getWorkerExercise(token: string, id: string): Promise<Work
 export async function getExercisePoses(token: string, exoId: number): Promise<{ position: number; pose: string }[]> {
   const data = await staffGql<{ images_exercise_poses: { position: number; pose: string }[] }>(token, STUDIO_WORKER_POSES, { exoId });
   return data.images_exercise_poses;
+}
+
+export async function getExerciseFrames(token: string, exoId: number, subject: string): Promise<{ position: number; image_url: string }[]> {
+  const data = await staffGql<{ images_exercise_images: { position: number; image_url: string }[] }>(token, STUDIO_EXERCISE_FRAMES, { exoId, subject });
+  return data.images_exercise_images;
 }

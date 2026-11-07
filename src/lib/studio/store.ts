@@ -19,6 +19,10 @@ export type PoseEditState = {
   avatarId: string;
   items: EquipmentItem[];
   poses: PoseAngles[];
+  /** Relative time into each pose (see buildKeyframes); null = even spacing. */
+  weights: number[] | null;
+  /** Short names of the poses (from the AI draft), by index. */
+  labels: string[] | null;
   mode: LoopMode;
   durationS: number;
   fps: number;
@@ -170,9 +174,11 @@ export type StudioState = {
   resetView: () => void;
   setEdit: (edit: Partial<EditState>) => void;
   startPoseEdit: (
-    state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "history" | "future" | "lastEditAt"> &
-      Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget">>,
+    state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "history" | "future" | "lastEditAt" | "weights" | "labels"> &
+      Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "weights" | "labels">>,
   ) => void;
+  /** Replace every pose (an AI draft): one undo step. */
+  replacePoses: (next: { poses: PoseAngles[]; mode?: LoopMode; weights?: number[] | null; labels?: string[] | null; grip?: string | null }) => void;
   undoPose: () => void;
   redoPose: () => void;
   /** Copy a limb's angles onto the other side (same anatomical posture, mirrored). */
@@ -231,7 +237,23 @@ export const useStudioStore = create<StudioState>((set) => ({
   resetView: () => set((s) => ({ viewNonce: s.viewNonce + 1 })),
   setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
   startPoseEdit: (state) =>
-    set({ poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], lastEditAt: 0, ...state }, playing: false }),
+    set({ poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], lastEditAt: 0, weights: null, labels: null, ...state }, playing: false }),
+  replacePoses: (next) =>
+    set((s) => {
+      if (!s.poseEdit) return s;
+      return {
+        poseEdit: {
+          ...remember(s.poseEdit, false),
+          poses: next.poses,
+          mode: next.mode ?? s.poseEdit.mode,
+          weights: next.weights === undefined ? s.poseEdit.weights : next.weights,
+          labels: next.labels === undefined ? s.poseEdit.labels : next.labels,
+          grip: next.grip === undefined ? s.poseEdit.grip : next.grip,
+          keyframe: 0,
+          dirty: true,
+        },
+      };
+    }),
   undoPose: () =>
     set((s) => {
       const d = s.poseEdit;
@@ -278,13 +300,19 @@ export const useStudioStore = create<StudioState>((set) => ({
       if (!s.poseEdit || s.poseEdit.poses.length >= 8) return s;
       const poses = [...s.poseEdit.poses];
       poses.splice(index + 1, 0, structuredClone(poses[index]));
-      return { poseEdit: { ...remember(s.poseEdit, false), poses, keyframe: index + 1, dirty: true } };
+      const weights = s.poseEdit.weights ? [...s.poseEdit.weights] : null;
+      weights?.splice(index + 1, 0, weights[index]);
+      const labels = s.poseEdit.labels ? [...s.poseEdit.labels] : null;
+      labels?.splice(index + 1, 0, `${labels[index]} copy`);
+      return { poseEdit: { ...remember(s.poseEdit, false), poses, weights, labels, keyframe: index + 1, dirty: true } };
     }),
   removePose: (index) =>
     set((s) => {
       if (!s.poseEdit || s.poseEdit.poses.length <= 1) return s;
       const poses = s.poseEdit.poses.filter((_, i) => i !== index);
-      return { poseEdit: { ...remember(s.poseEdit, false), poses, keyframe: Math.min(index, poses.length - 1), dirty: true } };
+      const weights = s.poseEdit.weights?.filter((_, i) => i !== index) ?? null;
+      const labels = s.poseEdit.labels?.filter((_, i) => i !== index) ?? null;
+      return { poseEdit: { ...remember(s.poseEdit, false), poses, weights, labels, keyframe: Math.min(index, poses.length - 1), dirty: true } };
     }),
   movePose: (index, direction) =>
     set((s) => {
@@ -293,7 +321,11 @@ export const useStudioStore = create<StudioState>((set) => ({
       if (to < 0 || to >= s.poseEdit.poses.length) return s;
       const poses = [...s.poseEdit.poses];
       [poses[index], poses[to]] = [poses[to], poses[index]];
-      return { poseEdit: { ...remember(s.poseEdit, false), poses, keyframe: to, dirty: true } };
+      const weights = s.poseEdit.weights ? [...s.poseEdit.weights] : null;
+      if (weights) [weights[index], weights[to]] = [weights[to], weights[index]];
+      const labels = s.poseEdit.labels ? [...s.poseEdit.labels] : null;
+      if (labels) [labels[index], labels[to]] = [labels[to], labels[index]];
+      return { poseEdit: { ...remember(s.poseEdit, false), poses, weights, labels, keyframe: to, dirty: true } };
     }),
   setPoseProbe: (poseProbe) =>
     set((s) => (JSON.stringify(s.poseProbe) === JSON.stringify(poseProbe) ? s : { poseProbe })),
