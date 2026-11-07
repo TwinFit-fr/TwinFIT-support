@@ -32,7 +32,23 @@ export type PoseEditState = {
   dragTarget: string | null;
   dirty: boolean;
   meta: Record<string, unknown>;
+  /** Undo stack of the poses (newest last) and the redo stack (newest first). */
+  history: PoseAngles[][];
+  future: PoseAngles[][];
+  /** When the last edit was recorded; edits within a short window share one undo step (a drag). */
+  lastEditAt: number;
 };
+
+const HISTORY_LIMIT = 60;
+const COALESCE_MS = 400;
+
+/** The draft with its current poses pushed onto the undo stack (unless this edit continues the last one). */
+function remember(draft: PoseEditState, coalesce = true): PoseEditState {
+  const now = Date.now();
+  if (coalesce && now - draft.lastEditAt < COALESCE_MS && draft.history.length) return { ...draft, lastEditAt: now, future: [] };
+  const history = [...draft.history, draft.poses].slice(-HISTORY_LIMIT);
+  return { ...draft, history, future: [], lastEditAt: now };
+}
 
 /** Rig editor: move the avatar's sockets, or a generated model relative to its socket, with a gizmo. */
 export type EditMode = "off" | "sockets" | "model";
@@ -153,7 +169,14 @@ export type StudioState = {
   setCameraPreset: (preset: CameraPreset) => void;
   resetView: () => void;
   setEdit: (edit: Partial<EditState>) => void;
-  startPoseEdit: (state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget"> & Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget">>) => void;
+  startPoseEdit: (
+    state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "history" | "future" | "lastEditAt"> &
+      Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget">>,
+  ) => void;
+  undoPose: () => void;
+  redoPose: () => void;
+  /** Copy a limb's angles onto the other side (same anatomical posture, mirrored). */
+  copyLimbToOtherSide: (index: number, limb: "arm" | "leg", from: "left" | "right") => void;
   setPoseDragTarget: (target: string | null) => void;
   stopPoseEdit: () => void;
   setPoseKeyframe: (index: number) => void;
@@ -207,26 +230,61 @@ export const useStudioStore = create<StudioState>((set) => ({
   setCameraPreset: (cameraPreset) => set((s) => ({ cameraPreset, viewNonce: s.viewNonce + 1 })),
   resetView: () => set((s) => ({ viewNonce: s.viewNonce + 1 })),
   setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
-  startPoseEdit: (state) => set({ poseEdit: { keyframe: 0, dirty: false, dragTarget: null, ...state }, playing: false }),
+  startPoseEdit: (state) =>
+    set({ poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], lastEditAt: 0, ...state }, playing: false }),
+  undoPose: () =>
+    set((s) => {
+      const d = s.poseEdit;
+      if (!d || !d.history.length) return s;
+      const poses = d.history[d.history.length - 1];
+      return {
+        poseEdit: {
+          ...d,
+          poses,
+          history: d.history.slice(0, -1),
+          future: [d.poses, ...d.future].slice(0, HISTORY_LIMIT),
+          keyframe: Math.min(d.keyframe, poses.length - 1),
+          dirty: true,
+          lastEditAt: 0,
+        },
+      };
+    }),
+  redoPose: () =>
+    set((s) => {
+      const d = s.poseEdit;
+      if (!d || !d.future.length) return s;
+      const [poses, ...future] = d.future;
+      return {
+        poseEdit: { ...d, poses, future, history: [...d.history, d.poses].slice(-HISTORY_LIMIT), keyframe: Math.min(d.keyframe, poses.length - 1), dirty: true, lastEditAt: 0 },
+      };
+    }),
+  copyLimbToOtherSide: (index, limb, from) =>
+    set((s) => {
+      const d = s.poseEdit;
+      if (!d) return s;
+      const to = from === "left" ? "right" : "left";
+      const poses = d.poses.map((p, i) => (i === index ? { ...p, [`${to}_${limb}`]: structuredClone(p[`${from}_${limb}`]) } : p));
+      return { poseEdit: { ...remember(d, false), poses, dirty: true } };
+    }),
   setPoseDragTarget: (dragTarget) => set((s) => (s.poseEdit && s.poseEdit.dragTarget !== dragTarget ? { poseEdit: { ...s.poseEdit, dragTarget } } : s)),
   stopPoseEdit: () => set({ poseEdit: null, playing: true }),
   setPoseKeyframe: (index) =>
     set((s) => (s.poseEdit ? { poseEdit: { ...s.poseEdit, keyframe: Math.max(0, Math.min(index, s.poseEdit.poses.length - 1)) }, playing: false } : s)),
   updatePose: (index, pose) =>
-    set((s) => (s.poseEdit ? { poseEdit: { ...s.poseEdit, poses: s.poseEdit.poses.map((p, i) => (i === index ? pose : p)), dirty: true } } : s)),
+    set((s) => (s.poseEdit ? { poseEdit: { ...remember(s.poseEdit), poses: s.poseEdit.poses.map((p, i) => (i === index ? pose : p)), dirty: true } } : s)),
   setPoseEditOptions: (options) => set((s) => (s.poseEdit ? { poseEdit: { ...s.poseEdit, ...options, dirty: true } } : s)),
   duplicatePose: (index) =>
     set((s) => {
       if (!s.poseEdit || s.poseEdit.poses.length >= 8) return s;
       const poses = [...s.poseEdit.poses];
       poses.splice(index + 1, 0, structuredClone(poses[index]));
-      return { poseEdit: { ...s.poseEdit, poses, keyframe: index + 1, dirty: true } };
+      return { poseEdit: { ...remember(s.poseEdit, false), poses, keyframe: index + 1, dirty: true } };
     }),
   removePose: (index) =>
     set((s) => {
       if (!s.poseEdit || s.poseEdit.poses.length <= 1) return s;
       const poses = s.poseEdit.poses.filter((_, i) => i !== index);
-      return { poseEdit: { ...s.poseEdit, poses, keyframe: Math.min(index, poses.length - 1), dirty: true } };
+      return { poseEdit: { ...remember(s.poseEdit, false), poses, keyframe: Math.min(index, poses.length - 1), dirty: true } };
     }),
   movePose: (index, direction) =>
     set((s) => {
@@ -235,7 +293,7 @@ export const useStudioStore = create<StudioState>((set) => ({
       if (to < 0 || to >= s.poseEdit.poses.length) return s;
       const poses = [...s.poseEdit.poses];
       [poses[index], poses[to]] = [poses[to], poses[index]];
-      return { poseEdit: { ...s.poseEdit, poses, keyframe: to, dirty: true } };
+      return { poseEdit: { ...remember(s.poseEdit, false), poses, keyframe: to, dirty: true } };
     }),
   setPoseProbe: (poseProbe) =>
     set((s) => (JSON.stringify(s.poseProbe) === JSON.stringify(poseProbe) ? s : { poseProbe })),

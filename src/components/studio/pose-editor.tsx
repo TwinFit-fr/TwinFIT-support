@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Save, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Redo2, Save, Trash2, Undo2, X } from "lucide-react";
 import {
   ANCHOR_IDS,
   LOOP_MODES,
@@ -103,7 +103,31 @@ export function PoseEditor({ onSave, saving }: { onSave: (clip: PoseClipJson, la
   const movePose = useStudioStore((s) => s.movePose);
   const playing = useStudioStore((s) => s.playing);
   const togglePlaying = useStudioStore((s) => s.togglePlaying);
+  const undo = useStudioStore((s) => s.undoPose);
+  const redo = useStudioStore((s) => s.redoPose);
+  const copyLimb = useStudioStore((s) => s.copyLimbToOtherSide);
+  const canUndo = useStudioStore((s) => (s.poseEdit?.history.length ?? 0) > 0);
+  const canRedo = useStudioStore((s) => (s.poseEdit?.future.length ?? 0) > 0);
   const [tab, setTab] = useState<Tab>("body");
+
+  // Ctrl/Cmd+Z undoes, with Shift (or Ctrl+Y) redoes, unless the keys belong to a text field.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) && (target as HTMLInputElement).type !== "range") return;
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      } else if ((key === "z" && event.shiftKey) || key === "y") {
+        event.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
 
   const pose = draft?.poses[draft.keyframe];
   const tabs = useMemo(
@@ -145,6 +169,12 @@ export function PoseEditor({ onSave, saving }: { onSave: (clip: PoseClipJson, la
           <h2 className="truncate text-sm font-semibold tracking-tight">{label}</h2>
         </div>
         <div className="flex items-center gap-1">
+          <IconButton label="Undo (Ctrl+Z)" onClick={undo} disabled={!canUndo} className="h-8 w-8">
+            <Undo2 className="h-4 w-4" />
+          </IconButton>
+          <IconButton label="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={!canRedo} className="h-8 w-8">
+            <Redo2 className="h-4 w-4" />
+          </IconButton>
           <M3Button size="sm" variant={playing ? "tonal" : "filled"} onClick={togglePlaying} title={playing ? "Pause and hold the selected pose" : "Play the loop"}>
             {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             {playing ? "Pause" : "Play"}
@@ -313,8 +343,17 @@ export function PoseEditor({ onSave, saving }: { onSave: (clip: PoseClipJson, la
               <div className="grid grid-cols-2 gap-3">
                 {(["left", "right"] as const).map((side) => (
                   <div key={side} className="rounded-2xl bg-(--m3-surface-container) p-3">
-                    <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-(--m3-on-surface-variant)">
-                      {side} {tab === "arms" ? "arm" : "leg"}
+                    <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.16em] text-(--m3-on-surface-variant)">
+                      <span>
+                        {side} {tab === "arms" ? "arm" : "leg"}
+                      </span>
+                      <IconButton
+                        label={`Copy this ${tab === "arms" ? "arm" : "leg"} to the ${side === "left" ? "right" : "left"} side`}
+                        onClick={() => copyLimb(i, tab === "arms" ? "arm" : "leg", side)}
+                        className="h-6 w-6"
+                      >
+                        {side === "left" ? <ArrowRightToLine className="h-3 w-3" /> : <ArrowLeftToLine className="h-3 w-3" />}
+                      </IconButton>
                     </div>
                     <Sliders fields={group(`${side}_${tab === "arms" ? "arm" : "leg"}`).fields} pose={pose} onChange={change} compact />
                   </div>
