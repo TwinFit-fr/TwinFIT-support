@@ -20,7 +20,7 @@ import { isPoseClipJson, poseClipFromDraft, type PoseAngles, type PoseClipJson }
 import { studioAssetHeaders } from "@/lib/studio/asset-auth";
 import { DEFAULT_CLEANUP, cleanupClip } from "@/lib/studio/clip-cleanup";
 import { isMocapClip, retargetToAvatar } from "@/lib/studio/mocap";
-import { buildPoseClip, captureRestPose, probePose, solveLimbToTarget, type Limb, type LimbEffector, type RestPose } from "@/lib/studio/pose-clip";
+import { buildPoseClip, captureRestPose, probePose, restoreRestPose, solveLimbToTarget, type Limb, type LimbEffector, type RestPose } from "@/lib/studio/pose-clip";
 import { useStudioStore, type CameraPreset } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
 import type { LoadedClip } from "./movement-clip";
@@ -175,9 +175,14 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
     return draft.keyframes.find((k) => k.position === index)?.t ?? 0;
   }, [draft, draftSource, heldPose]);
 
+  // The bones as loaded. Their local transforms do not depend on the layout below, so a later
+  // re-layout (the height was edited) starts from them instead of from a frame of the clip.
+  const loaded = useMemo(() => captureRestPose(model), [model]);
+
   // Ground the model, centre it and bring it to metres (Mixamo exports are often in centimetres).
   // The three object is mutated in place: it is scene state, not React state.
   const { info, rest } = useMemo<{ info: ModelInfo; rest: RestPose }>(() => {
+    restoreRestPose(model, loaded);
     model.position.set(0, 0, 0);
     model.scale.setScalar(1);
     model.updateMatrixWorld(true);
@@ -210,10 +215,10 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
         heightM: rawHeight * scale,
         missingSockets: sockets.filter((s) => !model.getObjectByName(s.bone)).map((s) => s.id),
       },
-      // The rest pose, taken now, before the mixer moves any bone: pose clips are solved against it.
+      // The rest pose in its final layout: pose clips are solved against it.
       rest: captureRestPose(model),
     };
-  }, [model, heightM, sockets, animations]);
+  }, [model, loaded, heightM, sockets, animations]);
 
   // The rig editor: drafts of this avatar replace the saved sockets / placements while they are being moved.
   const edit = useStudioStore((s) => s.edit);
@@ -236,7 +241,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
     try {
       if (isPoseClipJson(clip)) return [buildPoseClip(model, clip, rest, liveSockets), null];
       if (isMocapClip(clip)) {
-        const { clip: retargeted, report } = retargetToAvatar(model, clip);
+        const { clip: retargeted, report } = retargetToAvatar(model, clip, rest);
         if (report.unmatched.length && process.env.NODE_ENV !== "production") {
           console.info("[studio] mocap bones without an avatar bone:", report.unmatched.join(", "));
         }
@@ -333,9 +338,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   useEffect(() => {
     if (editing) {
       mixer.stopAllAction();
-      model.traverse((o) => {
-        if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.pose();
-      });
+      restoreRestPose(model, rest);
       return;
     }
     const active = resolvedClip ?? animations[0] ?? null;
@@ -347,7 +350,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
       mixer.uncacheAction(active);
       mixer.uncacheClip(active);
     };
-  }, [mixer, model, resolvedClip, animations, editing]);
+  }, [mixer, model, rest, resolvedClip, animations, editing]);
   // Playback controls are read straight from the store every frame: toggling them never re-renders the scene.
   useFrame((_, delta) => {
     const { playing, speed, edit, poseEdit } = useStudioStore.getState();

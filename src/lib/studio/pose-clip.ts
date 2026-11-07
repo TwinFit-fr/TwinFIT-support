@@ -13,7 +13,10 @@ import {
   type PoseClipJson,
 } from "./anatomy";
 import { canonicalBoneName } from "./bone-names";
+import { captureRestPose, restoreRestPose, type RestPose } from "./rest-pose";
 import type { AvatarSocket } from "./types";
+
+export { captureRestPose, restoreRestPose, type RestPose };
 
 /**
  * Solves a pose-angles clip on a loaded rig: anatomical angles → per-bone quaternions in the
@@ -21,37 +24,6 @@ import type { AvatarSocket } from "./types";
  * eased interpolation between keyframes. Works for any Mixamo-named skeleton (`mixamorigHips`,
  * `mixamorig:Hips` or plain `Hips`) whatever its rest rotations, units or proportions.
  */
-
-/** Rest pose captured when the model is laid out, before any animation touches the bones. */
-export type RestPose = Map<
-  string,
-  {
-    local: THREE.Quaternion;
-    position: THREE.Vector3;
-    world: THREE.Quaternion;
-    worldPosition: THREE.Vector3;
-    /** World scale of the bone's parent: world metres → the bone's local position units. */
-    parentWorldScale: number;
-    parent: string | null;
-  }
->;
-
-export function captureRestPose(model: THREE.Object3D): RestPose {
-  const rest: RestPose = new Map();
-  model.updateMatrixWorld(true);
-  model.traverse((o) => {
-    if (!(o as THREE.Bone).isBone) return;
-    rest.set(o.name, {
-      local: o.quaternion.clone(),
-      position: o.position.clone(),
-      world: o.getWorldQuaternion(new THREE.Quaternion()),
-      worldPosition: o.getWorldPosition(new THREE.Vector3()),
-      parentWorldScale: o.parent?.getWorldScale(new THREE.Vector3()).x || 1,
-      parent: o.parent?.name ?? null,
-    });
-  });
-  return rest;
-}
 
 const LOGICAL = [
   "Hips", "Spine", "Spine1", "Spine2", "Neck", "Head",

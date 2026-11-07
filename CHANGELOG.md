@@ -44,6 +44,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: [Sem
 - Images dropped into a lesson are uploaded on Save to `lessons/{slug}/` (no locale folder: a chunk's picture is shared by its locales), and Save's orphan cleanup only removes files from that folder, so library images are never deleted by saving a lesson.
 - Frame generation: support and load equipment references no longer set the camera angle or left/right orientation. The object is rotated or mirrored so the athlete faces its working side.
 
+### Fixed
+- 3D Studio: a rig exported under a scaled Armature (every Meshy avatar) no longer shrinks to a hundredth of its size when the rig editor opens, nor breaks when a motion-capture clip is retargeted or cleaned up: the avatar goes back to the rest pose captured at load instead of `skeleton.pose()`.
+- 3D Studio → motion-capture clips move each limb relative to the rest pose of both rigs instead of copying world rotations, so a clip no longer folds the body of an avatar whose bones have other axes (every Meshy avatar) and a source in a T drives an avatar resting in an A. A file is played without retargeting only when it was made on this very rig (same rest pose), not merely because its bone names match.
+
 ### Removed
 - 3D Studio: the Format select of the generator (the pose pipeline always writes `json`; other formats come from uploads), the unused DeepMotion variables of `.env.local.example`, and dead pose-extraction code.
 - The textarea markdown editor for Coach answers, replaced by the chunk editor.
