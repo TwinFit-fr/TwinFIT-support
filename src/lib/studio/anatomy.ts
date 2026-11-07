@@ -46,6 +46,11 @@ export type ImplementPose = {
   grip_width_m: number;
 };
 
+/** End effectors (and knees as poles) a pose can pin to a point in the world, metres. */
+export const ANCHOR_IDS = ["left_foot", "right_foot", "left_hand", "right_hand", "left_knee", "right_knee"] as const;
+export type AnchorId = (typeof ANCHOR_IDS)[number];
+export type PoseAnchors = Partial<Record<AnchorId, [number, number, number]>>;
+
 export type PoseAngles = {
   orientation: Orientation;
   hips: {
@@ -55,7 +60,7 @@ export type PoseAngles = {
     yaw: number;
     /** Side tilt, + left hip up. */
     roll: number;
-    /** Pelvis height above the floor in metres when not standing; null when standing (computed from the legs). */
+    /** Pelvis height above the floor in metres; null = automatic (from the legs when standing, else the orientation's default). */
     height_m: number | null;
     /** Pelvis shift forward (+) or back (-) from the standing position, metres. */
     forward_m: number;
@@ -75,6 +80,11 @@ export type PoseAngles = {
   right_leg: LegAngles;
   /** Null when the exercise has no two-handed implement in this frame. */
   implement: ImplementPose | null;
+  /**
+   * Pinned points: a foot or hand stays exactly there (its leg or arm is solved to it); a knee is
+   * the pole of its leg. World metres, in the avatar's frame (the bone's position: ankle, wrist, knee).
+   */
+  anchors?: PoseAnchors;
 };
 
 export const NEUTRAL_ARM: ArmAngles = {
@@ -290,7 +300,19 @@ export function sanitizePose(p: PoseAngles): PoseAngles {
             grip_width_m: c(p.implement.grip_width_m, 0.05, 1.4, 0.45),
           }
         : null,
+    ...(p?.anchors && typeof p.anchors === "object" ? { anchors: sanitizeAnchors(p.anchors) } : {}),
   };
+}
+
+function sanitizeAnchors(raw: PoseAnchors): PoseAnchors {
+  const out: PoseAnchors = {};
+  for (const id of ANCHOR_IDS) {
+    const v = raw[id];
+    if (Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === "number" && Number.isFinite(n))) {
+      out[id] = [Math.min(3, Math.max(-3, v[0])), Math.min(3, Math.max(-0.5, v[1])), Math.min(3, Math.max(-3, v[2]))];
+    }
+  }
+  return out;
 }
 
 /** How each palm faces a two-handed implement, from the catalog grip code (see solveArmsToImplement). */
@@ -320,7 +342,13 @@ export const LOOP_MODES: readonly LoopMode[] = ["cycle", "pingpong", "once"];
 
 /** Expand an ordered list of poses into timed keyframes, evenly spaced over the duration. */
 export function buildKeyframes(poses: PoseAngles[], durationS: number, mode: LoopMode): PoseKeyframe[] {
-  if (poses.length < 2) throw new Error("Two poses are needed");
+  if (!poses.length) throw new Error("A pose is needed");
+  if (poses.length === 1) {
+    return [
+      { t: 0, position: 0, angles: poses[0] },
+      { t: durationS, position: 0, angles: poses[0] },
+    ];
+  }
   const order: number[] =
     mode === "cycle"
       ? [...poses.map((_, i) => i), 0]
@@ -348,7 +376,7 @@ export function posesFromClip(clip: PoseClipJson): { poses: PoseAngles[]; mode: 
   const poses = [...byPosition.entries()].sort((a, b) => a[0] - b[0]).map(([, p]) => p);
   const metaMode = clip.meta?.loop_mode;
   const mode: LoopMode = metaMode === "pingpong" || metaMode === "once" || metaMode === "cycle" ? metaMode : clip.loop ? "cycle" : "once";
-  return { poses: poses.length >= 2 ? poses : [poses[0] ?? NEUTRAL_POSE, poses[0] ?? NEUTRAL_POSE], mode };
+  return { poses: poses.length ? poses : [NEUTRAL_POSE], mode };
 }
 
 // ---------------------------------------------------------------------------
@@ -392,7 +420,7 @@ export const POSE_GROUPS: PoseGroup[] = [
       { path: "hips.yaw", label: "Body yaw", min: -180, max: 180, unit: "°" },
       { path: "hips.roll", label: "Body roll", min: -90, max: 90, unit: "°" },
       { path: "hips.forward_m", label: "Pelvis forward", min: -0.6, max: 0.6, step: 0.01, unit: "m" },
-      { path: "hips.height_m", label: "Pelvis height (not standing)", min: 0.05, max: 2.2, step: 0.01, unit: "m" },
+      { path: "hips.height_m", label: "Pelvis height", min: 0.05, max: 2.2, step: 0.01, unit: "m" },
     ],
   },
   {

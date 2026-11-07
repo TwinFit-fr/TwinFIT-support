@@ -40,6 +40,8 @@ export type EditState = {
   /** Socket id (sockets mode) or equipment key `kind:code` (model mode). */
   target: string | null;
   tool: EditTool;
+  /** Gizmo snapping: 45° steps and 5 mm steps, so a grip lands on 45 / 90 / 135 / 180. */
+  snap: boolean;
 };
 
 /**
@@ -128,6 +130,8 @@ export type StudioState = {
   viewNonce: number;
   edit: EditState;
   poseEdit: PoseEditState | null;
+  /** World position of the pinnable points of the pose the editor holds (from the canvas). */
+  poseProbe: Record<string, [number, number, number]>;
   /** Sockets being edited (the avatar's with the gizmo moves applied); null when untouched. */
   draftSockets: AvatarSocket[] | null;
   /** Placement being edited per equipment key; empty when untouched. */
@@ -155,6 +159,8 @@ export type StudioState = {
   /** Insert a copy of pose `index` right after it and select the copy. */
   duplicatePose: (index: number) => void;
   removePose: (index: number) => void;
+  movePose: (index: number, direction: -1 | 1) => void;
+  setPoseProbe: (probe: Record<string, [number, number, number]>) => void;
   setDraftSockets: (sockets: AvatarSocket[] | null) => void;
   updateDraftSocket: (base: AvatarSocket[], id: string, patch: Pick<AvatarSocket, "offset" | "rotation">) => void;
   setDraftPlacement: (key: string, placement: EquipmentPlacement | null) => void;
@@ -175,8 +181,9 @@ export const useStudioStore = create<StudioState>((set) => ({
   cleanMocap: true,
   cameraPreset: "three-quarter",
   viewNonce: 0,
-  edit: { mode: "off", target: null, tool: "translate" },
+  edit: { mode: "off", target: null, tool: "translate", snap: true },
   poseEdit: null,
+  poseProbe: {},
   draftSockets: null,
   draftPlacements: {},
 
@@ -213,10 +220,21 @@ export const useStudioStore = create<StudioState>((set) => ({
     }),
   removePose: (index) =>
     set((s) => {
-      if (!s.poseEdit || s.poseEdit.poses.length <= 2) return s;
+      if (!s.poseEdit || s.poseEdit.poses.length <= 1) return s;
       const poses = s.poseEdit.poses.filter((_, i) => i !== index);
       return { poseEdit: { ...s.poseEdit, poses, keyframe: Math.min(index, poses.length - 1), dirty: true } };
     }),
+  movePose: (index, direction) =>
+    set((s) => {
+      if (!s.poseEdit) return s;
+      const to = index + direction;
+      if (to < 0 || to >= s.poseEdit.poses.length) return s;
+      const poses = [...s.poseEdit.poses];
+      [poses[index], poses[to]] = [poses[to], poses[index]];
+      return { poseEdit: { ...s.poseEdit, poses, keyframe: to, dirty: true } };
+    }),
+  setPoseProbe: (poseProbe) =>
+    set((s) => (JSON.stringify(s.poseProbe) === JSON.stringify(poseProbe) ? s : { poseProbe })),
   setDraftSockets: (draftSockets) => set({ draftSockets }),
   updateDraftSocket: (base, id, patch) =>
     set((s) => ({

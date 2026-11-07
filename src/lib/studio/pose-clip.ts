@@ -81,9 +81,11 @@ const mul = (...qs: THREE.Quaternion[]) => qs.reduce((acc, q) => acc.multiply(q)
 
 /** Character-frame rotation of every bone for one pose (s = +1 left side, -1 right side). */
 function characterDeltas(p: PoseAngles): Partial<Record<Logical, THREE.Quaternion>> {
+  // Rotations about the arm's own axis happen about world X for both arms in the T-pose, so they
+  // take no side sign: palm forward (external rotation, supination) is -X for either arm.
   const arm = (a: ArmAngles, s: 1 | -1) => ({
-    upper: mul(qz(s * (a.shoulder_abduction - 90)), qy(-s * a.shoulder_flexion), qx(s * a.shoulder_rotation)),
-    fore: mul(qy(-s * a.elbow_flexion), qx(s * a.forearm_pronation)),
+    upper: mul(qz(s * (a.shoulder_abduction - 90)), qy(-s * a.shoulder_flexion), qx(-a.shoulder_rotation)),
+    fore: mul(qy(-s * a.elbow_flexion), qx(a.forearm_pronation)),
     hand: qz(-s * a.wrist_flexion),
   });
   const leg = (l: LegAngles, s: 1 | -1) => ({
@@ -304,6 +306,89 @@ function solveArmsToImplement(p: PoseAngles, rig: Rig, local: Map<string, THREE.
   }
 }
 
+type ChainBones = { root: Logical; mid: Logical; end: Logical };
+
+/**
+ * Two-bone IK of a chain (hip–knee–ankle, shoulder–elbow–wrist) onto a target for its end bone:
+ * the mid joint stays on the side of the pole hint, each bone keeps its rest roll relative to the
+ * bend plane. Writes the root and mid local quaternions; the end bone keeps its own local pose.
+ * `bendRest` is where the mid joint bows at rest for a positive flexion (+Z knees, -Z elbows).
+ */
+function solveChain(
+  rig: Rig,
+  fk: Map<string, WorldTransform>,
+  local: Map<string, THREE.Quaternion>,
+  chain: ChainBones,
+  target: THREE.Vector3,
+  pole: THREE.Vector3 | null,
+  bendRest: THREE.Vector3,
+): boolean {
+  const nRoot = rig.names[chain.root];
+  const nMid = rig.names[chain.mid];
+  const nEnd = rig.names[chain.end];
+  if (!nRoot || !nMid || !nEnd) return false;
+  const rRoot = rig.rest.get(nRoot);
+  const rMid = rig.rest.get(nMid);
+  const rEnd = rig.rest.get(nEnd);
+  const wRoot = fk.get(nRoot);
+  const wMid = fk.get(nMid);
+  if (!rRoot || !rMid || !rEnd || !wRoot || !wMid) return false;
+
+  const L1 = rRoot.worldPosition.distanceTo(rMid.worldPosition);
+  const L2 = rMid.worldPosition.distanceTo(rEnd.worldPosition);
+  const axisRootRest = rMid.worldPosition.clone().sub(rRoot.worldPosition).normalize();
+  const axisMidRest = rEnd.worldPosition.clone().sub(rMid.worldPosition).normalize();
+  const uRest = rEnd.worldPosition.clone().sub(rRoot.worldPosition).normalize();
+  const nRest = uRest.clone().cross(bendRest).normalize();
+
+  const S = wRoot.pos;
+  const toTarget = target.clone().sub(S);
+  const d = THREE.MathUtils.clamp(toTarget.length(), Math.abs(L1 - L2) + 1e-3, L1 + L2 - 1e-3);
+  const u = toTarget.normalize();
+  let v = (pole ?? wMid.pos).clone().sub(S);
+  v.sub(u.clone().multiplyScalar(v.dot(u)));
+  if (v.lengthSq() < 1e-6) v = bendRest.clone().sub(u.clone().multiplyScalar(bendRest.dot(u)));
+  if (v.lengthSq() < 1e-6) v = new THREE.Vector3(1, 0, 0);
+  v.normalize();
+  const alpha = Math.acos(THREE.MathUtils.clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+  const mid = S.clone().addScaledVector(u, Math.cos(alpha) * L1).addScaledVector(v, Math.sin(alpha) * L1);
+  const end = S.clone().addScaledVector(u, d);
+  const dirRoot = mid.clone().sub(S).normalize();
+  const dirMid = end.clone().sub(mid).normalize();
+  const n = u.clone().cross(v).normalize();
+  const qRootWorld = frameDelta(axisRootRest, nRest, dirRoot, n).multiply(rRoot.world);
+  const qMidWorld = frameDelta(axisMidRest, nRest, dirMid, n).multiply(rMid.world);
+  const parentWorld = rRoot.parent ? (fk.get(rRoot.parent)?.quat ?? rig.parentWorld.get(nRoot)) : rig.parentWorld.get(nRoot);
+  local.set(nRoot, (parentWorld ?? new THREE.Quaternion()).clone().invert().multiply(qRootWorld));
+  local.set(nMid, qRootWorld.clone().invert().multiply(qMidWorld));
+  // Keep the FK map coherent for anything solved after this chain.
+  fk.set(nRoot, { pos: S.clone(), quat: qRootWorld });
+  fk.set(nMid, { pos: mid, quat: qMidWorld });
+  fk.set(nEnd, { pos: end, quat: qMidWorld.clone().multiply(rEnd.local) });
+  return true;
+}
+
+/** Pinned feet and hands: their chains are solved to the anchors; a pinned knee is its leg's pole. */
+function solveAnchors(p: PoseAngles, rig: Rig, local: Map<string, THREE.Quaternion>, hipsPosition: THREE.Vector3, ctx: SolveContext) {
+  const anchors = p.anchors;
+  if (!anchors || !Object.keys(anchors).length) return;
+  const fk = forwardKinematics(rig, local, hipsPosition);
+  const vec = (a?: [number, number, number]) => (a ? new THREE.Vector3(...a) : null);
+  const forward = new THREE.Vector3(0, 0, 1);
+  const back = new THREE.Vector3(0, 0, -1);
+  for (const side of ["left", "right"] as const) {
+    const cap = side === "left" ? "Left" : "Right";
+    const foot = vec(anchors[`${side}_foot`]);
+    if (foot) {
+      solveChain(rig, fk, local, { root: `${cap}UpLeg`, mid: `${cap}Leg`, end: `${cap}Foot` }, foot, vec(anchors[`${side}_knee`]), forward);
+    }
+    const hand = vec(anchors[`${side}_hand`]);
+    if (hand && !(ctx.twoHanded && p.implement)) {
+      solveChain(rig, fk, local, { root: `${cap}Arm`, mid: `${cap}ForeArm`, end: `${cap}Hand` }, hand, null, back);
+    }
+  }
+}
+
 function solvePose(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
   const deltas = characterDeltas(p);
   const local = new Map<string, THREE.Quaternion>();
@@ -323,10 +408,13 @@ function solvePose(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
   const hipsRest = hipsName ? rig.rest.get(hipsName) : undefined;
   const hipsPosition = hipsRest ? hipsRest.position.clone() : new THREE.Vector3();
   if (hipsName && hipsRest) {
-    const target =
-      p.orientation === "standing"
-        ? standingHips(p, rig)
-        : { y: p.hips.height_m ?? HIPS_HEIGHT_BY_ORIENTATION[p.orientation], z: p.hips.forward_m };
+    // A pelvis height set by hand wins; otherwise standing derives it from the legs (feet on the
+    // floor) and any other support takes the orientation's default.
+    const standing = p.orientation === "standing" ? standingHips(p, rig) : null;
+    const target = {
+      y: p.hips.height_m ?? standing?.y ?? HIPS_HEIGHT_BY_ORIENTATION[p.orientation as Exclude<typeof p.orientation, "standing">] ?? 0.9,
+      z: standing?.z ?? p.hips.forward_m,
+    };
     // World metres → the parent's local frame and units (a Mixamo rig sits in centimetres under a scaled Armature).
     const deltaWorld = new THREE.Vector3(0, target.y - rig.hipsRestY, target.z);
     const pw = rig.parentWorld.get(hipsName) ?? new THREE.Quaternion();
@@ -334,7 +422,29 @@ function solvePose(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
     hipsPosition.add(deltaWorld);
   }
   if (ctx.twoHanded && p.implement) solveArmsToImplement(p, rig, local, hipsPosition, ctx);
+  solveAnchors(p, rig, local, hipsPosition, ctx);
   return { local, hipsPosition };
+}
+
+/** World position of the pinnable points of a pose on this rig (what the editor pins to). */
+export function probePose(model: THREE.Object3D, rest: RestPose, pose: PoseAngles, ctx: { twoHanded: boolean; grip: string | null; sockets: AvatarSocket[] }): Record<string, [number, number, number]> {
+  const rig = buildRig(model, rest);
+  const { local, hipsPosition } = solvePose(pose, rig, ctx);
+  const fk = forwardKinematics(rig, local, hipsPosition);
+  const out: Record<string, [number, number, number]> = {};
+  const read = (id: string, logical: Logical) => {
+    const name = rig.names[logical];
+    const t = name ? fk.get(name) : undefined;
+    if (t) out[id] = [+t.pos.x.toFixed(3), +t.pos.y.toFixed(3), +t.pos.z.toFixed(3)];
+  };
+  read("hips", "Hips");
+  read("left_foot", "LeftFoot");
+  read("right_foot", "RightFoot");
+  read("left_hand", "LeftHand");
+  read("right_hand", "RightHand");
+  read("left_knee", "LeftLeg");
+  read("right_knee", "RightLeg");
+  return out;
 }
 
 const ease = (t: number) => t * t * (3 - 2 * t);

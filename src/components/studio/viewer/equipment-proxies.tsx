@@ -18,6 +18,13 @@ export function supportSlotZ(index: number): number {
  * A generated .glb scaled to its placement: the longest dimension becomes size_m, a load is
  * centred on the socket, a support stands on the floor. Mutates its own clone only.
  */
+/** The same grip in the other hand: mirror across the body's sagittal plane. */
+export function mirrorPlacement(p: EquipmentPlacement): EquipmentPlacement {
+  const [ox, oy, oz] = p.offset ?? [0, 0, 0];
+  const [rx, ry, rz] = p.rotation ?? [0, 0, 0];
+  return { ...p, offset: [-ox, oy, oz], rotation: [rx, -ry, -rz] };
+}
+
 function GeneratedModel({
   url,
   kind,
@@ -25,6 +32,7 @@ function GeneratedModel({
   slotZ,
   alignLongAxis = false,
   editRef,
+  mirrored = false,
 }: {
   url: string;
   kind: EquipmentItem["kind"];
@@ -35,6 +43,8 @@ function GeneratedModel({
   alignLongAxis?: boolean;
   /** Set by the rig editor on its target: the placement group the gizmo moves. */
   editRef?: (o: THREE.Object3D | null) => void;
+  /** The item sits in the left hand: the placement, defined for the right hand, is mirrored. */
+  mirrored?: boolean;
 }) {
   const { scene } = useGLTF(url);
   const object = useMemo(() => {
@@ -67,15 +77,16 @@ function GeneratedModel({
     });
     return clone;
   }, [scene, kind, placement.size_m, alignLongAxis]);
+  const effective = useMemo(() => (mirrored ? mirrorPlacement(placement) : placement), [placement, mirrored]);
   const rotation = useMemo(
-    () => new THREE.Euler(...((placement.rotation ?? [0, 0, 0]).map((d) => THREE.MathUtils.degToRad(d)) as [number, number, number])),
-    [placement.rotation],
+    () => new THREE.Euler(...((effective.rotation ?? [0, 0, 0]).map((d) => THREE.MathUtils.degToRad(d)) as [number, number, number])),
+    [effective.rotation],
   );
   // Outer group: the floor slot of a support. Inner group: the placement (offset, rotation) relative
   // to the socket or the slot, which is what the rig editor moves.
   return (
     <group position={[0, 0, slotZ]}>
-      <group ref={editRef} position={placement.offset ?? [0, 0, 0]} rotation={rotation}>
+      <group ref={editRef} position={effective.offset ?? [0, 0, 0]} rotation={rotation}>
         <primitive object={object} />
       </group>
     </group>
@@ -103,6 +114,7 @@ export function EquipmentMesh({
   model,
   alignLongAxis = false,
   editRef,
+  mirrored = false,
 }: {
   item: EquipmentItem;
   index: number;
@@ -110,6 +122,7 @@ export function EquipmentMesh({
   /** The item is held with both hands: its longest side runs along X (see BilateralAttachment). */
   alignLongAxis?: boolean;
   editRef?: (o: THREE.Object3D | null) => void;
+  mirrored?: boolean;
 }) {
   // The proxies place themselves (a support at its floor slot), so they work as fallbacks as they are.
   const proxy = item.kind === "load" ? <LoadProxy item={item} /> : <SupportProxy item={item} index={index} />;
@@ -123,7 +136,8 @@ export function EquipmentMesh({
           placement={model.placement}
           slotZ={item.kind === "support" ? supportSlotZ(index) : 0}
           alignLongAxis={alignLongAxis}
-          editRef={editRef}
+          editRef={mirrored ? undefined : editRef}
+          mirrored={mirrored}
         />
       </Suspense>
     </ProxyBoundary>
