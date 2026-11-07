@@ -232,7 +232,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
     if (draft) {
       try {
         const source = editorPlaying || !heldPose ? draft : heldPoseClip(draft, heldPose);
-        return [buildPoseClip(model, source, rest, liveSockets), null];
+        return [buildPoseClip(model, source, rest, liveSockets, draftSource?.poses[0]), null];
       } catch (error) {
         return [null, error instanceof Error ? error.message : String(error)];
       }
@@ -254,7 +254,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
     } catch (error) {
       return [null, error instanceof Error ? error.message : String(error)];
     }
-  }, [clip, draft, editorPlaying, heldPose, model, rest, liveSockets, cleanMocap]);
+  }, [clip, draft, draftSource, editorPlaying, heldPose, model, rest, liveSockets, cleanMocap]);
   useEffect(() => {
     if (clipError) onClipError?.(clipError);
   }, [clipError, onClipError]);
@@ -263,7 +263,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   useEffect(() => {
     if (!heldPose || !draftSource) return;
     try {
-      useStudioStore.getState().setPoseProbe(probePose(model, rest, heldPose, { twoHanded: draftSource.twoHanded, grip: draftSource.grip, sockets: liveSockets }));
+      useStudioStore.getState().setPoseProbe(probePose(model, rest, heldPose, { twoHanded: draftSource.twoHanded, grip: draftSource.grip, sockets: liveSockets, stance: draftSource.poses[0] }));
     } catch {
       // A rig without the legs or arms: nothing to pin.
     }
@@ -495,15 +495,17 @@ function PoseHandles({ model, rest, sockets }: { model: THREE.Object3D; rest: Re
       const pose = edit.poses[edit.keyframe];
       const p = handle.position;
       if (edit.dragTarget === "hips") {
+        // forward_m is measured from where the legs put the pelvis, so the drag adds to it.
+        const forward = pose.hips.forward_m + p.z - (state.poseProbe.hips?.[2] ?? p.z);
         state.updatePose(
           edit.keyframe,
-          { ...pose, hips: { ...pose.hips, height_m: +Math.max(0.05, p.y).toFixed(3), forward_m: +THREE.MathUtils.clamp(p.z, -0.6, 0.6).toFixed(3) } },
+          { ...pose, hips: { ...pose.hips, height_m: +Math.max(0.05, p.y).toFixed(3), forward_m: +THREE.MathUtils.clamp(forward, -0.6, 0.6).toFixed(3) } },
           true,
         );
       } else {
         const map = HANDLE_LIMB[edit.dragTarget];
         if (!map) return;
-        const solved = solveLimbToTarget(model, rest, pose, { twoHanded: edit.twoHanded, grip: edit.grip, sockets }, map.limb, map.effector, [p.x, p.y, p.z]);
+        const solved = solveLimbToTarget(model, rest, pose, { twoHanded: edit.twoHanded, grip: edit.grip, sockets, stance: edit.poses[0] }, map.limb, map.effector, [p.x, p.y, p.z]);
         state.updatePose(edit.keyframe, solved, true);
       }
       if (final) state.endPoseGesture(); // the whole drag is one undo step

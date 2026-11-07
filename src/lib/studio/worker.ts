@@ -5,7 +5,7 @@
  * angles on the avatar's rig. Server side, with the staff JWT; a tick processes one row.
  */
 
-import { buildKeyframes, type LoopMode, type PoseClipJson } from "./anatomy";
+import { POSE_CLIP_VERSION, buildKeyframes, type LoopMode, type PoseClipJson } from "./anatomy";
 import { imageUrlToDataUri } from "./meshy";
 import { draftPoses, type PoseDraftResult } from "./pose-llm";
 import { equipmentSentence } from "./prompt";
@@ -122,6 +122,7 @@ async function processVector(token: string, vector: MovementVector): Promise<Mov
 
   const clip: PoseClipJson = {
     kind: "pose-angles",
+    version: POSE_CLIP_VERSION,
     fps,
     duration: durationS,
     loop,
