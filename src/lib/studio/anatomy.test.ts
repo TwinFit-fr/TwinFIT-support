@@ -57,7 +57,7 @@ describe("joint limits", () => {
   });
 
   it("mirrors a side path and leaves central ones alone", () => {
-    assert.equal(mirrorPath("left_arm.shoulder_abduction"), "right_arm.shoulder_abduction");
+    assert.equal(mirrorPath("left_arm.shoulder_plane"), "right_arm.shoulder_plane");
     assert.equal(mirrorPath("right_leg.knee_flexion"), "left_leg.knee_flexion");
     assert.equal(mirrorPath("hips.pitch"), null);
   });

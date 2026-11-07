@@ -26,7 +26,6 @@ export function SettingsDialog({ settings, onClose, onSaved }: { settings: Studi
   const [duration, setDuration] = useState(Number(settings.pipeline.duration_s ?? 4));
   const [loop, setLoop] = useState(settings.pipeline.loop !== false);
   const [loopMode, setLoopMode] = useState<string>(typeof settings.pipeline.loop_mode === "string" ? settings.pipeline.loop_mode : "");
-  const [poseCount, setPoseCount] = useState<string>(typeof settings.pipeline.pose_count === "number" ? String(settings.pipeline.pose_count) : "");
   const [model, setModel] = useState<string>(typeof settings.pipeline.model === "string" ? settings.pipeline.model : "");
   const [busy, setBusy] = useState(false);
   const [sweeping, setSweeping] = useState(false);
@@ -35,7 +34,7 @@ export function SettingsDialog({ settings, onClose, onSaved }: { settings: Studi
   const save = async () => {
     setBusy(true);
     try {
-      const { loop_mode: _lm, pose_count: _pc, model: _m, ...rest } = settings.pipeline;
+      const { loop_mode: _lm, model: _m, ...rest } = settings.pipeline;
       await staffFetch("/api/studio/settings", {
         method: "PATCH",
         body: JSON.stringify({
@@ -48,7 +47,6 @@ export function SettingsDialog({ settings, onClose, onSaved }: { settings: Studi
             duration_s: duration,
             loop,
             ...(loopMode ? { loop_mode: loopMode } : {}),
-            ...(poseCount ? { pose_count: Number(poseCount) } : {}),
             ...(model.trim() ? { model: model.trim() } : {}),
           },
         }),
@@ -121,16 +119,6 @@ export function SettingsDialog({ settings, onClose, onSaved }: { settings: Studi
             </Field>
             <Field label="Seconds">
               <NumberField min={0.5} max={60} step={0.5} digits={1} value={duration} onCommit={setDuration} />
-            </Field>
-            <Field label="Poses">
-              <Select value={poseCount} onChange={(e) => setPoseCount(e.target.value)}>
-                <option value="">auto</option>
-                {[2, 3, 4, 5, 6].map((k) => (
-                  <option key={k} value={String(k)}>
-                    {k} poses
-                  </option>
-                ))}
-              </Select>
             </Field>
             <Field label="Loop shape">
               <Select value={loopMode} onChange={(e) => setLoopMode(e.target.value)}>

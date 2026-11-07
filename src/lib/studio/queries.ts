@@ -421,7 +421,17 @@ export async function getAvatar(token: string, id: string): Promise<BaseAvatar |
   return data.animation_studio_base_avatars_by_pk;
 }
 
-export type WorkerExercise = { id: string; exo_id: number; display_name: string; description: string; grip: string | null };
+export type WorkerExercise = {
+  id: string;
+  exo_id: number;
+  display_name: string;
+  description: string;
+  grip: string | null;
+  movement: string | null;
+  position: string | null;
+  equipment: string | null;
+  support: string | null;
+};
 
 export async function getWorkerExercise(token: string, id: string): Promise<WorkerExercise | null> {
   const data = await staffGql<{
@@ -430,6 +440,10 @@ export async function getWorkerExercise(token: string, id: string): Promise<Work
       exo_id: number;
       display_name: string;
       grip: { code: string } | null;
+      movement_type: { code: string } | null;
+      position: { code: string } | null;
+      equipment: { code: string } | null;
+      support_equipment: { code: string } | null;
       localizations: { description: string | null }[];
     } | null;
   }>(token, STUDIO_WORKER_EXERCISE, { id });
@@ -441,6 +455,10 @@ export async function getWorkerExercise(token: string, id: string): Promise<Work
     display_name: row.display_name,
     description: row.localizations[0]?.description?.trim() ?? "",
     grip: row.grip?.code ?? null,
+    movement: row.movement_type?.code ?? null,
+    position: row.position?.code ?? null,
+    equipment: row.equipment?.code ?? null,
+    support: row.support_equipment?.code ?? null,
   };
 }
 

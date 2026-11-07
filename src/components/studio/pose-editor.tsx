@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Redo2, Save, Sparkles, Trash2, Undo2, Wand2, X } from "lucide-react";
+import { ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Redo2, Save, ShieldAlert, Sparkles, Trash2, Undo2, Wand2, X } from "lucide-react";
 import {
   ANCHOR_IDS,
   LOOP_MODES,
@@ -179,6 +179,7 @@ export function PoseEditor({
   const confirm = useConfirm();
   const draft = useStudioStore((s) => s.poseEdit);
   const probe = useStudioStore((s) => s.poseProbe);
+  const issues = useStudioStore((s) => s.poseIssues);
   const stop = useStudioStore((s) => s.stopPoseEdit);
   const setKeyframe = useStudioStore((s) => s.setPoseKeyframe);
   const updatePose = useStudioStore((s) => s.updatePose);
@@ -199,7 +200,6 @@ export function PoseEditor({
   const [tab, setTab] = useState<Tab>("body");
   const [aiOpen, setAiOpen] = useState(false);
   const [instructions, setInstructions] = useState("");
-  const [poseCount, setPoseCount] = useState<string>("auto");
 
   // Ctrl/Cmd+Z undoes, with Shift (or Ctrl+Y) redoes, unless the keys belong to a text field.
   useEffect(() => {
@@ -250,7 +250,23 @@ export function PoseEditor({
     let next = setPoseValue(pose, path, value);
     const other = draft.mirror ? mirrorPath(path) : null;
     if (other) next = setPoseValue(next, other, value);
+    // A template's goal would move the pelvis back: touching it by hand ends the goal.
+    if (path.startsWith("hips.") && next.goal) next = { ...next, goal: undefined };
     updatePose(i, next, gesture);
+  };
+  const errors = issues.filter((issue) => issue.severity === "error");
+  /** Saving what fails as a body takes a decision: the animator may mean it. */
+  const save = async (mode: SaveMode) => {
+    if (errors.length) {
+      const ok = await confirm({
+        title: `Save with ${errors.length} failed body check${errors.length === 1 ? "" : "s"}?`,
+        description: errors.map((e) => e.message).join(" · "),
+        confirmLabel: "Save anyway",
+        variant: "danger",
+      });
+      if (!ok) return;
+    }
+    await onSave(poseClipFromDraft(draft), label, mode);
   };
   const togglePin = (id: AnchorId) => {
     const anchors = { ...(pose.anchors ?? {}) };
@@ -391,25 +407,17 @@ export function PoseEditor({
                 rows={2}
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
-                placeholder="Optional instructions: “five poses”, “deeper squat”, “elbows tucked”, “slower on the way down”…"
+                placeholder="Optional instructions: “deeper squat”, “wide stance”, “wide grip”, “slower on the way down”…"
                 aria-label="Instructions for the AI draft"
                 className="text-[11px]"
               />
               <div className="flex items-center gap-2">
-                <Select value={poseCount} onChange={(e) => setPoseCount(e.target.value)} className="h-7 w-28 py-0 text-[11px]" aria-label="Number of poses">
-                  <option value="auto">auto poses</option>
-                  {[2, 3, 4, 5, 6].map((k) => (
-                    <option key={k} value={String(k)}>
-                      {k} poses
-                    </option>
-                  ))}
-                </Select>
-                <span className="flex-1 text-[10px] text-(--m3-on-surface-variant)">Reads the catalog&apos;s pose texts and its three frames; replaces the poses, timing and loop here (undo brings yours back).</span>
+                <span className="flex-1 text-[10px] text-(--m3-on-surface-variant)">Builds the exercise&apos;s template; the AI reads the catalog&apos;s texts and frames for depth, stance, grip and tempo. Replaces the poses here (undo brings yours back).</span>
                 <M3Button
                   size="sm"
                   variant="filled"
                   busy={drafting}
-                  onClick={() => void onDraft({ instructions, poseCount: poseCount === "auto" ? null : Number(poseCount) })}
+                  onClick={() => void onDraft({ instructions, poseCount: null })}
                 >
                   <Wand2 className="h-3.5 w-3.5" /> Draft
                 </M3Button>
@@ -438,6 +446,23 @@ export function PoseEditor({
             </label>
           </div>
         </div>
+
+        {/* What the validator says about these poses on this avatar */}
+        {issues.length ? (
+          <div className="border-b border-(--m3-outline-variant) px-4 py-2.5">
+            <div className={cn("mb-1 flex items-center gap-1.5 text-[11px] font-medium", errors.length ? "text-(--m3-error)" : "text-(--m3-warning)")}>
+              <ShieldAlert className="h-3.5 w-3.5" /> Body checks
+            </div>
+            <ul className="space-y-0.5 text-[11px] leading-snug text-(--m3-on-surface-variant)">
+              {issues.slice(0, 6).map((issue) => (
+                <li key={issue.code} className={issue.severity === "error" ? "text-(--m3-error)" : undefined}>
+                  {issue.message}
+                </li>
+              ))}
+              {issues.length > 6 ? <li>and {issues.length - 6} more</li> : null}
+            </ul>
+          </div>
+        ) : null}
 
         {/* Pins */}
         <div className="border-b border-(--m3-outline-variant) px-4 py-3">
@@ -574,13 +599,13 @@ export function PoseEditor({
           Discard
         </M3Button>
         {draft.vectorId ? (
-          <M3Button variant="text" onClick={() => void onSave(poseClipFromDraft(draft), label, "copy")} disabled={saving} title="Keep the original and save these poses as another row">
+          <M3Button variant="text" onClick={() => void save("copy")} disabled={saving} title="Keep the original and save these poses as another row">
             Save as copy
           </M3Button>
         ) : null}
         <M3Button
           variant="filled"
-          onClick={() => void onSave(poseClipFromDraft(draft), label, draft.vectorId ? "replace" : "copy")}
+          onClick={() => void save(draft.vectorId ? "replace" : "copy")}
           busy={saving}
           disabled={!draft.dirty && draft.vectorId !== null}
           title={draft.vectorId ? `Overwrite the clip of #${draft.sourceSeq}` : "Save as a new ready movement"}

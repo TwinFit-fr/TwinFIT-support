@@ -6,9 +6,12 @@
  */
 
 import { POSE_CLIP_VERSION, buildKeyframes, type LoopMode, type PoseClipJson } from "./anatomy";
+import { DEFAULT_PARAMS, buildTemplate, templateFor, type BuiltTemplate, type TemplateExercise, type TemplateParams } from "./exercise-templates";
 import { imageUrlToDataUri } from "./meshy";
-import { draftPoses, type PoseDraftResult } from "./pose-llm";
+import { chooseTemplateParams, draftPoses, type PoseDraftResult } from "./pose-llm";
+import { normalizePoseText } from "./pose-text";
 import { equipmentSentence } from "./prompt";
+import { validateOnStandIn, type DraftCheck } from "./validate-server";
 import {
   claimMovementVector,
   getAvatar,
@@ -30,7 +33,8 @@ const WORKER_MODEL = "studio-poses";
 export async function gatherExerciseContext(token: string, exerciseId: string, subject: string) {
   const exercise = await getWorkerExercise(token, exerciseId);
   if (!exercise) throw new Error("The exercise no longer exists");
-  const [poses, frames] = await Promise.all([getExercisePoses(token, exercise.exo_id), getExerciseFrames(token, exercise.exo_id, subject === "woman" ? "woman" : "man")]);
+  const [rawPoses, frames] = await Promise.all([getExercisePoses(token, exercise.exo_id), getExerciseFrames(token, exercise.exo_id, subject === "woman" ? "woman" : "man")]);
+  const poses = rawPoses.map((p) => ({ ...p, pose: normalizePoseText(p.pose).text }));
   const images: string[] = [];
   for (const frame of frames.slice(0, 3)) {
     try {
@@ -53,24 +57,94 @@ export type DraftRequest = {
   model?: string | null;
 };
 
-/** The AI draft of an exercise's poses, with images: what the editor's "AI draft" and the worker use. */
-export async function draftExercisePoses(token: string, req: DraftRequest): Promise<PoseDraftResult & { exoId: number; grip: string | null }> {
+export type ExerciseDraft = PoseDraftResult & {
+  exoId: number;
+  grip: string | null;
+  /** The template the poses come from; null when the model wrote raw angles. */
+  template: string | null;
+  params: TemplateParams | null;
+  conflicts: string[];
+  unilateral: boolean;
+  airborne: boolean;
+  moving: boolean;
+  check: DraftCheck | null;
+};
+
+const templateClip = (t: BuiltTemplate): PoseClipJson => ({
+  kind: "pose-angles",
+  version: POSE_CLIP_VERSION,
+  fps: 30,
+  duration: 4,
+  loop: true,
+  keyframes: buildKeyframes(t.poses, 4, t.mode, t.weights),
+  meta: { unilateral: t.unilateral, airborne: t.airborne, moving: t.moving },
+});
+
+/**
+ * The key poses of an exercise, for the editor's "AI draft" and the worker. With a template the
+ * model only reads its parameters, and whatever it picks is checked as a body: a choice that does
+ * not hold up falls back to the template's defaults. Without one it writes raw angles.
+ */
+export async function draftExercisePoses(token: string, req: DraftRequest): Promise<ExerciseDraft> {
   const { exercise, poses, images } = await gatherExerciseContext(token, req.exerciseId, req.subject);
-  if (poses.length !== 3) throw new Error(`Exercise #${exercise.exo_id} has ${poses.length} poses instead of 3 (images.exercise_poses)`);
-  const result = await draftPoses({
+  const catalog: TemplateExercise = { name: exercise.display_name, movement: exercise.movement, position: exercise.position, equipment: exercise.equipment, support: exercise.support, grip: exercise.grip };
+  const templated = exercise.movement !== null && (templateFor(catalog) !== "resting" || exercise.display_name === "Resting");
+  if (!templated) {
+    if (poses.length !== 3) throw new Error(`Exercise #${exercise.exo_id} has ${poses.length} poses instead of 3 (images.exercise_poses)`);
+    const result = await draftPoses({
+      model: req.model,
+      exerciseName: exercise.display_name,
+      description: exercise.description,
+      equipment: equipmentSentence(req.items),
+      avatarHeightM: req.avatarHeightM,
+      poses,
+      twoHanded: req.twoHanded,
+      grip: exercise.grip,
+      images,
+      instructions: req.instructions,
+      poseCount: req.poseCount,
+    });
+    return { ...result, exoId: exercise.exo_id, grip: exercise.grip, template: null, params: null, conflicts: [], unilateral: false, airborne: false, moving: false, check: null };
+  }
+
+  const choice = await chooseTemplateParams({
     model: req.model,
     exerciseName: exercise.display_name,
     description: exercise.description,
     equipment: equipmentSentence(req.items),
-    avatarHeightM: req.avatarHeightM,
     poses,
-    twoHanded: req.twoHanded,
-    grip: exercise.grip,
     images,
     instructions: req.instructions,
-    poseCount: req.poseCount,
   });
-  return { ...result, exoId: exercise.exo_id, grip: exercise.grip };
+  let params = choice.params;
+  let built = buildTemplate(catalog, params);
+  let check = validateOnStandIn(templateClip(built), req.avatarHeightM);
+  let fellBack = false;
+  if (!check.ok) {
+    params = DEFAULT_PARAMS;
+    built = buildTemplate(catalog, params);
+    check = validateOnStandIn(templateClip(built), req.avatarHeightM);
+    fellBack = true;
+  }
+  return {
+    poses: built.poses,
+    labels: built.labels,
+    weights: built.weights,
+    mode: built.mode,
+    notes: [fellBack ? "The chosen parameters did not hold up as a body: template defaults used." : null, ...choice.conflicts].filter(Boolean).join(" "),
+    usage: choice.usage,
+    raw: choice.raw,
+    clamped: [],
+    exoId: exercise.exo_id,
+    grip: exercise.grip,
+    template: built.id,
+    params,
+    conflicts: choice.conflicts,
+    unilateral: built.unilateral,
+    airborne: built.airborne,
+    moving: built.moving,
+    check,
+  };
 }
 
 export type TickResult =
@@ -137,12 +211,25 @@ async function processVector(token: string, vector: MovementVector): Promise<Mov
       rig: avatar.rig,
       prompt: vector.prompt,
       notes: draft.notes,
-      two_handed: twoHanded,
+      // A template moves the hands by angles and the bar follows them; raw angles reach for the implement.
+      two_handed: draft.template ? false : twoHanded,
       grip: draft.grip,
       generator: WORKER_MODEL,
       llm: draft.usage.model,
+      template: draft.template,
+      template_params: draft.params,
+      text_conflicts: draft.conflicts,
+      unilateral: draft.unilateral,
+      airborne: draft.airborne,
+      moving: draft.moving,
+      raw_model_output: draft.raw,
+      clamped: draft.clamped,
     },
   };
+  // Nothing goes out that does not hold up as a body: the row retries or fails with the reason.
+  const check = validateOnStandIn(clip, avatar.height_m);
+  clip.meta!.validation = check;
+  if (!check.ok) throw new Error(`The clip fails validation: ${check.issues.filter((i) => i.severity === "error").map((i) => i.message).join("; ")}`);
 
   const uploaded = await uploadStudioFile({
     token,

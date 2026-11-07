@@ -26,7 +26,7 @@ import { Chip, EmptyState, Field, IconButton, M3Button, NumberField, Section, Se
 export type GenerateInput = {
   prompt: string;
   items: EquipmentItem[];
-  params: { fps: number; duration_s: number; loop: boolean; loop_mode?: "cycle" | "pingpong"; pose_count?: number; model?: string };
+  params: { fps: number; duration_s: number; loop: boolean; loop_mode?: "cycle" | "pingpong"; model?: string };
 };
 
 /** stop = mark a queued / running row failed; prompt = change a queued row's prompt (payload: the text). */
@@ -268,8 +268,6 @@ function VectorRow({
   );
 }
 
-const POSE_COUNTS = ["auto", "2", "3", "4", "5", "6"] as const;
-
 /**
  * Generator and inspector of the selected exercise. Draft state is local (remounted per exercise
  * through the `key` the workspace sets); only the equipment preview is pushed to the store.
@@ -314,9 +312,6 @@ export function InspectorPanel({
   const [loop, setLoop] = useState<boolean>(settings?.pipeline.loop !== false);
   const [loopMode, setLoopMode] = useState<"auto" | "pingpong" | "cycle">(
     settings?.pipeline.loop_mode === "cycle" || settings?.pipeline.loop_mode === "pingpong" ? settings.pipeline.loop_mode : "auto",
-  );
-  const [poseCount, setPoseCount] = useState<(typeof POSE_COUNTS)[number]>(
-    typeof settings?.pipeline.pose_count === "number" ? (String(settings.pipeline.pose_count) as (typeof POSE_COUNTS)[number]) : "auto",
   );
   const [model, setModel] = useState<string>(typeof settings?.pipeline.model === "string" ? settings.pipeline.model : "");
   const [showPrompt, setShowPrompt] = useState(false);
@@ -363,7 +358,6 @@ export function InspectorPanel({
         duration_s: duration,
         loop,
         ...(loopMode !== "auto" ? { loop_mode: loopMode } : {}),
-        ...(poseCount !== "auto" ? { pose_count: Number(poseCount) } : {}),
         ...(model.trim() ? { model: model.trim() } : {}),
       },
     });
@@ -462,21 +456,12 @@ export function InspectorPanel({
         </Section>
 
         <Section title="Pipeline">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Field label="FPS">
               <NumberField min={1} max={240} step={1} value={fps} onCommit={(v) => setFps(Math.round(v))} />
             </Field>
             <Field label="Seconds">
               <NumberField min={0.5} max={60} step={0.5} digits={1} value={duration} onCommit={setDuration} />
-            </Field>
-            <Field label="Poses">
-              <Select value={poseCount} onChange={(e) => setPoseCount(e.target.value as (typeof POSE_COUNTS)[number])} title="How many key poses the AI drafts">
-                {POSE_COUNTS.map((k) => (
-                  <option key={k} value={k}>
-                    {k === "auto" ? "auto" : `${k} poses`}
-                  </option>
-                ))}
-              </Select>
             </Field>
           </div>
           <label className="mt-3 flex cursor-pointer items-center gap-2 text-xs text-(--m3-on-surface-variant)">

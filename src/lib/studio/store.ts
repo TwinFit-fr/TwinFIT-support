@@ -1,7 +1,8 @@
 "use client";
 
 import { create } from "zustand";
-import type { LoopMode, PoseAngles } from "./anatomy";
+import type { LoopMode, PoseAngles } from "./anatomy.ts";
+import type { PoseIssue } from "./pose-validate";
 import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, EquipmentPlacement, VectorFormat, VectorStatus } from "./types";
 
 export type CameraPreset = "front" | "three-quarter" | "side";
@@ -168,6 +169,8 @@ export type StudioState = {
   poseProbe: Record<string, [number, number, number]>;
   /** Bone names of the loaded avatar (from the canvas), for the rig editor's socket picker. */
   modelBones: string[];
+  /** What the validator says about the clip on screen, on the avatar's own rig. */
+  poseIssues: PoseIssue[];
   /** Sockets being edited (the avatar's with the gizmo moves applied); null when untouched. */
   draftSockets: SocketDraft | null;
   /** Placement being edited per equipment key; empty when untouched. */
@@ -190,12 +193,13 @@ export type StudioState = {
   togglePane: (pane: keyof Panes) => void;
   setEdit: (edit: Partial<EditState>) => void;
   setModelBones: (bones: string[]) => void;
+  setPoseIssues: (issues: PoseIssue[]) => void;
   startPoseEdit: (
     state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "history" | "future" | "gestureOpen" | "weights" | "labels"> &
       Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "weights" | "labels">>,
   ) => void;
   /** Replace every pose (an AI draft): one undo step. */
-  replacePoses: (next: { poses: PoseAngles[]; mode?: LoopMode; weights?: number[] | null; labels?: string[] | null; grip?: string | null }) => void;
+  replacePoses: (next: { poses: PoseAngles[]; mode?: LoopMode; weights?: number[] | null; labels?: string[] | null; grip?: string | null; twoHanded?: boolean; meta?: Record<string, unknown> }) => void;
   undoPose: () => void;
   redoPose: () => void;
   /** Copy a limb's angles onto the other side (same anatomical posture, mirrored). */
@@ -245,6 +249,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   poseEdit: null,
   poseProbe: {},
   modelBones: [],
+  poseIssues: [],
   draftSockets: null,
   draftPlacements: {},
 
@@ -268,6 +273,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   togglePane: (pane) => set((s) => ({ panes: { ...s.panes, [pane]: !s.panes[pane] } })),
   setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
   setModelBones: (modelBones) => set((s) => (sameJson(s.modelBones, modelBones) ? s : { modelBones })),
+  setPoseIssues: (poseIssues) => set((s) => (sameJson(s.poseIssues, poseIssues) ? s : { poseIssues })),
   startPoseEdit: (state) =>
     set({
       poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], gestureOpen: false, weights: null, labels: null, ...state },
@@ -284,6 +290,8 @@ export const useStudioStore = create<StudioState>((set) => ({
           weights: next.weights === undefined ? s.poseEdit.weights : next.weights,
           labels: next.labels === undefined ? s.poseEdit.labels : next.labels,
           grip: next.grip === undefined ? s.poseEdit.grip : next.grip,
+          twoHanded: next.twoHanded ?? s.poseEdit.twoHanded,
+          meta: { ...s.poseEdit.meta, ...next.meta },
           keyframe: 0,
           dirty: true,
         },

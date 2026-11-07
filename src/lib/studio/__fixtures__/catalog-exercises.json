@@ -1,0 +1,1757 @@
+[
+{
+"exo_id":1,
+"name":"Dumbbell Shoulder Press",
+"movement":"PRESS",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":2,
+"name":"Air Squat",
+"movement":"SQUAT",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":3,
+"name":"High Knees",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":4,
+"name":"Dumbbell Biceps Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":5,
+"name":"Dumbbell Reverse Fly",
+"movement":"REVERSE_FLY",
+"position":"FORWARD_TILT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":6,
+"name":"Jumping Jacks",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":7,
+"name":"Barbell Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":8,
+"name":"Push-Up",
+"movement":"PUSH-UP",
+"position":"PRONE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":9,
+"name":"Floor Crunch",
+"movement":"CRUNCH",
+"position":"SUPINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":10,
+"name":"Bench Press",
+"movement":"PRESS",
+"position":"SUPINE",
+"equipment":"BARBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":11,
+"name":"Leg Extension",
+"movement":"EXTENSION",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":12,
+"name":"Cable Row",
+"movement":"ROW",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":13,
+"name":"Dumbbell Fly",
+"movement":"FLY",
+"position":"SUPINE",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":14,
+"name":"Arnold Press",
+"movement":"PRESS",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":15,
+"name":"Dumbbell Lateral Raise",
+"movement":"RAISE",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":16,
+"name":"Dumbbell Front Raise",
+"movement":"RAISE",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":17,
+"name":"Calf Raise",
+"movement":"CALF RAISE",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":"STEP",
+"grip":"STANDARD"
+},
+{
+"exo_id":18,
+"name":"Reverse Lunge",
+"movement":"LUNGE",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":19,
+"name":"Hammer Biceps Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"HAMMER"
+},
+{
+"exo_id":20,
+"name":"Dumbbell Overhead Triceps Extension",
+"movement":"EXTENSION",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"HAMMER"
+},
+{
+"exo_id":21,
+"name":"Bicycle Crunch",
+"movement":"CRUNCH",
+"position":"SUPINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":22,
+"name":"Mountain Climber",
+"movement":"CARDIO",
+"position":"PRONE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":23,
+"name":"Lat Pulldown",
+"movement":"PULL-DOWN",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":24,
+"name":"Pull-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":"PULL_UP_BAR",
+"grip":"STANDARD"
+},
+{
+"exo_id":25,
+"name":"Parallel Bar Dip",
+"movement":"DIP",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":"PARALLEL_BAR",
+"grip":"HAMMER"
+},
+{
+"exo_id":26,
+"name":"Sumo Squat",
+"movement":"SQUAT",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":27,
+"name":"Russian Twist",
+"movement":"TWIST",
+"position":"NEUTRAL",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":28,
+"name":"Cross-Body Hammer Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"HAMMER"
+},
+{
+"exo_id":29,
+"name":"Dumbbell Skull Crusher",
+"movement":"EXTENSION",
+"position":"SUPINE",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"HAMMER"
+},
+{
+"exo_id":30,
+"name":"Wide Push-Up",
+"movement":"PUSH-UP",
+"position":"PRONE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":31,
+"name":"Jump Knee Tuck",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":32,
+"name":"Hip Thrust",
+"movement":"HIP THRUST",
+"position":"SUPINE",
+"equipment":"BARBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":33,
+"name":"Bench Dip",
+"movement":"DIP",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":34,
+"name":"Reverse Front Raise",
+"movement":"RAISE",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":35,
+"name":"Bent-Over Row",
+"movement":"ROW",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":36,
+"name":"Flat Leg Raise",
+"movement":"LEG RAISE",
+"position":"SUPINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":37,
+"name":"Bulgarian Split Squat",
+"movement":"SQUAT",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":38,
+"name":"Shrug",
+"movement":"SHRUG",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"HAMMER"
+},
+{
+"exo_id":39,
+"name":"Triceps Pushdown",
+"movement":"PUSH-DOWN",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":40,
+"name":"Hammer Front Raise",
+"movement":"RAISE",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"HAMMER"
+},
+{
+"exo_id":41,
+"name":"Seated Leg Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":42,
+"name":"Leg Press",
+"movement":"PRESS",
+"position":"BACKWARD_TILT",
+"equipment":"LEG_PRESS_MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":43,
+"name":"Back Extension",
+"movement":"EXTENSION",
+"position":"FORWARD_TILT",
+"equipment":"NONE",
+"support":"HYPEREXTENSION_BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":44,
+"name":"Running",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":45,
+"name":"Indoor Cycling",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"BICYCLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":46,
+"name":"Walking",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":47,
+"name":"Resting",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":48,
+"name":"Incline Dumbbell Biceps Curl",
+"movement":"CURL",
+"position":"INCLINE",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":49,
+"name":"Incline Bench Press",
+"movement":"PRESS",
+"position":"INCLINE",
+"equipment":"BARBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":50,
+"name":"Chin-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":"PULL_UP_BAR",
+"grip":"UNDERHAND"
+},
+{
+"exo_id":51,
+"name":"Wide-Grip Cable Row",
+"movement":"ROW",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"WIDE"
+},
+{
+"exo_id":52,
+"name":"Machine Chest Press",
+"movement":"PRESS",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":53,
+"name":"Cable Crossover",
+"movement":"FLY",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":54,
+"name":"Machine Chest Fly",
+"movement":"FLY",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":55,
+"name":"Wide-Grip Lat Pulldown",
+"movement":"PULL-DOWN",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"WIDE"
+},
+{
+"exo_id":56,
+"name":"Straight-Arm Pulldown",
+"movement":"PULL-DOWN",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":57,
+"name":"Seated Machine Row",
+"movement":"ROW",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":58,
+"name":"Unilateral Machine Row",
+"movement":"ROW",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":59,
+"name":"Barbell Rack Pull",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":60,
+"name":"Machine-Assisted Pull-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":61,
+"name":"Smith Machine Shoulder Press",
+"movement":"PRESS",
+"position":"UPRIGHT",
+"equipment":"SMITH_MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":62,
+"name":"Barbell Upright Row",
+"movement":"ROW",
+"position":"UPRIGHT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":63,
+"name":"Dumbbell Upright Row",
+"movement":"ROW",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":64,
+"name":"Cable Lateral Raise",
+"movement":"RAISE",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":65,
+"name":"Plate Front Raise",
+"movement":"RAISE",
+"position":"UPRIGHT",
+"equipment":"PLATE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":66,
+"name":"Face Pull",
+"movement":"ROW",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":67,
+"name":"Machine Reverse Fly",
+"movement":"REVERSE_FLY",
+"position":"FORWARD_TILT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":68,
+"name":"Cable Reverse Fly",
+"movement":"REVERSE_FLY",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":69,
+"name":"Cable External Rotation",
+"movement":"ROTATION",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":70,
+"name":"Barbell Biceps Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":71,
+"name":"Cable Biceps Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":72,
+"name":"Concentration Curl",
+"movement":"CURL",
+"position":"FORWARD_TILT",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":73,
+"name":"Preacher Curl",
+"movement":"CURL",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":74,
+"name":"Cable Overhead Biceps Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":75,
+"name":"Cable Overhead Triceps Extension",
+"movement":"EXTENSION",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":"TRICEP_ROPE",
+"grip":"STANDARD"
+},
+{
+"exo_id":76,
+"name":"Barbell Triceps Extension",
+"movement":"EXTENSION",
+"position":"UPRIGHT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":77,
+"name":"Dumbbell Triceps Extension",
+"movement":"EXTENSION",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"HAMMER"
+},
+{
+"exo_id":78,
+"name":"Barbell Skull Crusher",
+"movement":"EXTENSION",
+"position":"SUPINE",
+"equipment":"BARBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":79,
+"name":"Cable Kickback",
+"movement":"EXTENSION",
+"position":"FORWARD_TILT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":80,
+"name":"Barbell Squat",
+"movement":"SQUAT",
+"position":"UPRIGHT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":81,
+"name":"Smith Machine Squat",
+"movement":"SQUAT",
+"position":"UPRIGHT",
+"equipment":"SMITH_MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":82,
+"name":"Low Bar Squat",
+"movement":"SQUAT",
+"position":"UPRIGHT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":83,
+"name":"Barbell Lunge",
+"movement":"LUNGE",
+"position":"UPRIGHT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":84,
+"name":"Dumbbell Lunge",
+"movement":"LUNGE",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":85,
+"name":"Barbell Romanian Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":86,
+"name":"Dumbbell Romanian Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":87,
+"name":"Landmine Romanian Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"LANDMINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":88,
+"name":"Barbell Good Morning",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":89,
+"name":"Smith Machine Good Morning",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"SMITH_MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":90,
+"name":"Machine Hip Thrust",
+"movement":"HIP THRUST",
+"position":"SUPINE",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":91,
+"name":"Dumbbell Hip Thrust",
+"movement":"HIP THRUST",
+"position":"SUPINE",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":92,
+"name":"Glute Kickback",
+"movement":"EXTENSION",
+"position":"FORWARD_TILT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":93,
+"name":"Cable Pull-Through",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":94,
+"name":"Machine Hip Abduction",
+"movement":"ABDUCTION",
+"position":"FORWARD_TILT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":95,
+"name":"Machine Hip Adduction",
+"movement":"ADDUCTION",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":96,
+"name":"Dumbbell Hip Hugger",
+"movement":"REVERSE_FLY",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"HAMMER"
+},
+{
+"exo_id":97,
+"name":"Machine Crunch",
+"movement":"CRUNCH",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":98,
+"name":"Decline Crunch",
+"movement":"CRUNCH",
+"position":"BACKWARD_TILT",
+"equipment":"NONE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":99,
+"name":"Reverse Crunch",
+"movement":"CRUNCH",
+"position":"SUPINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":100,
+"name":"Cable Crunch",
+"movement":"CRUNCH",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":101,
+"name":"Cross-Body Crunch",
+"movement":"CRUNCH",
+"position":"SUPINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":102,
+"name":"Jackknife Sit-Up",
+"movement":"CRUNCH",
+"position":"SUPINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":103,
+"name":"Flat Knee Raise",
+"movement":"LEG RAISE",
+"position":"SUPINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":104,
+"name":"Hanging Leg Raise",
+"movement":"LEG RAISE",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":"PULL_UP_BAR",
+"grip":"STANDARD"
+},
+{
+"exo_id":105,
+"name":"Cable Twist",
+"movement":"TWIST",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":106,
+"name":"Plank",
+"movement":"HOLD",
+"position":"PRONE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":107,
+"name":"Elliptical Machine",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":108,
+"name":"Scoop Press",
+"movement":"PRESS",
+"position":"SUPINE",
+"equipment":"BARBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":109,
+"name":"Rowing Machine",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":110,
+"name":"Cable Romanian Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":111,
+"name":"Barbell Back Extension",
+"movement":"EXTENSION",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":"HYPEREXTENSION_BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":112,
+"name":"Dumbbell Back Extension",
+"movement":"EXTENSION",
+"position":"FORWARD_TILT",
+"equipment":"DUMBBELL",
+"support":"HYPEREXTENSION_BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":113,
+"name":"Band-Assisted Pull-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"BAND",
+"support":"PULL_UP_BAR",
+"grip":"STANDARD"
+},
+{
+"exo_id":114,
+"name":"Weighted Pull-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"DIP_BELT",
+"support":"PULL_UP_BAR",
+"grip":"STANDARD"
+},
+{
+"exo_id":115,
+"name":"Band-Assisted Chin-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"BAND",
+"support":"PULL_UP_BAR",
+"grip":"UNDERHAND"
+},
+{
+"exo_id":116,
+"name":"Weighted Chin-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"DIP_BELT",
+"support":"PULL_UP_BAR",
+"grip":"UNDERHAND"
+},
+{
+"exo_id":117,
+"name":"Machine-Assisted Chin-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":118,
+"name":"Underhand Bent-Over Row",
+"movement":"ROW",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":119,
+"name":"Unilateral Cable Row",
+"movement":"ROW",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":120,
+"name":"Dumbbell Bent-Over Row",
+"movement":"ROW",
+"position":"FORWARD_TILT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":121,
+"name":"Unilateral Dumbbell Bent-Over Row",
+"movement":"ROW",
+"position":"FORWARD_TILT",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":122,
+"name":"Hammer Cable Biceps Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"HAMMER"
+},
+{
+"exo_id":123,
+"name":"Hammer Barbell Biceps Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"HAMMER"
+},
+{
+"exo_id":124,
+"name":"Lying Cable Biceps Curl",
+"movement":"CURL",
+"position":"SUPINE",
+"equipment":"CABLE",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":125,
+"name":"Behind-the-Back Cable Curl",
+"movement":"CURL",
+"position":"FORWARD_TILT",
+"equipment":"CABLE",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":126,
+"name":"Incline Hammer Biceps Curl",
+"movement":"CURL",
+"position":"INCLINE",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"HAMMER"
+},
+{
+"exo_id":127,
+"name":"Smith Machine Calf Raise",
+"movement":"CALF RAISE",
+"position":"UPRIGHT",
+"equipment":"SMITH_MACHINE",
+"support":"STEP",
+"grip":"STANDARD"
+},
+{
+"exo_id":128,
+"name":"Barbell Calf Raise",
+"movement":"CALF RAISE",
+"position":"UPRIGHT",
+"equipment":"BARBELL",
+"support":"STEP",
+"grip":"STANDARD"
+},
+{
+"exo_id":129,
+"name":"Wide Pull-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"NONE",
+"support":"PULL_UP_BAR",
+"grip":"WIDE"
+},
+{
+"exo_id":130,
+"name":"Weighted Calf Raise",
+"movement":"CALF RAISE",
+"position":"UPRIGHT",
+"equipment":"BARBELL",
+"support":"STEP",
+"grip":"STANDARD"
+},
+{
+"exo_id":131,
+"name":"Seated Machine Calf Raise",
+"movement":"CALF RAISE",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":132,
+"name":"High Cable Crossover",
+"movement":"FLY",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":133,
+"name":"Low Cable Crossover",
+"movement":"FLY",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":134,
+"name":"Band-Resisted Bench Press",
+"movement":"PRESS",
+"position":"SUPINE",
+"equipment":"BAND",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":135,
+"name":"Dumbbell Bench Press",
+"movement":"PRESS",
+"position":"SUPINE",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":136,
+"name":"Incline Dumbbell Bench Press",
+"movement":"PRESS",
+"position":"INCLINE",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":137,
+"name":"Smith Machine Bench Press",
+"movement":"PRESS",
+"position":"SUPINE",
+"equipment":"SMITH_MACHINE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":138,
+"name":"Smith Machine Incline Bench Press",
+"movement":"PRESS",
+"position":"INCLINE",
+"equipment":"SMITH_MACHINE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":139,
+"name":"Band-Resisted Push-Up",
+"movement":"PUSH-UP",
+"position":"PRONE",
+"equipment":"BAND",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":140,
+"name":"Band-Resisted Wide Push-Up",
+"movement":"PUSH-UP",
+"position":"PRONE",
+"equipment":"BAND",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":141,
+"name":"Incline Push-Up",
+"movement":"PUSH-UP",
+"position":"INCLINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":142,
+"name":"Decline Push-Up",
+"movement":"PUSH-UP",
+"position":"DECLINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":143,
+"name":"Wide Decline Push-Up",
+"movement":"PUSH-UP",
+"position":"DECLINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":144,
+"name":"Wide Incline Push-Up",
+"movement":"PUSH-UP",
+"position":"INCLINE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":145,
+"name":"Band-Resisted Decline Push-Up",
+"movement":"PUSH-UP",
+"position":"DECLINE",
+"equipment":"BAND",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":146,
+"name":"Band-Resisted Wide Decline Push-Up",
+"movement":"PUSH-UP",
+"position":"DECLINE",
+"equipment":"BAND",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":147,
+"name":"Band-Resisted Incline Push-Up",
+"movement":"PUSH-UP",
+"position":"INCLINE",
+"equipment":"BAND",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":148,
+"name":"Band-Resisted Wide Incline Push-Up",
+"movement":"PUSH-UP",
+"position":"INCLINE",
+"equipment":"BAND",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":149,
+"name":"Band-Assisted Chest Dip",
+"movement":"DIP",
+"position":"FORWARD_TILT",
+"equipment":"BAND",
+"support":"PARALLEL_BAR",
+"grip":"STANDARD"
+},
+{
+"exo_id":150,
+"name":"Chest Dip",
+"movement":"DIP",
+"position":"FORWARD_TILT",
+"equipment":"NONE",
+"support":"PARALLEL_BAR",
+"grip":"STANDARD"
+},
+{
+"exo_id":151,
+"name":"Weighted Chest Dip",
+"movement":"DIP",
+"position":"FORWARD_TILT",
+"equipment":"DIP_BELT",
+"support":"PARALLEL_BAR",
+"grip":"STANDARD"
+},
+{
+"exo_id":152,
+"name":"Machine-Assisted Chest Dip",
+"movement":"DIP",
+"position":"FORWARD_TILT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":153,
+"name":"Dumbbell Rack Pull",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":154,
+"name":"Rack Pull",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":155,
+"name":"Cable Glute Kickback",
+"movement":"EXTENSION",
+"position":"FORWARD_TILT",
+"equipment":"CABLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":156,
+"name":"Band-Resisted Glute Kickback",
+"movement":"EXTENSION",
+"position":"FORWARD_TILT",
+"equipment":"BAND",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":157,
+"name":"Bodyweight Hip Thrust",
+"movement":"HIP THRUST",
+"position":"SUPINE",
+"equipment":"NONE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":158,
+"name":"Band-Assisted Wide Pull-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"BAND",
+"support":"PULL_UP_BAR",
+"grip":"WIDE"
+},
+{
+"exo_id":159,
+"name":"Dumbbell Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":160,
+"name":"Smith Machine Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"SMITH_MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":161,
+"name":"Weighted Wide Pull-Up",
+"movement":"PULL-UP",
+"position":"UPRIGHT",
+"equipment":"DIP_BELT",
+"support":"PULL_UP_BAR",
+"grip":"WIDE"
+},
+{
+"exo_id":162,
+"name":"Dumbbell Bulgarian Split Squat",
+"movement":"SQUAT",
+"position":"UPRIGHT",
+"equipment":"DUMBBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":163,
+"name":"Smith Machine Romanian Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"SMITH_MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":164,
+"name":"Sumo Barbell Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"BARBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":165,
+"name":"Sumo Dumbbell Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"DUMBBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":166,
+"name":"Smith Machine Sumo Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"SMITH_MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":167,
+"name":"Sumo Kettlebell Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"KETTLEBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":168,
+"name":"Kettlebell Romanian Deadlift",
+"movement":"DEADLIFT",
+"position":"FORWARD_TILT",
+"equipment":"KETTLEBELL",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":169,
+"name":"Prone Leg Curl",
+"movement":"CURL",
+"position":"PRONE",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":170,
+"name":"Band-Resisted Hip Thrust",
+"movement":"HIP THRUST",
+"position":"SUPINE",
+"equipment":"BAND",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":171,
+"name":"Outdoor Cycling",
+"movement":"CARDIO",
+"position":"UPRIGHT",
+"equipment":"BICYCLE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":172,
+"name":"Captain's Chair Leg Raise",
+"movement":"LEG RAISE",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":173,
+"name":"Bench Knee Raise",
+"movement":"LEG RAISE",
+"position":"BACKWARD_TILT",
+"equipment":"NONE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":174,
+"name":"Bench Leg Raise",
+"movement":"LEG RAISE",
+"position":"BACKWARD_TILT",
+"equipment":"NONE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":175,
+"name":"Nordic Hamstring Curl",
+"movement":"CURL",
+"position":"FORWARD_TILT",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":176,
+"name":"Bulgarian Split Squat (Smith Machine)",
+"movement":"SQUAT",
+"position":"UPRIGHT",
+"equipment":"SMITH_MACHINE",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":178,
+"name":"Weighted Decline Push-Up",
+"movement":"PUSH-UP",
+"position":"DECLINE",
+"equipment":"DIP_BELT",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":179,
+"name":"Weighted Wide Decline Push-Up",
+"movement":"PUSH-UP",
+"position":"DECLINE",
+"equipment":"PLATE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":180,
+"name":"Weighted Incline Push-Up",
+"movement":"PUSH-UP",
+"position":"INCLINE",
+"equipment":"PLATE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":181,
+"name":"Weighted Wide Incline Push-Up",
+"movement":"PUSH-UP",
+"position":"INCLINE",
+"equipment":"PLATE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":182,
+"name":"Weighted Push-Up",
+"movement":"PUSH-UP",
+"position":"PRONE",
+"equipment":"PLATE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":183,
+"name":"Weighted Wide Push-Up",
+"movement":"PUSH-UP",
+"position":"PRONE",
+"equipment":"PLATE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":184,
+"name":"Weighted Bench Dip",
+"movement":"DIP",
+"position":"UPRIGHT",
+"equipment":"DIP_BELT",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":185,
+"name":"Weighted Parallel Bar Dip",
+"movement":"DIP",
+"position":"UPRIGHT",
+"equipment":"DIP_BELT",
+"support":"PARALLEL_BAR",
+"grip":"HAMMER"
+},
+{
+"exo_id":186,
+"name":"Rope Triceps Pushdown",
+"movement":"PUSH-DOWN",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":"TRICEP_ROPE",
+"grip":"HAMMER"
+},
+{
+"exo_id":187,
+"name":"Underhand Triceps Pushdown",
+"movement":"PUSH-DOWN",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":188,
+"name":"Weighted Russian Twist",
+"movement":"TWIST",
+"position":"NEUTRAL",
+"equipment":"PLATE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":190,
+"name":"Machine Pulldown",
+"movement":"PULL-DOWN",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":191,
+"name":"Machine Shoulder Press",
+"movement":"PRESS",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":192,
+"name":"Ab Wheel Rollout",
+"movement":"CRUNCH",
+"position":"PRONE",
+"equipment":"NONE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":193,
+"name":"Machine Triceps Extension",
+"movement":"EXTENSION",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":194,
+"name":"Decline Bench Press",
+"movement":"PRESS",
+"position":"DECLINE",
+"equipment":"BARBELL",
+"support":"BENCH",
+"grip":"STANDARD"
+},
+{
+"exo_id":195,
+"name":"Calf Press",
+"movement":"CALF RAISE",
+"position":"BACKWARD_TILT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"STANDARD"
+},
+{
+"exo_id":196,
+"name":"Machine Biceps Curl",
+"movement":"CURL",
+"position":"UPRIGHT",
+"equipment":"MACHINE",
+"support":null,
+"grip":"UNDERHAND"
+},
+{
+"exo_id":197,
+"name":"Close-Grip Lat Pulldown",
+"movement":"PULL-DOWN",
+"position":"UPRIGHT",
+"equipment":"CABLE",
+"support":"DOUBLE_D_HANDLE",
+"grip":"NARROW"
+}
+]

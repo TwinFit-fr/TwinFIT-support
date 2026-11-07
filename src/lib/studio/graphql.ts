@@ -236,6 +236,10 @@ export const STUDIO_WORKER_EXERCISE = `
     catalog_exercises_by_pk(id: $id) {
       id exo_id display_name
       grip { code }
+      movement_type { code }
+      position { code }
+      equipment { code }
+      support_equipment { code }
       localizations(where: { locale: { _eq: "en" } }, limit: 1) { description }
     }
   }
