@@ -309,21 +309,157 @@ export function palmFacing(grip: string | null | undefined, side: "left" | "righ
   }
 }
 
-/** Keyframes of one repetition from the three catalog poses: start → mid → end (→ start when looping). */
+/**
+ * How the poses of a clip are traversed in one loop:
+ * - cycle: 1 → 2 → … → n → 1 (the last segment returns to the start);
+ * - pingpong: 1 → 2 → … → n → … → 2 → 1 (there and back, a repetition of a lift);
+ * - once: 1 → 2 → … → n (no return).
+ */
+export type LoopMode = "cycle" | "pingpong" | "once";
+export const LOOP_MODES: readonly LoopMode[] = ["cycle", "pingpong", "once"];
+
+/** Expand an ordered list of poses into timed keyframes, evenly spaced over the duration. */
+export function buildKeyframes(poses: PoseAngles[], durationS: number, mode: LoopMode): PoseKeyframe[] {
+  if (poses.length < 2) throw new Error("Two poses are needed");
+  const order: number[] =
+    mode === "cycle"
+      ? [...poses.map((_, i) => i), 0]
+      : mode === "pingpong"
+        ? [...poses.map((_, i) => i), ...poses.map((_, i) => i).reverse().slice(1)]
+        : poses.map((_, i) => i);
+  const steps = order.length - 1;
+  return order.map((index, k) => ({ t: (durationS * k) / steps, position: index, angles: poses[index] }));
+}
+
+/** Keyframes of one repetition from the three catalog poses (start, mid, end). */
 export function keyframesFromPoses(poses: PoseAngles[], durationS: number, loop: boolean): PoseKeyframe[] {
-  const [start, mid, end] = poses;
-  if (!start || !mid || !end) throw new Error("Three poses are needed");
-  if (loop) {
-    return [
-      { t: 0, position: 0, angles: start },
-      { t: durationS * 0.4, position: 1, angles: mid },
-      { t: durationS * 0.75, position: 2, angles: end },
-      { t: durationS, position: 0, angles: start },
-    ];
-  }
-  return [
-    { t: 0, position: 0, angles: start },
-    { t: durationS * 0.5, position: 1, angles: mid },
-    { t: durationS, position: 2, angles: end },
-  ];
+  if (poses.length !== 3) throw new Error("Three poses are needed");
+  return buildKeyframes(poses, durationS, loop ? "cycle" : "once");
+}
+
+/** The editable poses of a clip: one per distinct `position`, in order; a trailing return to the start is dropped. */
+export function posesFromClip(clip: PoseClipJson): { poses: PoseAngles[]; mode: LoopMode } {
+  const keys = [...clip.keyframes].sort((a, b) => a.t - b.t);
+  const byPosition = new Map<number, PoseAngles>();
+  keys.forEach((k, i) => {
+    const pos = k.position ?? i;
+    if (!byPosition.has(pos)) byPosition.set(pos, k.angles);
+  });
+  const poses = [...byPosition.entries()].sort((a, b) => a[0] - b[0]).map(([, p]) => p);
+  const metaMode = clip.meta?.loop_mode;
+  const mode: LoopMode = metaMode === "pingpong" || metaMode === "once" || metaMode === "cycle" ? metaMode : clip.loop ? "cycle" : "once";
+  return { poses: poses.length >= 2 ? poses : [poses[0] ?? NEUTRAL_POSE, poses[0] ?? NEUTRAL_POSE], mode };
+}
+
+// ---------------------------------------------------------------------------
+// Slider metadata for the pose editor
+// ---------------------------------------------------------------------------
+
+export type PoseField = {
+  /** Dot path inside PoseAngles (`left_arm.elbow_flexion`, `hips.pitch`). */
+  path: string;
+  label: string;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: "°" | "m";
+};
+
+export type PoseGroup = { id: string; label: string; fields: PoseField[]; /** Mirrored counterpart group (left ↔ right). */ mirror?: string };
+
+const armFields = (side: "left" | "right"): PoseField[] => [
+  { path: `${side}_arm.shoulder_abduction`, label: "Shoulder abduction", min: -30, max: 180, unit: "°" },
+  { path: `${side}_arm.shoulder_flexion`, label: "Shoulder flexion", min: -60, max: 180, unit: "°" },
+  { path: `${side}_arm.shoulder_rotation`, label: "Shoulder rotation", min: -90, max: 90, unit: "°" },
+  { path: `${side}_arm.elbow_flexion`, label: "Elbow flexion", min: 0, max: 150, unit: "°" },
+  { path: `${side}_arm.forearm_pronation`, label: "Forearm pronation", min: -90, max: 90, unit: "°" },
+  { path: `${side}_arm.wrist_flexion`, label: "Wrist flexion", min: -70, max: 70, unit: "°" },
+];
+const legFields = (side: "left" | "right"): PoseField[] => [
+  { path: `${side}_leg.hip_flexion`, label: "Hip flexion", min: -30, max: 140, unit: "°" },
+  { path: `${side}_leg.hip_abduction`, label: "Hip abduction", min: -30, max: 60, unit: "°" },
+  { path: `${side}_leg.hip_rotation`, label: "Hip rotation", min: -45, max: 45, unit: "°" },
+  { path: `${side}_leg.knee_flexion`, label: "Knee flexion", min: 0, max: 150, unit: "°" },
+  { path: `${side}_leg.ankle_dorsiflexion`, label: "Ankle dorsiflexion", min: -50, max: 40, unit: "°" },
+];
+
+export const POSE_GROUPS: PoseGroup[] = [
+  {
+    id: "hips",
+    label: "Hips & body",
+    fields: [
+      { path: "hips.pitch", label: "Body pitch (forward lean)", min: -180, max: 180, unit: "°" },
+      { path: "hips.yaw", label: "Body yaw", min: -180, max: 180, unit: "°" },
+      { path: "hips.roll", label: "Body roll", min: -90, max: 90, unit: "°" },
+      { path: "hips.forward_m", label: "Pelvis forward", min: -0.6, max: 0.6, step: 0.01, unit: "m" },
+      { path: "hips.height_m", label: "Pelvis height (not standing)", min: 0.05, max: 2.2, step: 0.01, unit: "m" },
+    ],
+  },
+  {
+    id: "torso",
+    label: "Torso & head",
+    fields: [
+      { path: "torso.flexion", label: "Spine flexion", min: -45, max: 90, unit: "°" },
+      { path: "torso.lateral", label: "Spine lateral", min: -45, max: 45, unit: "°" },
+      { path: "torso.twist", label: "Spine twist", min: -60, max: 60, unit: "°" },
+      { path: "head.pitch", label: "Head pitch", min: -60, max: 60, unit: "°" },
+      { path: "head.yaw", label: "Head yaw", min: -80, max: 80, unit: "°" },
+    ],
+  },
+  { id: "left_arm", label: "Left arm", fields: armFields("left"), mirror: "right_arm" },
+  { id: "right_arm", label: "Right arm", fields: armFields("right"), mirror: "left_arm" },
+  { id: "left_leg", label: "Left leg", fields: legFields("left"), mirror: "right_leg" },
+  { id: "right_leg", label: "Right leg", fields: legFields("right"), mirror: "left_leg" },
+  {
+    id: "implement",
+    label: "Implement (two hands)",
+    fields: [
+      { path: "implement.height_m", label: "Bar height", min: 0, max: 2.6, step: 0.01, unit: "m" },
+      { path: "implement.forward_m", label: "Bar forward", min: -0.6, max: 1.0, step: 0.01, unit: "m" },
+      { path: "implement.grip_width_m", label: "Grip width", min: 0.05, max: 1.4, step: 0.01, unit: "m" },
+    ],
+  },
+];
+
+export function getPoseValue(pose: PoseAngles, path: string): number | null {
+  const [a, b] = path.split(".");
+  const section = (pose as unknown as Record<string, Record<string, unknown> | null>)[a];
+  const value = section?.[b];
+  return typeof value === "number" ? value : null;
+}
+
+/** A copy of the pose with one field changed (creates the implement when one of its fields is set). */
+export function setPoseValue(pose: PoseAngles, path: string, value: number | null): PoseAngles {
+  const [a, b] = path.split(".");
+  const next = { ...pose } as unknown as Record<string, Record<string, unknown> | null>;
+  if (a === "implement" && !next.implement) next.implement = { height_m: 0.9, forward_m: 0.2, grip_width_m: 0.45 };
+  next[a] = { ...(next[a] ?? {}), [b]: value };
+  return next as unknown as PoseAngles;
+}
+
+/** The same field on the other side (`left_arm.x` ↔ `right_arm.x`), or null for a central one. */
+export function mirrorPath(path: string): string | null {
+  if (path.startsWith("left_")) return `right_${path.slice(5)}`;
+  if (path.startsWith("right_")) return `left_${path.slice(6)}`;
+  return null;
+}
+
+/** The clip json of a pose-editor draft (what the canvas plays and what gets saved). */
+export function poseClipFromDraft(draft: {
+  poses: PoseAngles[];
+  mode: LoopMode;
+  durationS: number;
+  fps: number;
+  twoHanded: boolean;
+  grip: string | null;
+  meta: Record<string, unknown>;
+}): PoseClipJson {
+  return {
+    kind: "pose-angles",
+    fps: draft.fps,
+    duration: draft.durationS,
+    loop: draft.mode !== "once",
+    keyframes: buildKeyframes(draft.poses, draft.durationS, draft.mode),
+    meta: { ...draft.meta, loop_mode: draft.mode, two_handed: draft.twoHanded, grip: draft.grip, generator: "pose-editor" },
+  };
 }

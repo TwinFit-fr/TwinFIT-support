@@ -2,13 +2,13 @@
 export const STUDIO_BUCKET = "3d-workspace";
 
 export type VectorStatus = "pending" | "processing" | "ready" | "error";
-export type VectorFormat = "glb" | "gltf" | "bvh" | "json";
+export type VectorFormat = "glb" | "gltf" | "fbx" | "bvh" | "json";
 export type AvatarSubject = "neutral" | "man" | "woman";
 export type AvatarRig = "mixamo" | "vrm" | "custom";
 export type EquipmentKind = "load" | "support";
 export type EquipmentProvider = "meshy" | "upload";
 
-export const VECTOR_FORMATS: readonly VectorFormat[] = ["glb", "gltf", "bvh", "json"];
+export const VECTOR_FORMATS: readonly VectorFormat[] = ["glb", "gltf", "fbx", "bvh", "json"];
 export const AVATAR_SUBJECTS: readonly AvatarSubject[] = ["neutral", "man", "woman"];
 export const AVATAR_RIGS: readonly AvatarRig[] = ["mixamo", "vrm", "custom"];
 
@@ -179,6 +179,8 @@ export type NewVectorInput = {
   equipment: MovementEquipment;
   params: PipelineParams;
   format: VectorFormat;
+  /** Keeps the row out of the worker's reach until then (an upload in progress). */
+  not_before?: string | null;
 };
 
 export type NewAvatarInput = {

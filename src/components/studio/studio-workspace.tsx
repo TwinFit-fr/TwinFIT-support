@@ -3,19 +3,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAccessToken } from "@nhost/react";
-import { ChevronDown, Dumbbell, Plus } from "lucide-react";
+import { ChevronDown, Download, Dumbbell, Plus } from "lucide-react";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { equipmentKey, placementOf } from "@/lib/studio/equipment";
 import { EMPTY_SCENE, useStudioStore, type SceneSource } from "@/lib/studio/store";
-import type { ActiveEquipmentModels, BaseAvatar, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
+import type { ActiveEquipmentModels, BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
 import { isQueued } from "@/lib/studio/types";
 import { AvatarDialog } from "./avatar-dialog";
 import { EQUIPMENT_KEY, EquipmentDialog, type EquipmentResponse } from "./equipment-dialog";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { InspectorPanel, type GenerateInput, type VectorAction } from "./inspector-panel";
+import { PoseEditor } from "./pose-editor";
 import { RigEditor } from "./rig-editor";
+import { NEUTRAL_POSE, isPoseClipJson, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
 import { StudioShell } from "./studio-shell";
 import { M3Button } from "./ui";
 import { StudioViewport } from "./viewer/studio-viewport";
@@ -57,6 +59,16 @@ function AvatarMenu({
       <M3Button size="sm" variant="outlined" onClick={onUpload}>
         <Plus className="h-3.5 w-3.5" /> Avatar
       </M3Button>
+      {selected ? (
+        <a
+          href={selected.model_url}
+          download={`${selected.code.toLowerCase()}.glb`}
+          title="Download this avatar's .glb (upload it to DeepMotion as a custom character so its exports fit the rig)"
+          className="studio-state flex h-8 w-8 items-center justify-center rounded-full text-(--m3-on-surface-variant) hover:text-(--m3-on-surface)"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </a>
+      ) : null}
     </div>
   );
 }
@@ -95,6 +107,9 @@ export function StudioWorkspace() {
   const setVector = useStudioStore((s) => s.setVector);
   const setScene = useStudioStore((s) => s.setScene);
   const setEquipmentModels = useStudioStore((s) => s.setEquipmentModels);
+  const poseEdit = useStudioStore((s) => s.poseEdit);
+  const startPoseEdit = useStudioStore((s) => s.startPoseEdit);
+  const stopPoseEdit = useStudioStore((s) => s.stopPoseEdit);
 
   const { data: catalog, isLoading: catalogLoading, mutate: mutateCatalog } = useStaffSWR<{
     exercises: StudioExercise[];
@@ -245,10 +260,115 @@ export function StudioWorkspace() {
     [exercise, avatar, staffFetch, refresh, setVector, toast],
   );
 
+  // Pose editor: from an existing pose clip, or from scratch; saved as a new ready row.
+  const [savingPoses, setSavingPoses] = useState(false);
+  const onEditPoses = useCallback(
+    async (target: MovementVector) => {
+      if (!exercise || !avatar || !target.vector_url) return;
+      const res = await fetch(target.vector_url);
+      if (!res.ok) throw new Error(`Clip download failed (${res.status})`);
+      const json = (await res.json()) as unknown;
+      if (!isPoseClipJson(json)) throw new Error("Only pose clips (generated or made in the editor) can be edited");
+      const { poses, mode } = posesFromClip(json);
+      startPoseEdit({
+        vectorId: target.id,
+        sourceSeq: target.seq,
+        exerciseId: exercise.id,
+        avatarId: avatar.id,
+        items: target.equipment.items ?? [],
+        poses: structuredClone(poses),
+        mode,
+        durationS: json.duration,
+        fps: json.fps,
+        twoHanded: json.meta?.two_handed === true,
+        grip: typeof json.meta?.grip === "string" ? json.meta.grip : null,
+        mirror: true,
+        meta: { ...(json.meta ?? {}), source_vector: target.id },
+      });
+      setVector(target.id);
+    },
+    [exercise, avatar, startPoseEdit, setVector],
+  );
+  const onNewPoses = useCallback(
+    (items: EquipmentItem[]) => {
+      if (!exercise || !avatar) return;
+      startPoseEdit({
+        vectorId: null,
+        sourceSeq: null,
+        exerciseId: exercise.id,
+        avatarId: avatar.id,
+        items,
+        poses: [structuredClone(NEUTRAL_POSE), structuredClone(NEUTRAL_POSE), structuredClone(NEUTRAL_POSE)],
+        mode: "pingpong",
+        durationS: Number(settings?.pipeline.duration_s ?? 4),
+        fps: Number(settings?.pipeline.fps ?? 30),
+        twoHanded: items.some((it) => it.kind === "load" && it.socket && it.socket_b),
+        grip: null,
+        mirror: true,
+        meta: { exo_id: exercise.exo_id, avatar_code: avatar.code, rig: avatar.rig },
+      });
+    },
+    [exercise, avatar, settings, startPoseEdit],
+  );
+  const onSavePoses = useCallback(
+    async (clipJson: PoseClipJson, label: string) => {
+      if (!poseEdit || !token) return;
+      setSavingPoses(true);
+      try {
+        const form = new FormData();
+        form.set("file", new File([JSON.stringify(clipJson)], "poses.json", { type: "application/json" }));
+        form.set(
+          "fields",
+          JSON.stringify({ exercise_id: poseEdit.exerciseId, avatar_id: poseEdit.avatarId, equipment: { items: poseEdit.items }, prompt: label, source: "pose-editor" }),
+        );
+        const res = await fetch("/api/studio/vectors/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+        const body = (await res.json()) as { vector?: MovementVector; error?: string };
+        if (!res.ok || !body.vector) throw new Error(body.error ?? `Save failed (${res.status})`);
+        stopPoseEdit();
+        await refresh();
+        setVector(body.vector.id);
+        toast.success(`Saved as #${body.vector.seq}`, "Poses saved");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not save the poses");
+      } finally {
+        setSavingPoses(false);
+      }
+    },
+    [poseEdit, token, stopPoseEdit, refresh, setVector, toast],
+  );
+
+  // A finished clip from elsewhere as a new ready row of this exercise.
+  const onUploadClip = useCallback(
+    async (file: File, items: EquipmentItem[]) => {
+      if (!exercise || !avatar || !token) return;
+      try {
+        const form = new FormData();
+        form.set("file", file);
+        form.set(
+          "fields",
+          JSON.stringify({ exercise_id: exercise.id, avatar_id: avatar.id, equipment: { items }, prompt: `Uploaded clip: ${file.name}` }),
+        );
+        const res = await fetch("/api/studio/vectors/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+        const body = (await res.json()) as { vector?: MovementVector; error?: string };
+        if (!res.ok || !body.vector) throw new Error(body.error ?? `Upload failed (${res.status})`);
+        await refresh();
+        setVector(body.vector.id);
+        toast.success(`${file.name} added as #${body.vector.seq}`, "Clip uploaded");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not upload the clip");
+      }
+    },
+    [exercise, avatar, token, refresh, setVector, toast],
+  );
+
   const onVectorAction = useCallback(
     async (target: MovementVector, action: VectorAction, file?: File) => {
       setBusyVectorId(target.id);
       try {
+        if (action === "edit") {
+          await onEditPoses(target);
+          return;
+        }
         if (action === "delete") {
           const ok = await confirm({
             title: `Delete movement #${target.seq}?`,
@@ -294,7 +414,7 @@ export function StudioWorkspace() {
         setBusyVectorId(null);
       }
     },
-    [confirm, staffFetch, token, vectorId, setVector, toast, refresh],
+    [confirm, staffFetch, token, vectorId, setVector, toast, refresh, onEditPoses],
   );
 
   return (
@@ -333,6 +453,9 @@ export function StudioWorkspace() {
           </>
         }
         right={
+          poseEdit ? (
+            <PoseEditor onSave={onSavePoses} saving={savingPoses} />
+          ) : (
           <InspectorPanel
             key={`${exercise?.id ?? "none"}:${avatar?.id ?? "none"}`}
             exercise={exercise}
@@ -346,7 +469,10 @@ export function StudioWorkspace() {
             busyVectorId={busyVectorId}
             onGenerate={onGenerate}
             onVectorAction={onVectorAction}
+            onUploadClip={onUploadClip}
+            onNewPoses={onNewPoses}
           />
+          )
         }
       />
       {equipmentDialog ? <EquipmentDialog onClose={() => setEquipmentDialog(false)} onChanged={() => void mutateEquipment()} /> : null}

@@ -1,9 +1,36 @@
 "use client";
 
 import { create } from "zustand";
+import type { LoopMode, PoseAngles } from "./anatomy";
 import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, EquipmentPlacement, VectorFormat, VectorStatus } from "./types";
 
 export type CameraPreset = "front" | "three-quarter" | "side";
+
+/**
+ * The pose editor's draft: an ordered list of poses, how they loop and how long one loop takes.
+ * While it is open the canvas plays the draft instead of the selected clip and, when paused,
+ * holds the selected pose.
+ */
+export type PoseEditState = {
+  /** The vector the draft started from (null for a clip started from scratch). */
+  vectorId: string | null;
+  sourceSeq: number | null;
+  exerciseId: string;
+  avatarId: string;
+  items: EquipmentItem[];
+  poses: PoseAngles[];
+  mode: LoopMode;
+  durationS: number;
+  fps: number;
+  twoHanded: boolean;
+  grip: string | null;
+  /** Index of the pose being edited. */
+  keyframe: number;
+  /** Edits of a left-side field apply to the right side too, and vice versa. */
+  mirror: boolean;
+  dirty: boolean;
+  meta: Record<string, unknown>;
+};
 
 /** Rig editor: move the avatar's sockets, or a generated model relative to its socket, with a gizmo. */
 export type EditMode = "off" | "sockets" | "model";
@@ -94,10 +121,13 @@ export type StudioState = {
   speed: number;
   showGrid: boolean;
   showEquipment: boolean;
+  /** Clean motion-capture clips on load: ground and lock the feet, remove drift, close the loop. */
+  cleanMocap: boolean;
   cameraPreset: CameraPreset;
   /** Bumped by "Reset view" so the camera rig re-applies the preset. */
   viewNonce: number;
   edit: EditState;
+  poseEdit: PoseEditState | null;
   /** Sockets being edited (the avatar's with the gizmo moves applied); null when untouched. */
   draftSockets: AvatarSocket[] | null;
   /** Placement being edited per equipment key; empty when untouched. */
@@ -113,9 +143,18 @@ export type StudioState = {
   setSpeed: (speed: number) => void;
   toggleGrid: () => void;
   toggleEquipment: () => void;
+  toggleCleanMocap: () => void;
   setCameraPreset: (preset: CameraPreset) => void;
   resetView: () => void;
   setEdit: (edit: Partial<EditState>) => void;
+  startPoseEdit: (state: Omit<PoseEditState, "keyframe" | "dirty"> & Partial<Pick<PoseEditState, "keyframe" | "dirty">>) => void;
+  stopPoseEdit: () => void;
+  setPoseKeyframe: (index: number) => void;
+  updatePose: (index: number, pose: PoseAngles) => void;
+  setPoseEditOptions: (options: Partial<Pick<PoseEditState, "mode" | "durationS" | "mirror" | "twoHanded">>) => void;
+  /** Insert a copy of pose `index` right after it and select the copy. */
+  duplicatePose: (index: number) => void;
+  removePose: (index: number) => void;
   setDraftSockets: (sockets: AvatarSocket[] | null) => void;
   updateDraftSocket: (base: AvatarSocket[], id: string, patch: Pick<AvatarSocket, "offset" | "rotation">) => void;
   setDraftPlacement: (key: string, placement: EquipmentPlacement | null) => void;
@@ -133,9 +172,11 @@ export const useStudioStore = create<StudioState>((set) => ({
   speed: 1,
   showGrid: true,
   showEquipment: true,
+  cleanMocap: true,
   cameraPreset: "three-quarter",
   viewNonce: 0,
   edit: { mode: "off", target: null, tool: "translate" },
+  poseEdit: null,
   draftSockets: null,
   draftPlacements: {},
 
@@ -152,9 +193,30 @@ export const useStudioStore = create<StudioState>((set) => ({
   setSpeed: (speed) => set({ speed }),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   toggleEquipment: () => set((s) => ({ showEquipment: !s.showEquipment })),
+  toggleCleanMocap: () => set((s) => ({ cleanMocap: !s.cleanMocap })),
   setCameraPreset: (cameraPreset) => set((s) => ({ cameraPreset, viewNonce: s.viewNonce + 1 })),
   resetView: () => set((s) => ({ viewNonce: s.viewNonce + 1 })),
   setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
+  startPoseEdit: (state) => set({ poseEdit: { keyframe: 0, dirty: false, ...state }, playing: false }),
+  stopPoseEdit: () => set({ poseEdit: null, playing: true }),
+  setPoseKeyframe: (index) =>
+    set((s) => (s.poseEdit ? { poseEdit: { ...s.poseEdit, keyframe: Math.max(0, Math.min(index, s.poseEdit.poses.length - 1)) }, playing: false } : s)),
+  updatePose: (index, pose) =>
+    set((s) => (s.poseEdit ? { poseEdit: { ...s.poseEdit, poses: s.poseEdit.poses.map((p, i) => (i === index ? pose : p)), dirty: true } } : s)),
+  setPoseEditOptions: (options) => set((s) => (s.poseEdit ? { poseEdit: { ...s.poseEdit, ...options, dirty: true } } : s)),
+  duplicatePose: (index) =>
+    set((s) => {
+      if (!s.poseEdit || s.poseEdit.poses.length >= 8) return s;
+      const poses = [...s.poseEdit.poses];
+      poses.splice(index + 1, 0, structuredClone(poses[index]));
+      return { poseEdit: { ...s.poseEdit, poses, keyframe: index + 1, dirty: true } };
+    }),
+  removePose: (index) =>
+    set((s) => {
+      if (!s.poseEdit || s.poseEdit.poses.length <= 2) return s;
+      const poses = s.poseEdit.poses.filter((_, i) => i !== index);
+      return { poseEdit: { ...s.poseEdit, poses, keyframe: Math.min(index, poses.length - 1), dirty: true } };
+    }),
   setDraftSockets: (draftSockets) => set({ draftSockets }),
   updateDraftSocket: (base, id, patch) =>
     set((s) => ({

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { isPoseClipJson, type PoseClipJson } from "@/lib/studio/anatomy";
+import { loadMocap, type MocapClip } from "@/lib/studio/mocap";
 import type { VectorFormat } from "@/lib/studio/types";
 
 /**
@@ -44,8 +44,11 @@ export function clipFromJson(data: JsonClip, name = "movement"): THREE.Animation
   return new THREE.AnimationClip(name, data.duration ?? -1, tracks);
 }
 
-/** A clip ready to play, or anatomical keyframes the canvas solves on the loaded rig (see pose-clip.ts). */
-export type LoadedClip = THREE.AnimationClip | PoseClipJson;
+/**
+ * What the canvas receives: a keyframe clip ready to play, anatomical keyframes it solves on the
+ * loaded rig (pose-clip.ts), or a mocap file it retargets to the rig (mocap.ts).
+ */
+export type LoadedClip = THREE.AnimationClip | PoseClipJson | MocapClip;
 
 export type ClipState = {
   clip: LoadedClip | null;
@@ -55,7 +58,7 @@ export type ClipState = {
 
 type Loaded = { key: string; clip: LoadedClip | null; error: string | null };
 
-/** Load the clip of a movement vector (glb / gltf animations, or keyframe json). bvh is not played yet. */
+/** Load the clip of a movement vector: glb / gltf / fbx / bvh (retargeted in the canvas) or json. */
 export function useMovementClip(url: string | null, format: VectorFormat | null): ClipState {
   // The result is keyed by what was asked for: a request in flight is simply one whose key is not
   // the current one, so no state is written synchronously when the inputs change.
@@ -67,11 +70,8 @@ export function useMovementClip(url: string | null, format: VectorFormat | null)
     let cancelled = false;
 
     const load = async (): Promise<LoadedClip> => {
-      if (format === "glb" || format === "gltf") {
-        const gltf = await new GLTFLoader().loadAsync(url);
-        const clip = gltf.animations[0];
-        if (!clip) throw new Error("The model has no animation");
-        return clip;
+      if (format === "glb" || format === "gltf" || format === "fbx" || format === "bvh") {
+        return loadMocap(url, format);
       }
       if (format === "json") {
         const res = await fetch(url);
