@@ -1,17 +1,20 @@
 "use client";
 
-import { useAccessToken } from "@nhost/react";
 import { useMemo, useRef, useState } from "react";
-import { CheckCircle2, ChevronDown, Coins, ImageOff, ImagePlus, Loader2, Sparkles, Trash2, Upload, Wand2, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, Coins, ImagePlus, Loader2, Sparkles, Trash2, Upload, Wand2, X } from "lucide-react";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { Modal } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { placementOf } from "@/lib/studio/equipment";
+import { readAsDataUrl, relativeTime } from "@/lib/studio/format";
+import { MAX_IMAGE_BYTES } from "@/lib/studio/schemas";
+import { studioAssetUrl } from "@/lib/studio/storage-url";
 import type { EquipmentKind, EquipmentModel, MeshyCredits, StudioEquipment } from "@/lib/studio/types";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
-import { Chip, IconButton, M3Button, Segmented, StatusDot, TextInput } from "./ui";
+import { AuthImage } from "./auth-image";
+import { Chip, IconButton, M3Button, NumberField, Segmented, StatusDot, TextInput } from "./ui";
 
 export const EQUIPMENT_KEY = "/api/studio/equipment";
 export type EquipmentResponse = { equipment: StudioEquipment[]; credits: MeshyCredits | null; configured: boolean };
@@ -26,32 +29,9 @@ function primaryModel(entry: StudioEquipment): EquipmentModel | null {
   return entry.models.find((m) => m.active) ?? entry.models[0] ?? null;
 }
 
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read the image"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function relativeTime(iso: string): string {
-  const seconds = Math.round((Date.now() - Date.parse(iso)) / 1000);
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
-  if (seconds < 86400) return `${Math.round(seconds / 3600)} h ago`;
-  return `${Math.round(seconds / 86400)} d ago`;
-}
-
-function Thumb({ src, alt, className }: { src: string | null; alt: string; className?: string }) {
-  return src ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={alt} className={cn("h-full w-full object-cover", className)} loading="lazy" />
-  ) : (
-    <div className={cn("flex h-full w-full items-center justify-center text-(--m3-on-surface-variant)", className)}>
-      <ImageOff className="h-4 w-4" />
-    </div>
-  );
+/** The preview of a generated model: its thumbnail in the bucket (staff JWT). */
+function modelThumb(model: EquipmentModel | null): string | null {
+  return model ? studioAssetUrl(model.thumbnail_file_id, model.thumbnail_url) : null;
 }
 
 function ModelRow({
@@ -67,7 +47,7 @@ function ModelRow({
     <li className="flex items-center gap-2 rounded-lg bg-(--m3-surface-container-high) px-2 py-1.5 text-[11px]">
       <StatusDot status={model.status} />
       <span className="h-7 w-7 shrink-0 overflow-hidden rounded-md bg-(--m3-surface-container-highest)">
-        <Thumb src={model.thumbnail_url} alt="" />
+        <AuthImage src={modelThumb(model)} alt="" />
       </span>
       <span className="min-w-0 flex-1 truncate text-(--m3-on-surface-variant)">
         {VECTOR_STATUS_LABEL[model.status]} · {model.provider} · {relativeTime(model.inserted_at)}
@@ -119,15 +99,14 @@ function EquipmentCard({
   const [history, setHistory] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
-  const placement = model ? placementOf(model.kind, model.code, model.params) : null;
-  const [size, setSize] = useState(placement ? String(placement.size_m) : "");
+  const placement = model ? placementOf(model.kind, model.params) : null;
   const processing = model?.status === "processing" || model?.status === "pending";
 
   return (
     <li className="flex flex-col gap-2.5 rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-low) p-3">
       <div className="flex items-start gap-3">
         <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-(--m3-surface-container-highest)" title="Reference image (default style)">
-          <Thumb src={entry.reference_image_url} alt={`${entry.name} reference`} />
+          <AuthImage src={entry.reference_image_url} alt={`${entry.name} reference`} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -161,7 +140,7 @@ function EquipmentCard({
           {model?.status === "error" ? <p className="mt-1 line-clamp-2 text-[11px] text-(--m3-error)">{model.error}</p> : null}
         </div>
         <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-(--m3-surface-container-highest)" title="Generated model">
-          <Thumb src={model?.thumbnail_url ?? null} alt={model ? `${entry.name} model` : ""} />
+          <AuthImage src={modelThumb(model)} alt={model ? `${entry.name} model` : ""} />
         </div>
       </div>
 
@@ -222,15 +201,14 @@ function EquipmentCard({
             </IconButton>
             <label className="ml-auto flex items-center gap-1 text-[10px] text-(--m3-on-surface-variant)" title="Longest dimension the viewer scales the model to">
               size
-              <TextInput
-                type="number"
+              <NumberField
+                aria-label={`Size of the ${entry.name} model in metres`}
                 min={0.01}
                 max={10}
                 step={0.01}
-                value={size}
-                onChange={(e) => setSize(e.target.value)}
-                onBlur={() => {
-                  const value = Number(size);
+                digits={2}
+                value={placement?.size_m ?? 0}
+                onCommit={(value) => {
                   if (value > 0 && placement && value !== placement.size_m) onSize(model, value);
                 }}
                 className="h-7 w-20 px-2 py-0 text-[11px]"
@@ -270,7 +248,6 @@ function EquipmentCard({
  * reference image, upload one, pick the one the viewer draws, scale it. Polls while a task runs.
  */
 export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
-  const token = useAccessToken();
   const staffFetch = useStaffFetch();
   const toast = useToast();
   const confirm = useConfirm();
@@ -310,7 +287,7 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
 
   const generate = (entry: StudioEquipment, image?: File) =>
     withBusy(`${entry.kind}:${entry.code}`, async () => {
-      if (image && image.size > 20 * 1024 * 1024) throw new Error("The reference image must be under 20 MB");
+      if (image && image.size > MAX_IMAGE_BYTES) throw new Error("The reference image must be under 20 MB");
       const image_data_url = image ? await readAsDataUrl(image) : null;
       await staffFetch(EQUIPMENT_KEY, {
         method: "POST",
@@ -348,14 +325,11 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
 
   const upload = (entry: StudioEquipment, file: File) =>
     withBusy(`${entry.kind}:${entry.code}`, async () => {
-      if (!token) return;
       const form = new FormData();
       form.set("file", file);
       form.set("kind", entry.kind);
       form.set("code", entry.code);
-      const res = await fetch(EQUIPMENT_KEY, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
-      const body = (await res.json()) as { model?: EquipmentModel; error?: string };
-      if (!res.ok || !body.model) throw new Error(body.error ?? `Upload failed (${res.status})`);
+      await staffFetch(EQUIPMENT_KEY, { method: "POST", body: form });
       toast.success(`${entry.name}: model uploaded`);
       await refresh();
     });
@@ -381,7 +355,7 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
 
   const setSize = (model: EquipmentModel, sizeM: number) =>
     withBusy(`${model.kind}:${model.code}`, async () => {
-      const placement = placementOf(model.kind, model.code, model.params);
+      const placement = placementOf(model.kind, model.params);
       await staffFetch(`${EQUIPMENT_KEY}/${model.id}`, {
         method: "PATCH",
         body: JSON.stringify({ action: "placement", size_m: sizeM, offset: placement.offset, rotation: placement.rotation }),

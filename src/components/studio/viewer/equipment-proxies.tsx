@@ -3,6 +3,7 @@
 import { Component, Suspense, useMemo } from "react";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
+import { studioAssetHeaders } from "@/lib/studio/asset-auth";
 import type { EquipmentItem, EquipmentPlacement } from "@/lib/studio/types";
 
 /* The equipment of a movement, drawn in the avatar's hands (sockets) or on the floor: the
@@ -46,7 +47,7 @@ function GeneratedModel({
   /** The item sits in the left hand: the placement, defined for the right hand, is mirrored. */
   mirrored?: boolean;
 }) {
-  const { scene } = useGLTF(url);
+  const { scene } = useGLTF(url, true, true, (loader) => loader.setRequestHeader(studioAssetHeaders(url)));
   const object = useMemo(() => {
     const clone = scene.clone(true);
     clone.position.set(0, 0, 0);

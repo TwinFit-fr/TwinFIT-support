@@ -1,12 +1,12 @@
 /**
- * Turns the catalog pose texts (images.exercise_poses, one per frame) into anatomical angles with
- * OpenAI structured outputs. Server side only. The model only has to read angles already written
- * in the texts ("knees at about 90°", "elbows bent 90°", "torso 45° from vertical") into a fixed
- * vocabulary; the kinematics happen in the viewer.
+ * Drafts the key poses of an exercise as anatomical angles with OpenAI structured outputs, from
+ * the catalog pose texts (images.exercise_poses) and frames. Server side only. The model reads
+ * angles already written in the texts ("knees at about 90°", "torso 45° from vertical") into a
+ * fixed vocabulary; the kinematics happen in the viewer.
  */
 
 import { createOpenAIClient } from "@/lib/images/openai";
-import { POSE_DRAFT_SCHEMA, POSE_SET_SCHEMA, jointLimitsText, sanitizePose, type LoopMode, type PoseAngles } from "./anatomy";
+import { POSE_DRAFT_SCHEMA, jointLimitsText, sanitizePose, type LoopMode, type PoseAngles } from "./anatomy";
 
 export const DEFAULT_POSE_LLM_MODEL = "gpt-5-mini";
 
@@ -25,67 +25,6 @@ Conventions (degrees; the avatar faces +Z, its left is +X):
 - Read the angles the text gives; interpolate sensibly when it gives a range; when a joint is not mentioned keep it near neutral and consistent with the frame. Use the same values for both sides unless the text describes an asymmetry (lunges, single-arm rows, side planks).
 - Frames must be physically consistent with each other: the same orientation across the three frames unless the movement itself changes it.
 - implement: when the message says the exercise uses a two-handed implement, give its centre (height above the floor, forward of the standing midline) and the grip width in EVERY frame, read from the text ("bar at mid-thigh", "bar over mid-foot", "locked out overhead", "at the shoulders") and scaled to the avatar height; the arms are then solved to reach it, so make the implement position the truthful one and let the shoulder / elbow angles be approximate. Otherwise implement is null.`;
-
-export type PoseSetResult = { poses: PoseAngles[]; notes: string; usage: Record<string, unknown> };
-
-export async function extractPoseAngles(input: {
-  model?: string | null;
-  exerciseName: string;
-  description: string;
-  equipment: string;
-  avatarHeightM: number | null;
-  poses: { position: number; pose: string }[];
-  /** The exercise's load is held with both hands (a barbell, a plate): ask for the implement position. */
-  twoHanded: boolean;
-  /** Catalog grip code (STANDARD, WIDE, NARROW, UNDERHAND, HAMMER, MIXED). */
-  grip: string | null;
-}): Promise<PoseSetResult> {
-  const model = input.model?.trim() || DEFAULT_POSE_LLM_MODEL;
-  const frames = [...input.poses]
-    .sort((a, b) => a.position - b.position)
-    .map((p) => `Frame ${p.position} (${["start", "mid", "end"][p.position] ?? p.position}):\n${p.pose.trim()}`)
-    .join("\n\n");
-  const user = [
-    `Exercise: ${input.exerciseName}`,
-    `Equipment: ${input.equipment}`,
-    input.twoHanded
-      ? `The load is a two-handed implement held in both hands${input.grip ? ` with a ${input.grip.toLowerCase()} grip` : ""}: fill "implement" in every frame.`
-      : `No two-handed implement: "implement" is null.`,
-    input.avatarHeightM ? `Avatar height: ${input.avatarHeightM.toFixed(2)} m` : null,
-    input.description.trim() ? `Description: ${input.description.trim()}` : null,
-    "",
-    frames,
-  ]
-    .filter((line) => line !== null)
-    .join("\n");
-
-  const completion = await createOpenAIClient().chat.completions.create({
-    model,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: user },
-    ],
-    response_format: { type: "json_schema", json_schema: POSE_SET_SCHEMA },
-  });
-  const content = completion.choices[0]?.message?.content ?? "";
-  let parsed: { poses?: PoseAngles[]; notes?: string };
-  try {
-    parsed = JSON.parse(content) as { poses?: PoseAngles[]; notes?: string };
-  } catch {
-    throw new Error("The pose model returned no JSON");
-  }
-  const poses = (parsed.poses ?? []).map(sanitizePose);
-  if (poses.length !== 3) throw new Error(`The pose model returned ${poses.length} frames instead of 3`);
-  return {
-    poses,
-    notes: parsed.notes?.trim() ?? "",
-    usage: {
-      model,
-      prompt_tokens: completion.usage?.prompt_tokens ?? null,
-      completion_tokens: completion.usage?.completion_tokens ?? null,
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Drafts for the editor: the key poses of a repetition, with timing, read from the catalog's

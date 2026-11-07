@@ -17,10 +17,12 @@ export function useStaffFetch() {
     if (!currentToken) {
       throw new Error("Not authenticated");
     }
+    // A FormData body sets its own multipart Content-Type (with the boundary); forcing JSON breaks it.
+    const isForm = typeof FormData !== "undefined" && init?.body instanceof FormData;
     const res = await fetch(input, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
+        ...(isForm ? {} : { "Content-Type": "application/json" }),
         ...(init?.headers ?? {}),
         Authorization: `Bearer ${currentToken}`,
       },

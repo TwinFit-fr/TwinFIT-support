@@ -6,6 +6,7 @@ import { Dumbbell, Search, X } from "lucide-react";
 import { useStudioStore } from "@/lib/studio/store";
 import type { StudioExercise } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
+import { useSelectionGuard } from "./hooks/use-selection-guard";
 import { Chip, StatusDot } from "./ui";
 
 const ROW_HEIGHT = 64;
@@ -22,18 +23,21 @@ const Row = memo(function Row({
   exercise,
   selected,
   onSelect,
-  style,
+  top,
+  height,
 }: {
   exercise: StudioExercise;
   selected: boolean;
   onSelect: (id: string) => void;
-  style: React.CSSProperties;
+  top: number;
+  height: number;
 }) {
   const { vectors } = exercise;
   return (
     <button
       type="button"
-      style={style}
+      // Primitive props keep the memo effective (a style object would be new on every render).
+      style={{ top, height }}
       onClick={() => onSelect(exercise.id)}
       aria-current={selected ? "true" : undefined}
       className={cn(
@@ -93,8 +97,12 @@ function vectorTitle(v: StudioExercise["vectors"]): string {
     .join(" · ");
 }
 
-/** The catalog: search, group filter and a virtualized list. Selecting a row sets the workspace exercise. */
-export function CatalogSidebar({
+/**
+ * The catalog: search, group filter and a virtualized list. Selecting a row sets the workspace
+ * exercise (after a confirm when the pose or rig editor holds unsaved work). Memoized: the
+ * workspace re-renders on every poll, the list only when the catalog or the selection changes.
+ */
+export const CatalogSidebar = memo(function CatalogSidebar({
   exercises,
   loading,
 }: {
@@ -102,7 +110,17 @@ export function CatalogSidebar({
   loading: boolean;
 }) {
   const selectedId = useStudioStore((s) => s.exerciseId);
-  const selectExercise = useStudioStore((s) => s.selectExercise);
+  const selectInStore = useStudioStore((s) => s.selectExercise);
+  const guard = useSelectionGuard();
+  const selectExercise = useCallback(
+    (id: string) => {
+      if (id === useStudioStore.getState().exerciseId) return;
+      void guard("exercise").then((ok) => {
+        if (ok) selectInStore(id);
+      });
+    },
+    [guard, selectInStore],
+  );
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState<string | null>(null);
   const [onlyWithMovement, setOnlyWithMovement] = useState(false);
@@ -163,6 +181,8 @@ export function CatalogSidebar({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search exercises, muscles, equipment…"
+            aria-label="Search exercises"
+            type="search"
             className="h-10 w-full rounded-full border border-transparent bg-(--m3-surface-container-high) pl-10 pr-9 text-sm text-(--m3-on-surface) outline-none transition-colors placeholder:text-(--m3-on-surface-variant)/60 focus:border-(--m3-primary)"
           />
           {query ? (
@@ -200,7 +220,7 @@ export function CatalogSidebar({
         </div>
       </div>
 
-      <div ref={parentRef} className="studio-scroll relative mt-2 min-h-0 flex-1 overflow-y-auto" onKeyDown={onKeyDown}>
+      <div ref={parentRef} role="listbox" aria-label="Exercises" className="studio-scroll relative mt-2 min-h-0 flex-1 overflow-y-auto" onKeyDown={onKeyDown}>
         {loading && !exercises.length ? (
           <ul className="space-y-1 px-2 pt-1">
             {Array.from({ length: 12 }).map((_, i) => (
@@ -217,7 +237,8 @@ export function CatalogSidebar({
                   exercise={exercise}
                   selected={exercise.id === selectedId}
                   onSelect={selectExercise}
-                  style={{ top: item.start + 2, height: item.size - 4 }}
+                  top={item.start + 2}
+                  height={item.size - 4}
                 />
               );
             })}
@@ -231,4 +252,4 @@ export function CatalogSidebar({
       </div>
     </div>
   );
-}
+});

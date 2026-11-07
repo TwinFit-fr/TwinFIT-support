@@ -1,10 +1,11 @@
 "use client";
 
-import { useAccessToken } from "@nhost/react";
 import { useState } from "react";
 import { Bone, ImagePlus, Link2, Sparkles, Upload, X } from "lucide-react";
+import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
+import { readAsDataUrl } from "@/lib/studio/format";
 import { codeFromFileName, defaultSockets } from "@/lib/studio/prompt";
 import type { AvatarRig, AvatarSocket, AvatarSubject, BaseAvatar } from "@/lib/studio/types";
 import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
@@ -32,29 +33,6 @@ type Fields = {
 
 type StyleBody = { mode: "style"; code: string; name: string; subject: "man" | "woman"; height_m: number; is_default: boolean; image_data_url?: string | null };
 
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read the image"));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function postAvatar(token: string, body: FormData | { url: string; fields: Fields } | StyleBody): Promise<BaseAvatar> {
-  const res = await fetch("/api/studio/avatars", {
-    method: "POST",
-    headers:
-      body instanceof FormData
-        ? { Authorization: `Bearer ${token}` }
-        : { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: body instanceof FormData ? body : JSON.stringify(body),
-  });
-  const json = (await res.json()) as { avatar?: BaseAvatar; error?: string };
-  if (!res.ok || !json.avatar) throw new Error(json.error ?? `Request failed (${res.status})`);
-  return json.avatar;
-}
-
 /** Register a base avatar: generate a Mixamo-rigged mannequin, upload a rigged model, or import one from a URL. */
 export function AvatarDialog({
   hasDefault,
@@ -65,9 +43,14 @@ export function AvatarDialog({
   onClose: () => void;
   onCreated: (avatar: BaseAvatar) => void;
 }) {
-  const token = useAccessToken();
+  const staffFetch = useStaffFetch();
   const toast = useToast();
   const [mode, setMode] = useState<Mode>("style");
+  /** POST /api/studio/avatars: multipart (file + fields), `{url, fields}` or the style body; a 502 carries the provider's message. */
+  const postAvatar = async (body: FormData | { url: string; fields: Fields } | StyleBody): Promise<BaseAvatar> => {
+    const json = (await staffFetch("/api/studio/avatars", { method: "POST", body: body instanceof FormData ? body : JSON.stringify(body) })) as { avatar: BaseAvatar };
+    return json.avatar;
+  };
   const [file, setFile] = useState<File | null>(null);
   const [image, setImage] = useState<File | null>(null);
   const [url, setUrl] = useState("");
@@ -137,7 +120,6 @@ export function AvatarDialog({
   };
 
   const submit = async () => {
-    if (!token) return;
     const fields = readFields();
     if (!fields) return;
     setBusy(true);
@@ -146,7 +128,7 @@ export function AvatarDialog({
       if (mode === "style") {
         if (subject === "neutral") throw new Error("Pick man or woman: the style has a character for each");
         const image_data_url = image ? await readAsDataUrl(image) : null;
-        avatar = await postAvatar(token, {
+        avatar = await postAvatar({
           mode: "style",
           code: fields.code,
           name: fields.name,
@@ -172,18 +154,19 @@ export function AvatarDialog({
             ...fields,
             height_m: heightM,
             sockets: mannequinSockets(heightM),
+            provider: "mannequin",
             params: { generated: "mannequin", forward_axis: "+z", rest_pose: "T" },
           }),
         );
-        avatar = await postAvatar(token, form);
+        avatar = await postAvatar(form);
       } else if (mode === "upload") {
         if (!file) return;
         const form = new FormData();
         form.set("file", file);
         form.set("fields", JSON.stringify(fields));
-        avatar = await postAvatar(token, form);
+        avatar = await postAvatar(form);
       } else {
-        avatar = await postAvatar(token, { url: url.trim(), fields });
+        avatar = await postAvatar({ url: url.trim(), fields });
       }
       toast.success(`${avatar.name} is ready`, "Avatar added");
       onCreated(avatar);
@@ -292,7 +275,7 @@ export function AvatarDialog({
           <Field label="Name">
             <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Neutral man" />
           </Field>
-          <Field label="Subject">
+          <Field label="Subject" group>
             <Segmented
               value={subject}
               onChange={changeSubject}

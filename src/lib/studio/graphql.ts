@@ -5,7 +5,7 @@
 
 export const AVATAR_FIELDS = `
   id code name subject file_id model_url provider status progress task_id rig_task_id source_image_url
-  error usage rig height_m sockets params active is_default inserted_at updated_at
+  error usage rig height_m sockets params active is_default inserted_at started_at finished_at updated_at
 `;
 
 export const VECTOR_FIELDS = `
@@ -257,6 +257,69 @@ export const STUDIO_AVATAR = `
 export const STUDIO_UPDATE_AVATAR = `
   mutation StudioUpdateAvatar($id: uuid!, $set: animation_studio_base_avatars_set_input!) {
     update_animation_studio_base_avatars_by_pk(pk_columns: { id: $id }, _set: $set) { ${AVATAR_FIELDS} }
+  }
+`;
+
+/**
+ * Take over one step of an avatar job: only the request that flips `progress` from below `below`
+ * to `to` while the row still processes does the step (create the rigging task, store the GLB),
+ * so two pollers never bill Meshy or upload twice. Same pattern as STUDIO_CLAIM_EQUIPMENT_FINISH.
+ */
+export const STUDIO_CLAIM_AVATAR_STEP = `
+  mutation StudioClaimAvatarStep($id: uuid!, $below: smallint!, $to: smallint!, $rigTaskNull: Boolean!) {
+    update_animation_studio_base_avatars(
+      where: { id: { _eq: $id }, status: { _eq: "processing" }, progress: { _lt: $below }, rig_task_id: { _is_null: $rigTaskNull } }
+      _set: { progress: $to }
+    ) { affected_rows }
+  }
+`;
+
+/** A finished avatar that becomes the default: clear the current default and set the row in one transaction. */
+export const STUDIO_FINISH_DEFAULT_AVATAR = `
+  mutation StudioFinishDefaultAvatar($id: uuid!, $set: animation_studio_base_avatars_set_input!) {
+    clear: update_animation_studio_base_avatars(where: { is_default: { _eq: true }, id: { _neq: $id } }, _set: { is_default: false }) {
+      affected_rows
+    }
+    set: update_animation_studio_base_avatars_by_pk(pk_columns: { id: $id }, _set: $set) { ${AVATAR_FIELDS} }
+  }
+`;
+
+/** Make a ready avatar the default (one at a time), one transaction. */
+export const STUDIO_SET_DEFAULT_AVATAR = `
+  mutation StudioSetDefaultAvatar($id: uuid!) {
+    clear: update_animation_studio_base_avatars(where: { is_default: { _eq: true }, id: { _neq: $id } }, _set: { is_default: false }) {
+      affected_rows
+    }
+    set: update_animation_studio_base_avatars_by_pk(pk_columns: { id: $id }, _set: { is_default: true }) { ${AVATAR_FIELDS} }
+  }
+`;
+
+/**
+ * Remove an avatar: staff may delete rows with active = false, so the row is deactivated first;
+ * both root fields run in one transaction. Fails (FK RESTRICT) while movement vectors use it.
+ */
+export const STUDIO_DELETE_AVATAR = `
+  mutation StudioDeleteAvatar($id: uuid!) {
+    off: update_animation_studio_base_avatars_by_pk(pk_columns: { id: $id }, _set: { active: false, is_default: false }) { id }
+    delete_animation_studio_base_avatars_by_pk(id: $id) { id file_id }
+  }
+`;
+
+export const STUDIO_UPDATE_SETTINGS = `
+  mutation StudioUpdateSettings($set: animation_studio_settings_set_input!) {
+    update_animation_studio_settings(where: { id: { _eq: true } }, _set: $set) {
+      returning { max_concurrency stale_after_minutes pipeline prompt_template updated_at }
+    }
+  }
+`;
+
+/** Every file of the bucket and every file id a Studio row points at: the difference is the orphans. */
+export const STUDIO_BUCKET_FILES = `
+  query StudioBucketFiles {
+    files(where: { bucketId: { _eq: "3d-workspace" } }, order_by: { createdAt: asc }) { id name size createdAt }
+    animation_studio_base_avatars { file_id }
+    animation_studio_movement_vectors { file_id }
+    animation_studio_equipment_models { file_id thumbnail_file_id }
   }
 `;
 

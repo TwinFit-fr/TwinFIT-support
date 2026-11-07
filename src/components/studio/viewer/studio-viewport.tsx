@@ -227,6 +227,7 @@ export const StudioViewport = memo(function StudioViewport() {
   return (
     <div className="relative h-full w-full">
       <StudioCanvas
+        avatarId={scene.avatarId}
         modelUrl={scene.modelUrl}
         heightM={scene.heightM}
         sockets={scene.sockets}

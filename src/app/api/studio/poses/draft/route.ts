@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { routeError } from "@/lib/studio/route-error";
 import { getAvatar } from "@/lib/studio/queries";
 import type { EquipmentItem } from "@/lib/studio/types";
 import { draftExercisePoses } from "@/lib/studio/worker";
@@ -37,8 +38,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ draft });
   } catch (error) {
-    if (error instanceof Response) return error;
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not draft the poses" }, { status: 500 });
+    return routeError(error, "Could not draft the poses");
   }
 }

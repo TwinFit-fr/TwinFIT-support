@@ -47,14 +47,41 @@ export const MESHY_DEFAULTS = {
   image_enhancement: true,
 } as const;
 
+/**
+ * A provider or configuration failure. `status` is what the Support route answers with: 502 for
+ * anything Meshy itself refused or failed (its own status is kept in `upstreamStatus` for the
+ * callers that care, e.g. 404 = task gone), 400 / 503 for problems on our side.
+ */
 export class MeshyError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly upstreamStatus: number | null = null,
   ) {
     super(message);
     this.name = "MeshyError";
   }
+}
+
+/** The body of a response, stopping (and failing) as soon as it passes `max` bytes instead of buffering it all. */
+export async function readCapped(res: Response, max: number, tooBig: string): Promise<Buffer> {
+  const length = Number(res.headers.get("content-length") ?? 0);
+  if (length > max) throw new MeshyError(tooBig, 400);
+  if (!res.body) return Buffer.from(await res.arrayBuffer());
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel();
+      throw new MeshyError(tooBig, 400);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
 }
 
 export function isMeshyConfigured(): boolean {
@@ -85,7 +112,10 @@ async function meshyFetch<T>(path: string, init?: RequestInit): Promise<T> {
         ? `Meshy: insufficient credits (${message})`
         : res.status === 429
           ? `Meshy: rate limited, try again in a moment`
-          : `Meshy: ${message}`,
+          : res.status === 401 || res.status === 403
+            ? `Meshy refused the API key (${message})`
+            : `Meshy: ${message}`,
+      502,
       res.status,
     );
   }
@@ -118,11 +148,8 @@ export async function getImageTo3dTask(id: string): Promise<MeshyTask> {
 /** Downloads a result file (GLB or thumbnail) from the signed URL Meshy gives. */
 export async function downloadMeshyFile(url: string): Promise<{ bytes: Buffer; contentType: string | null }> {
   const res = await fetch(url, { redirect: "follow" });
-  if (!res.ok) throw new MeshyError(`Download failed (${res.status})`, 502);
-  const length = Number(res.headers.get("content-length") ?? 0);
-  if (length > MAX_DOWNLOAD_BYTES) throw new MeshyError("Result larger than 100 MiB", 502);
-  const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.byteLength > MAX_DOWNLOAD_BYTES) throw new MeshyError("Result larger than 100 MiB", 502);
+  if (!res.ok) throw new MeshyError(`Download failed (${res.status})`, 502, res.status);
+  const bytes = await readCapped(res, MAX_DOWNLOAD_BYTES, "Result larger than 100 MiB");
   return { bytes, contentType: res.headers.get("content-type") };
 }
 
@@ -133,11 +160,10 @@ export async function downloadMeshyFile(url: string): Promise<{ bytes: Buffer; c
 export async function imageUrlToDataUri(url: string): Promise<string> {
   if (url.startsWith("data:")) return url;
   const res = await fetch(url, { redirect: "follow" });
-  if (!res.ok) throw new MeshyError(`Reference image download failed (${res.status})`, 502);
+  if (!res.ok) throw new MeshyError(`Reference image download failed (${res.status})`, 502, res.status);
   const type = res.headers.get("content-type")?.split(";")[0] ?? "image/png";
   if (!/^image\/(png|jpe?g|webp)$/.test(type)) throw new MeshyError(`Reference image must be PNG, JPEG or WebP (got ${type})`, 400);
-  const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.byteLength > 20 * 1024 * 1024) throw new MeshyError("Reference image larger than 20 MB", 400);
+  const bytes = await readCapped(res, 20 * 1024 * 1024, "Reference image larger than 20 MB");
   return `data:${type};base64,${bytes.toString("base64")}`;
 }
 
