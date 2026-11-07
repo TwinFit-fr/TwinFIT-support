@@ -5,6 +5,7 @@ import { BVHLoader } from "three/examples/jsm/loaders/BVHLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { retargetClip } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { studioAssetHeaders } from "./asset-auth";
 import { CANONICAL_BONES, canonicalBoneName, type CanonicalBone } from "./bone-names";
 
 export { CANONICAL_BONES, canonicalBoneName, type CanonicalBone };
@@ -30,17 +31,19 @@ export function isMocapClip(value: unknown): value is MocapClip {
 
 /** Load a mocap file; the clip is the file's first animation. */
 export async function loadMocap(url: string, format: MocapClip["format"]): Promise<MocapClip> {
+  // Files in the Studio bucket need the staff JWT (asset-auth.ts).
+  const headers = studioAssetHeaders(url);
   if (format === "bvh") {
-    const result = await new BVHLoader().loadAsync(url);
+    const result = await new BVHLoader().setRequestHeader(headers).loadAsync(url);
     return { kind: "mocap", clip: result.clip, source: result.skeleton, format };
   }
   if (format === "fbx") {
-    const group = await new FBXLoader().loadAsync(url);
+    const group = await new FBXLoader().setRequestHeader(headers).loadAsync(url);
     const clip = group.animations[0];
     if (!clip) throw new Error("The FBX has no animation");
     return { kind: "mocap", clip, source: group, format };
   }
-  const gltf = await new GLTFLoader().loadAsync(url);
+  const gltf = await new GLTFLoader().setRequestHeader(headers).loadAsync(url);
   const clip = gltf.animations[0];
   if (!clip) throw new Error("The model has no animation");
   return { kind: "mocap", clip, source: gltf.scene, format };
@@ -113,6 +116,10 @@ export function retargetToAvatar(model: THREE.Object3D, mocap: MocapClip): { cli
   }
   if (!names[avatarBoneName(model, "Hips") ?? ""]) throw new Error(`No hips bone recognised in the clip (bones: ${sourceNames.slice(0, 8).join(", ")}…)`);
 
+  // Retargeting samples the avatar's bones: they must be in their rest pose, not mid-clip.
+  model.traverse((o) => {
+    if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.pose();
+  });
   const targetMesh = firstSkinnedMesh(model);
   if (!sourceBones.length || !targetMesh) {
     // No skeleton to retarget through: rename the tracks and hope the rest poses agree (Mixamo-family rigs).

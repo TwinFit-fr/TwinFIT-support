@@ -70,6 +70,8 @@ export type BaseAvatar = {
   active: boolean;
   is_default: boolean;
   inserted_at: string;
+  started_at: string | null;
+  finished_at: string | null;
   updated_at: string;
 };
 
@@ -202,6 +204,7 @@ export type NewAvatarInput = {
   model_url?: string | null;
   provider?: AvatarProvider;
   status?: VectorStatus;
+  progress?: number;
   task_id?: string | null;
   source_image_url?: string | null;
   rig: AvatarRig;

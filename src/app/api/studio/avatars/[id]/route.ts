@@ -1,30 +1,69 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
-import { updateAvatar } from "@/lib/studio/queries";
-import { socketSchema } from "../route";
+import { retryStyledAvatar } from "@/lib/studio/avatar-service";
+import { deleteAvatar, getAvatar, setDefaultAvatar, updateAvatar } from "@/lib/studio/queries";
+import { routeError } from "@/lib/studio/route-error";
+import { socketsSchema, uuidSchema } from "@/lib/studio/schemas";
+import { deleteStudioFile } from "@/lib/studio/storage";
 
-const patchSchema = z.object({
-  sockets: z.array(socketSchema).max(32).optional(),
-  height_m: z.number().min(0.5).max(2.5).nullable().optional(),
-  name: z.string().trim().min(1).max(120).optional(),
-});
+const patchSchema = z.union([
+  z.object({
+    sockets: socketsSchema.optional(),
+    height_m: z.number().min(0.5).max(2.5).nullable().optional(),
+    name: z.string().trim().min(1).max(120).optional(),
+  }),
+  /** Make this ready avatar the default (the previous default is cleared in the same transaction). */
+  z.object({ action: z.literal("set_default") }),
+  /** Run a failed Meshy build again from its reference image. */
+  z.object({ action: z.literal("retry") }),
+]);
 
-/** Edit an avatar: its sockets (the rig editor saves them here), height or name. */
+/** Edit an avatar: its sockets (the rig editor saves them here), height or name; set it as default; retry a failed build. */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const token = requireStaffToken(request);
-    const id = z.string().uuid().parse((await params).id);
+    const id = uuidSchema.parse((await params).id);
     const body = patchSchema.parse(await request.json());
-    if (body.sockets) {
-      const ids = body.sockets.map((s) => s.id);
-      if (new Set(ids).size !== ids.length) return NextResponse.json({ error: "socket ids must be unique" }, { status: 400 });
+    const current = await getAvatar(token, id);
+    if (!current) return NextResponse.json({ error: "Avatar not found" }, { status: 404 });
+    if ("action" in body) {
+      if (body.action === "set_default") {
+        if (current.status !== "ready") return NextResponse.json({ error: "Only a ready avatar can be the default" }, { status: 409 });
+        return NextResponse.json({ avatar: await setDefaultAvatar(token, id) });
+      }
+      const avatar = await retryStyledAvatar(token, current);
+      if (avatar.status === "error") return NextResponse.json({ error: avatar.error ?? "Meshy refused the task", avatar }, { status: 502 });
+      return NextResponse.json({ avatar });
     }
-    const avatar = await updateAvatar(token, id, body);
-    return NextResponse.json({ avatar });
+    return NextResponse.json({ avatar: await updateAvatar(token, id, body) });
   } catch (error) {
-    if (error instanceof Response) return error;
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to update the avatar" }, { status: 500 });
+    return routeError(error, "Failed to update the avatar");
+  }
+}
+
+/** Remove an avatar and its file. Refused while movement vectors are authored for it (FK RESTRICT). */
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const token = requireStaffToken(request);
+    const id = uuidSchema.parse((await params).id);
+    const current = await getAvatar(token, id);
+    if (!current) return NextResponse.json({ error: "Avatar not found" }, { status: 404 });
+    if (current.status === "processing") return NextResponse.json({ error: "Wait for the build to finish or fail first" }, { status: 409 });
+    let deleted;
+    try {
+      deleted = await deleteAvatar(token, id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (/movement_vectors|foreign key/i.test(message)) {
+        return NextResponse.json({ error: "This avatar has movement clips: delete them first" }, { status: 409 });
+      }
+      throw error;
+    }
+    if (!deleted) return NextResponse.json({ error: "Avatar not found" }, { status: 404 });
+    if (deleted.file_id) await deleteStudioFile(token, deleted.file_id);
+    return NextResponse.json({ deleted });
+  } catch (error) {
+    return routeError(error, "Failed to delete the avatar");
   }
 }

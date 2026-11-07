@@ -15,7 +15,9 @@ import {
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { isPoseClipJson, poseClipFromDraft } from "@/lib/studio/anatomy";
+import { useShallow } from "zustand/react/shallow";
+import { isPoseClipJson, poseClipFromDraft, type PoseAngles, type PoseClipJson } from "@/lib/studio/anatomy";
+import { studioAssetHeaders } from "@/lib/studio/asset-auth";
 import { DEFAULT_CLEANUP, cleanupClip } from "@/lib/studio/clip-cleanup";
 import { isMocapClip, retargetToAvatar } from "@/lib/studio/mocap";
 import { buildPoseClip, captureRestPose, probePose, solveLimbToTarget, type Limb, type LimbEffector, type RestPose } from "@/lib/studio/pose-clip";
@@ -27,6 +29,7 @@ import { equipmentKey } from "@/lib/studio/equipment";
 import { recordCanvasCommit } from "./render-stats";
 
 export type SceneProps = {
+  avatarId: string | null;
   modelUrl: string | null;
   heightM: number | null;
   sockets: AvatarSocket[];
@@ -114,20 +117,63 @@ function socketTransform(socket: AvatarSocket | undefined) {
   return { offset, quaternion };
 }
 
-function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipError }: SceneProps & { modelUrl: string }) {
-  const { scene, animations } = useGLTF(modelUrl);
+/** Bone names of a model, for the rig editor's socket picker. */
+function boneNames(model: THREE.Object3D): string[] {
+  const names: string[] = [];
+  model.traverse((o) => {
+    if ((o as THREE.Bone).isBone) names.push(o.name);
+  });
+  return names;
+}
+
+/** The previous avatar's GLB leaves drei's cache when another one loads (100 MiB rigs add up over a session). */
+let cachedModelUrl: string | null = null;
+function recycleModelCache(url: string) {
+  if (cachedModelUrl && cachedModelUrl !== url) useGLTF.clear(cachedModelUrl);
+  cachedModelUrl = url;
+}
+
+/** A pose clip with the held pose only: what the viewer solves while the editor is paused (one IK solve, two frames). */
+function heldPoseClip(draft: PoseClipJson, pose: PoseAngles): PoseClipJson {
+  return { ...draft, duration: 1 / draft.fps, keyframes: [{ t: 0, position: 0, angles: pose }] };
+}
+
+function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, onClipError }: SceneProps & { modelUrl: string }) {
+  recycleModelCache(modelUrl);
+  const { scene, animations } = useGLTF(modelUrl, true, true, (loader) => loader.setRequestHeader(studioAssetHeaders(modelUrl)));
   const model = useMemo(() => cloneSkeleton(scene), [scene]);
   const items = useStudioStore((s) => s.previewItems);
   const models = useStudioStore((s) => s.equipmentModels);
   const showEquipment = useStudioStore((s) => s.showEquipment);
   const cleanMocap = useStudioStore((s) => s.cleanMocap);
-  // The pose editor's draft replaces the selected clip while it is open.
-  const poseEdit = useStudioStore((s) => s.poseEdit);
-  const draft = useMemo(() => (poseEdit ? poseClipFromDraft(poseEdit) : null), [poseEdit]);
+
+  // The pose editor's draft replaces the selected clip while it is open. Only what shapes the clip
+  // is read here (not the undo stacks, the drag target or the dirty flag), so bookkeeping in the
+  // store never re-bakes it.
+  const draftSource = useStudioStore(
+    useShallow((s) =>
+      s.poseEdit
+        ? {
+            poses: s.poseEdit.poses,
+            weights: s.poseEdit.weights,
+            mode: s.poseEdit.mode,
+            durationS: s.poseEdit.durationS,
+            fps: s.poseEdit.fps,
+            twoHanded: s.poseEdit.twoHanded,
+            grip: s.poseEdit.grip,
+            meta: s.poseEdit.meta,
+          }
+        : null,
+    ),
+  );
+  const heldPose = useStudioStore((s) => s.poseEdit?.poses[s.poseEdit.keyframe] ?? null);
+  const editorPlaying = useStudioStore((s) => Boolean(s.poseEdit) && s.playing);
+  const draft = useMemo(() => (draftSource ? poseClipFromDraft(draftSource) : null), [draftSource]);
   const holdTime = useMemo(() => {
-    if (!poseEdit || !draft) return null;
-    return draft.keyframes.find((k) => k.position === poseEdit.keyframe)?.t ?? 0;
-  }, [poseEdit, draft]);
+    if (!draft || !heldPose) return null;
+    const index = draftSource?.poses.indexOf(heldPose) ?? -1;
+    return draft.keyframes.find((k) => k.position === index)?.t ?? 0;
+  }, [draft, draftSource, heldPose]);
 
   // Ground the model, centre it and bring it to metres (Mixamo exports are often in centimetres).
   // The three object is mutated in place: it is scene state, not React state.
@@ -169,23 +215,27 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
     };
   }, [model, heightM, sockets, animations]);
 
+  // The rig editor: drafts of this avatar replace the saved sockets / placements while they are being moved.
+  const edit = useStudioStore((s) => s.edit);
+  const draftSockets = useStudioStore((s) => (s.draftSockets?.avatarId === avatarId ? s.draftSockets.sockets : null));
+  const draftPlacements = useStudioStore((s) => s.draftPlacements);
+  const liveSockets = draftSockets ?? sockets;
+
   // Anatomical keyframes become a three.js clip for this very rig; a ready clip is used as it is.
+  // While the editor is paused only the held pose is solved: a slider tick costs one solve, not a bake.
   const [resolvedClip, clipError] = useMemo<[THREE.AnimationClip | null, string | null]>(() => {
     if (draft) {
       try {
-        return [buildPoseClip(model, draft, rest, sockets), null];
+        const source = editorPlaying || !heldPose ? draft : heldPoseClip(draft, heldPose);
+        return [buildPoseClip(model, source, rest, liveSockets), null];
       } catch (error) {
         return [null, error instanceof Error ? error.message : String(error)];
       }
     }
     if (!clip) return [null, null];
     try {
-      if (isPoseClipJson(clip)) return [buildPoseClip(model, clip, rest, sockets), null];
+      if (isPoseClipJson(clip)) return [buildPoseClip(model, clip, rest, liveSockets), null];
       if (isMocapClip(clip)) {
-        // Retargeting samples the avatar's bones: it needs them in their rest pose, as captured.
-        model.traverse((o) => {
-          if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.pose();
-        });
         const { clip: retargeted, report } = retargetToAvatar(model, clip);
         if (report.unmatched.length && process.env.NODE_ENV !== "production") {
           console.info("[studio] mocap bones without an avatar bone:", report.unmatched.join(", "));
@@ -199,33 +249,40 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
     } catch (error) {
       return [null, error instanceof Error ? error.message : String(error)];
     }
-  }, [clip, draft, model, rest, sockets, cleanMocap]);
+  }, [clip, draft, editorPlaying, heldPose, model, rest, liveSockets, cleanMocap]);
   useEffect(() => {
     if (clipError) onClipError?.(clipError);
   }, [clipError, onClipError]);
 
   // The pose editor pins to where the held pose puts feet, hands and knees: computed off the rig.
   useEffect(() => {
-    if (!poseEdit) return;
-    const pose = poseEdit.poses[poseEdit.keyframe];
-    if (!pose) return;
+    if (!heldPose || !draftSource) return;
     try {
-      useStudioStore.getState().setPoseProbe(probePose(model, rest, pose, { twoHanded: poseEdit.twoHanded, grip: poseEdit.grip, sockets }));
+      useStudioStore.getState().setPoseProbe(probePose(model, rest, heldPose, { twoHanded: draftSource.twoHanded, grip: draftSource.grip, sockets: liveSockets }));
     } catch {
       // A rig without the legs or arms: nothing to pin.
     }
-  }, [poseEdit, model, rest, sockets]);
+  }, [heldPose, draftSource?.twoHanded, draftSource?.grip, draftSource, model, rest, liveSockets]);
 
   useEffect(() => {
     onModelInfo?.(info);
+    useStudioStore.getState().setModelBones(boneNames(model));
     return () => onModelInfo?.(null);
-  }, [info, onModelInfo]);
+  }, [info, model, onModelInfo]);
 
-  // The rig editor: drafts replace the saved sockets / placements while they are being moved.
-  const edit = useStudioStore((s) => s.edit);
-  const draftSockets = useStudioStore((s) => s.draftSockets);
-  const draftPlacements = useStudioStore((s) => s.draftPlacements);
-  const liveSockets = draftSockets ?? sockets;
+  // The GPU resources of the clone go with it; the cached source scene stays until another avatar loads.
+  useEffect(
+    () => () => {
+      model.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.geometry?.dispose();
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) material?.dispose();
+      });
+    },
+    [model],
+  );
+
   const modelFor = (kind: EquipmentItem["kind"], code: string) => {
     const key = equipmentKey(kind, code);
     const saved = models[key];
@@ -271,6 +328,7 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
   // Play the selected clip, else the model's own first animation. Not while editing the rig: the
   // avatar stands in its bind pose so sockets are placed on a still body.
   const mixer = useMemo(() => new THREE.AnimationMixer(model), [model]);
+  useEffect(() => () => mixer.uncacheRoot(model), [mixer, model]);
   const editing = edit.mode !== "off";
   useEffect(() => {
     if (editing) {
@@ -292,21 +350,21 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
   }, [mixer, model, resolvedClip, animations, editing]);
   // Playback controls are read straight from the store every frame: toggling them never re-renders the scene.
   useFrame((_, delta) => {
-    const { playing, speed, edit } = useStudioStore.getState();
+    const { playing, speed, edit, poseEdit } = useStudioStore.getState();
     if (edit.mode !== "off") return;
     if (playing) mixer.update(delta * speed);
-    else if (holdTime !== null) mixer.setTime(holdTime); // the pose editor holds the selected pose
+    else if (poseEdit) mixer.setTime(editorPlaying ? (holdTime ?? 0) : 0); // paused editor: the clip is the held pose
   });
 
   // The gizmo moved the target: write its transform (metres, degrees) into the draft.
   const commitEdit = () => {
-    if (!editObject) return;
+    if (!editObject || !avatarId) return;
     const { edit, updateDraftSocket, setDraftPlacement } = useStudioStore.getState();
     const r3 = (v: number) => Math.round(v * 1000) / 1000;
     const r1 = (v: number) => Math.round(THREE.MathUtils.radToDeg(v) * 10) / 10;
     const offset: [number, number, number] = [r3(editObject.position.x), r3(editObject.position.y), r3(editObject.position.z)];
     const rotation: [number, number, number] = [r1(editObject.rotation.x), r1(editObject.rotation.y), r1(editObject.rotation.z)];
-    if (edit.mode === "sockets" && edit.target) updateDraftSocket(sockets, edit.target, { offset, rotation });
+    if (edit.mode === "sockets" && edit.target) updateDraftSocket(avatarId, sockets, edit.target, { offset, rotation });
     if (edit.mode === "model" && edit.target) {
       const [kind, code] = edit.target.split(":") as [EquipmentItem["kind"], string];
       const current = modelFor(kind, code)?.placement;
@@ -415,7 +473,8 @@ const HANDLE_LIMB: Record<string, { limb: Limb; effector: LimbEffector }> = {
  * sliders follow, and the handle snaps back to where the limb could actually reach.
  */
 function PoseHandles({ model, rest, sockets }: { model: THREE.Object3D; rest: RestPose; sockets: AvatarSocket[] }) {
-  const poseEdit = useStudioStore((s) => s.poseEdit);
+  const editorOpen = useStudioStore((s) => Boolean(s.poseEdit));
+  const dragTarget = useStudioStore((s) => s.poseEdit?.dragTarget ?? null);
   const probe = useStudioStore((s) => s.poseProbe);
   const editMode = useStudioStore((s) => s.edit.mode);
   const [handle, setHandle] = useState<THREE.Object3D | null>(null);
@@ -433,27 +492,29 @@ function PoseHandles({ model, rest, sockets }: { model: THREE.Object3D; rest: Re
       const pose = edit.poses[edit.keyframe];
       const p = handle.position;
       if (edit.dragTarget === "hips") {
-        state.updatePose(edit.keyframe, {
-          ...pose,
-          hips: { ...pose.hips, height_m: +Math.max(0.05, p.y).toFixed(3), forward_m: +THREE.MathUtils.clamp(p.z, -0.6, 0.6).toFixed(3) },
-        });
-        return;
+        state.updatePose(
+          edit.keyframe,
+          { ...pose, hips: { ...pose.hips, height_m: +Math.max(0.05, p.y).toFixed(3), forward_m: +THREE.MathUtils.clamp(p.z, -0.6, 0.6).toFixed(3) } },
+          true,
+        );
+      } else {
+        const map = HANDLE_LIMB[edit.dragTarget];
+        if (!map) return;
+        const solved = solveLimbToTarget(model, rest, pose, { twoHanded: edit.twoHanded, grip: edit.grip, sockets }, map.limb, map.effector, [p.x, p.y, p.z]);
+        state.updatePose(edit.keyframe, solved, true);
       }
-      const map = HANDLE_LIMB[edit.dragTarget];
-      if (!map) return;
-      const solved = solveLimbToTarget(model, rest, pose, { twoHanded: edit.twoHanded, grip: edit.grip, sockets }, map.limb, map.effector, [p.x, p.y, p.z]);
-      state.updatePose(edit.keyframe, solved);
+      if (final) state.endPoseGesture(); // the whole drag is one undo step
     },
     [handle, model, rest, sockets],
   );
 
-  if (!poseEdit || editMode !== "off") return null;
+  if (!editorOpen || editMode !== "off") return null;
   const ids = Object.keys(probe);
   return (
     <>
       {ids.map((id) => {
         const pos = probe[id];
-        const selected = poseEdit.dragTarget === id;
+        const selected = dragTarget === id;
         const isHips = id === "hips";
         return (
           <mesh
@@ -477,7 +538,7 @@ function PoseHandles({ model, rest, sockets }: { model: THREE.Object3D; rest: Re
           </mesh>
         );
       })}
-      {handle && poseEdit.dragTarget ? (
+      {handle && dragTarget ? (
         <TransformControls object={handle} mode="translate" space="world" size={0.6} translationSnap={null} onObjectChange={() => applyDrag(false)} onMouseUp={() => applyDrag(true)} />
       ) : null}
     </>

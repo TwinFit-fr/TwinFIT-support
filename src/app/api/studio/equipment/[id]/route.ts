@@ -7,9 +7,9 @@ import {
   getEquipmentModel,
   updateEquipmentModel,
 } from "@/lib/studio/queries";
+import { routeError } from "@/lib/studio/route-error";
+import { uuidSchema, vec3Schema as vec3 } from "@/lib/studio/schemas";
 import { deleteStudioFile } from "@/lib/studio/storage";
-
-const vec3 = z.tuple([z.number(), z.number(), z.number()]);
 
 const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("activate") }),
@@ -26,7 +26,7 @@ const patchSchema = z.discriminatedUnion("action", [
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const token = requireStaffToken(request);
-    const id = z.string().uuid().parse((await params).id);
+    const id = uuidSchema.parse((await params).id);
     const body = patchSchema.parse(await request.json());
     const model = await getEquipmentModel(token, id);
     if (!model) return NextResponse.json({ error: "Equipment model not found" }, { status: 404 });
@@ -44,9 +44,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!rotation) delete params_.rotation;
     return NextResponse.json({ model: await updateEquipmentModel(token, id, { params: params_ }) });
   } catch (error) {
-    if (error instanceof Response) return error;
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The action failed" }, { status: 500 });
+    return routeError(error, "The action failed");
   }
 }
 
@@ -54,17 +52,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const token = requireStaffToken(request);
-    const id = z.string().uuid().parse((await params).id);
+    const id = uuidSchema.parse((await params).id);
     const model = await getEquipmentModel(token, id);
     if (!model) return NextResponse.json({ error: "Equipment model not found" }, { status: 404 });
     if (model.active) return NextResponse.json({ error: "Stop using this model before deleting it" }, { status: 409 });
+    if (model.status === "processing") return NextResponse.json({ error: "Wait for the task to finish or fail first" }, { status: 409 });
     const deleted = await deleteEquipmentModel(token, id);
     if (!deleted) return NextResponse.json({ error: "Equipment model not found" }, { status: 404 });
     await Promise.all([deleted.file_id, deleted.thumbnail_file_id].filter((f): f is string => Boolean(f)).map((f) => deleteStudioFile(token, f)));
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof Response) return error;
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to delete the model" }, { status: 500 });
+    return routeError(error, "Failed to delete the model");
   }
 }

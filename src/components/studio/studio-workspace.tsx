@@ -1,42 +1,44 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { useAccessToken } from "@nhost/react";
-import { ChevronDown, Download, Dumbbell, Plus } from "lucide-react";
-import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
-import { useConfirm } from "@/components/ui/confirm";
+import { useCallback, useState } from "react";
+import { ChevronDown, Download, Dumbbell, Plus, Settings2, Users } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
-import { equipmentKey, placementOf } from "@/lib/studio/equipment";
-import { EMPTY_SCENE, useStudioStore, type SceneSource } from "@/lib/studio/store";
-import type { ActiveEquipmentModels, BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
-import { isQueued } from "@/lib/studio/types";
+import { downloadStudioAsset } from "@/lib/studio/asset-auth";
+import { useStudioStore } from "@/lib/studio/store";
+import { studioAssetUrl } from "@/lib/studio/storage-url";
+import type { BaseAvatar } from "@/lib/studio/types";
 import { AvatarDialog } from "./avatar-dialog";
-import { EQUIPMENT_KEY, EquipmentDialog, type EquipmentResponse } from "./equipment-dialog";
+import { AvatarManageDialog } from "./avatar-manage-dialog";
 import { CatalogSidebar } from "./catalog-sidebar";
-import { InspectorPanel, type GenerateInput, type VectorAction } from "./inspector-panel";
-import { PoseEditor, type DraftRequest, type SaveMode } from "./pose-editor";
+import { EquipmentDialog } from "./equipment-dialog";
+import { usePoseSave } from "./hooks/use-pose-save";
+import { useSelectionGuard } from "./hooks/use-selection-guard";
+import { useStudioData } from "./hooks/use-studio-data";
+import { useVectorActions } from "./hooks/use-vector-actions";
+import { useWorkerDriver } from "./hooks/use-worker-driver";
+import { InspectorPanel } from "./inspector-panel";
+import { PoseEditor } from "./pose-editor";
 import { RigEditor } from "./rig-editor";
-import { NEUTRAL_POSE, isPoseClipJson, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
+import { SettingsDialog } from "./settings-dialog";
 import { StudioShell } from "./studio-shell";
-import { M3Button } from "./ui";
+import { IconButton, M3Button } from "./ui";
 import { StudioViewport } from "./viewer/studio-viewport";
-
-const QUEUE_POLL_MS = 3000;
-/** While the queue has pending rows the workspace drives the pipeline: one claim per tick. */
-const WORKER_TICK_MS = 4000;
 
 function AvatarMenu({
   avatars,
   selected,
   onSelect,
-  onUpload,
+  onAdd,
+  onManage,
 }: {
   avatars: BaseAvatar[];
   selected: BaseAvatar | null;
   onSelect: (id: string) => void;
-  onUpload: () => void;
+  onAdd: () => void;
+  onManage: () => void;
 }) {
+  const toast = useToast();
+  const modelUrl = selected ? studioAssetUrl(selected.file_id, selected.model_url) : null;
   return (
     <div className="flex items-center gap-2">
       <div className="relative">
@@ -57,423 +59,67 @@ function AvatarMenu({
         </select>
         <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-(--m3-on-surface-variant)" />
       </div>
-      <M3Button size="sm" variant="outlined" onClick={onUpload}>
+      <M3Button size="sm" variant="outlined" onClick={onAdd}>
         <Plus className="h-3.5 w-3.5" /> Avatar
       </M3Button>
-      {selected?.model_url ? (
-        <a
-          href={selected.model_url}
-          download={`${selected.code.toLowerCase()}.glb`}
-          title="Download this avatar's .glb (upload it to DeepMotion as a custom character so its exports fit the rig)"
-          className="studio-state flex h-8 w-8 items-center justify-center rounded-full text-(--m3-on-surface-variant) hover:text-(--m3-on-surface)"
+      <IconButton label="Manage the avatars (rename, default, retry, delete)" onClick={onManage} className="h-8 w-8">
+        <Users className="h-3.5 w-3.5" />
+      </IconButton>
+      {modelUrl && selected ? (
+        <IconButton
+          label="Download this avatar's .glb (upload it to a capture tool as a custom character so its exports fit the rig)"
+          onClick={() => void downloadStudioAsset(modelUrl, `${selected.code.toLowerCase()}.glb`).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Download failed"))}
+          className="h-8 w-8"
         >
           <Download className="h-3.5 w-3.5" />
-        </a>
+        </IconButton>
       ) : null}
     </div>
   );
 }
 
-/** The scene slice for an avatar and the clip the viewer should play. */
-function sceneFor(avatar: BaseAvatar | null, vector: MovementVector | null): SceneSource {
-  if (!avatar || !avatar.model_url) return EMPTY_SCENE;
-  return {
-    avatarId: avatar.id,
-    avatarName: avatar.name,
-    rig: avatar.rig,
-    modelUrl: avatar.model_url,
-    heightM: avatar.height_m,
-    sockets: avatar.sockets,
-    vectorId: vector?.id ?? null,
-    vectorSeq: vector?.seq ?? null,
-    vectorStatus: vector?.status ?? null,
-    vectorFps: vector?.fps ?? null,
-    clipUrl: vector?.status === "ready" ? vector.vector_url : null,
-    clipFormat: vector?.status === "ready" ? vector.format : null,
-  };
-}
-
+/**
+ * The Studio page: data and selection (useStudioData), the pipeline driver, vector actions and
+ * the pose editor's lifecycle are hooks; this component wires them to the shell, the panes and
+ * the dialogs. It never subscribes to the pose draft itself, so slider ticks stay in the editor
+ * and the canvas.
+ */
 export function StudioWorkspace() {
-  const staffFetch = useStaffFetch();
-  const token = useAccessToken();
-  const toast = useToast();
-  const confirm = useConfirm();
-  const searchParams = useSearchParams();
-
-  const exerciseId = useStudioStore((s) => s.exerciseId);
-  const avatarId = useStudioStore((s) => s.avatarId);
-  const vectorId = useStudioStore((s) => s.vectorId);
-  const selectExercise = useStudioStore((s) => s.selectExercise);
+  const data = useStudioData();
+  const { exercises, avatars, settings, vectors, exercise, avatar, catalogLoading, vectorsLoading, equipmentCodes, supportCodes, queuedAnywhere, mutateVectors, mutateCatalog } = data;
   const setAvatar = useStudioStore((s) => s.setAvatar);
-  const setVector = useStudioStore((s) => s.setVector);
-  const setScene = useStudioStore((s) => s.setScene);
-  const setEquipmentModels = useStudioStore((s) => s.setEquipmentModels);
-  const poseEdit = useStudioStore((s) => s.poseEdit);
-  const startPoseEdit = useStudioStore((s) => s.startPoseEdit);
-  const stopPoseEdit = useStudioStore((s) => s.stopPoseEdit);
+  const poseEditing = useStudioStore((s) => Boolean(s.poseEdit));
+  const guard = useSelectionGuard();
 
-  const { data: catalog, isLoading: catalogLoading, mutate: mutateCatalog } = useStaffSWR<{
-    exercises: StudioExercise[];
-  }>("/api/studio/exercises");
-  // Polls while an avatar is being generated: the list route advances the Meshy job.
-  const { data: avatarData, mutate: mutateAvatars } = useStaffSWR<{ avatars: BaseAvatar[] }>("/api/studio/avatars", {
-    refreshInterval: (latest) => (latest?.avatars.some((a) => a.status === "pending" || a.status === "processing") ? 5000 : 0),
-  });
-  const { data: settingsData } = useStaffSWR<{ settings: StudioSettings }>("/api/studio/settings");
-  // Same key as the equipment dialog: one cache, one poll while a Meshy task runs.
-  const { data: equipmentData, mutate: mutateEquipment } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY);
+  const refresh = useCallback(() => Promise.all([mutateVectors(), mutateCatalog()]), [mutateVectors, mutateCatalog]);
 
-  const exercises = useMemo(() => catalog?.exercises ?? [], [catalog]);
-  const avatars = useMemo(() => avatarData?.avatars ?? [], [avatarData]);
-  const settings = settingsData?.settings ?? null;
-
-  const exercise = useMemo(() => exercises.find((e) => e.id === exerciseId) ?? null, [exercises, exerciseId]);
-  const avatar = useMemo(() => {
-    const chosen = avatars.find((a) => a.id === avatarId);
-    if (chosen?.status === "ready") return chosen;
-    const ready = avatars.filter((a) => a.status === "ready");
-    return ready.find((a) => a.is_default) ?? ready[0] ?? null;
-  }, [avatars, avatarId]);
-
-  const {
-    data: vectorData,
-    isLoading: vectorsLoading,
-    mutate: mutateVectors,
-  } = useStaffSWR<{ vectors: MovementVector[] }>(
-    exerciseId ? `/api/studio/vectors?exercise=${exerciseId}` : null,
-    {
-      refreshInterval: (latest) => (latest?.vectors.some((v) => isQueued(v.status)) ? QUEUE_POLL_MS : 0),
-    },
+  // The pipeline runs from here while any exercise has queued rows; a tick that claimed a row refreshes the lists.
+  const hasPendingHere = vectors.some((v) => v.status === "pending");
+  useWorkerDriver(
+    queuedAnywhere > 0 || hasPendingHere,
+    useCallback(
+      (claimed) => {
+        if (claimed) void refresh();
+        else void mutateVectors();
+      },
+      [refresh, mutateVectors],
+    ),
   );
-  const vectors = useMemo(() => vectorData?.vectors ?? [], [vectorData]);
 
-  // The clip the viewer plays: the chosen one, else the active ready clip of this avatar, else the latest ready.
-  const vector = useMemo(() => {
-    const chosen = vectors.find((v) => v.id === vectorId);
-    if (chosen) return chosen;
-    const ready = vectors.filter((v) => v.status === "ready" && (!avatar || v.avatar_id === avatar.id));
-    return ready.find((v) => v.active) ?? ready[0] ?? null;
-  }, [vectors, vectorId, avatar]);
-
-  // The canvas reads only this slice; setScene ignores a call whose values did not change.
-  useEffect(() => {
-    setScene(sceneFor(avatar, vector));
-  }, [avatar, vector, setScene]);
-
-  // The model in use per code, for the viewer (same identity rule: only a real change reaches the canvas).
-  useEffect(() => {
-    const models: ActiveEquipmentModels = {};
-    for (const entry of equipmentData?.equipment ?? []) {
-      const active = entry.models.find((m) => m.active && m.status === "ready" && m.model_url);
-      if (active?.model_url) {
-        models[equipmentKey(entry.kind, entry.code)] = {
-          id: active.id,
-          url: active.model_url,
-          placement: placementOf(entry.kind, entry.code, active.params),
-        };
-      }
-    }
-    setEquipmentModels(models);
-  }, [equipmentData, setEquipmentModels]);
-
-  // Deep link: /studio?exo=12 selects that exercise once the catalog is in; selection writes it back.
-  useEffect(() => {
-    if (exerciseId || !exercises.length) return;
-    const exo = Number(searchParams.get("exo"));
-    const match = exo ? exercises.find((e) => e.exo_id === exo) : null;
-    if (match) selectExercise(match.id);
-  }, [exercises, exerciseId, searchParams, selectExercise]);
-  useEffect(() => {
-    if (!exercise) return;
-    const url = new URL(window.location.href);
-    url.searchParams.set("exo", String(exercise.exo_id));
-    window.history.replaceState(null, "", url);
-  }, [exercise]);
-
-  useEffect(() => {
-    if (!avatarId && avatar) setAvatar(avatar.id);
-  }, [avatarId, avatar, setAvatar]);
-
-  // Tell the user when a generated avatar arrives (or fails) and switch to it.
-  const seenStatus = useRef<Record<string, string>>({});
-  useEffect(() => {
-    for (const a of avatars) {
-      const before = seenStatus.current[a.id];
-      seenStatus.current[a.id] = a.status;
-      if (!before || before === a.status || a.provider !== "meshy") continue;
-      if (a.status === "ready") {
-        toast.success(`${a.name} is ready (${Object.keys((a.params?.bones as object) ?? {}).length} bones recognised)`, "Avatar generated");
-        setAvatar(a.id);
-      } else if (a.status === "error") {
-        toast.error(a.error ?? "Generation failed", `${a.name} failed`);
-      }
-    }
-  }, [avatars, toast, setAvatar]);
+  const poses = usePoseSave({ exercise, avatar, settings, refresh });
+  const actions = useVectorActions({ exercise, avatar, refresh, onEditPoses: poses.onEditPoses });
 
   const [avatarDialog, setAvatarDialog] = useState(false);
+  const [manageDialog, setManageDialog] = useState(false);
   const [equipmentDialog, setEquipmentDialog] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [busyVectorId, setBusyVectorId] = useState<string | null>(null);
+  const [settingsDialog, setSettingsDialog] = useState(false);
 
-  const equipmentCodes = useMemo(
-    () => [...new Set(exercises.map((e) => e.equipment?.code).filter((c): c is string => Boolean(c) && c !== "NONE"))].sort(),
-    [exercises],
-  );
-  const supportCodes = useMemo(
-    () => [...new Set(exercises.map((e) => e.support_equipment?.code).filter((c): c is string => Boolean(c)))].sort(),
-    [exercises],
-  );
-
-  const refresh = useCallback(
-    () => Promise.all([mutateVectors(), mutateCatalog()]),
-    [mutateVectors, mutateCatalog],
-  );
-
-  // The pipeline runs from here: while this exercise has pending rows, ask the server to claim
-  // and process one every few seconds (several tabs may do it; the claim keeps the cap).
-  const hasPending = vectors.some((v) => v.status === "pending");
-  const ticking = useRef(false);
-  const tick = useCallback(async () => {
-    if (ticking.current) return;
-    ticking.current = true;
-    try {
-      await staffFetch("/api/studio/worker", { method: "POST", body: JSON.stringify({ max: 1 }) });
-    } catch {
-      // The row reports its own error on the next poll.
-    } finally {
-      ticking.current = false;
-      void refresh();
-    }
-  }, [staffFetch, refresh]);
-  useEffect(() => {
-    if (!hasPending) return;
-    void tick();
-    const id = window.setInterval(() => void tick(), WORKER_TICK_MS);
-    return () => window.clearInterval(id);
-  }, [hasPending, tick]);
-
-  const onGenerate = useCallback(
-    async (input: GenerateInput) => {
-      if (!exercise || !avatar) return;
-      setGenerating(true);
-      try {
-        const body = (await staffFetch("/api/studio/vectors", {
-          method: "POST",
-          body: JSON.stringify({
-            exercise_id: exercise.id,
-            avatar_id: avatar.id,
-            prompt: input.prompt,
-            equipment: { items: input.items },
-            params: input.params,
-            format: input.format,
-          }),
-        })) as { vector: MovementVector };
-        await refresh();
-        setVector(body.vector.id);
-        toast.success(`${exercise.display_name} queued as #${body.vector.seq}`, "Generation requested");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not enqueue the generation");
-      } finally {
-        setGenerating(false);
-      }
-    },
-    [exercise, avatar, staffFetch, refresh, setVector, toast],
-  );
-
-  // Pose editor: from an existing pose clip, or from scratch; saved as a new ready row.
-  const [savingPoses, setSavingPoses] = useState(false);
-  const onEditPoses = useCallback(
-    async (target: MovementVector) => {
-      if (!exercise || !avatar || !target.vector_url) return;
-      const res = await fetch(target.vector_url);
-      if (!res.ok) throw new Error(`Clip download failed (${res.status})`);
-      const json = (await res.json()) as unknown;
-      if (!isPoseClipJson(json)) throw new Error("Only pose clips (generated or made in the editor) can be edited");
-      const { poses, mode, weights } = posesFromClip(json);
-      const labels = Array.isArray(json.meta?.labels) && (json.meta.labels as unknown[]).every((l) => typeof l === "string") ? (json.meta.labels as string[]) : null;
-      startPoseEdit({
-        weights,
-        labels: labels && labels.length === poses.length ? labels : null,
-        vectorId: target.id,
-        sourceSeq: target.seq,
-        exerciseId: exercise.id,
-        avatarId: avatar.id,
-        items: target.equipment.items ?? [],
-        poses: structuredClone(poses),
-        mode,
-        durationS: json.duration,
-        fps: json.fps,
-        twoHanded: json.meta?.two_handed === true,
-        grip: typeof json.meta?.grip === "string" ? json.meta.grip : null,
-        mirror: true,
-        meta: { ...(json.meta ?? {}), source_vector: target.id },
-      });
-      setVector(target.id);
-    },
-    [exercise, avatar, startPoseEdit, setVector],
-  );
-  const onNewPoses = useCallback(
-    (items: EquipmentItem[]) => {
-      if (!exercise || !avatar) return;
-      startPoseEdit({
-        vectorId: null,
-        sourceSeq: null,
-        exerciseId: exercise.id,
-        avatarId: avatar.id,
-        items,
-        poses: [structuredClone(NEUTRAL_POSE)],
-        mode: "pingpong",
-        durationS: Number(settings?.pipeline.duration_s ?? 4),
-        fps: Number(settings?.pipeline.fps ?? 30),
-        twoHanded: items.some((it) => it.kind === "load" && it.socket && it.socket_b),
-        grip: null,
-        mirror: true,
-        meta: { exo_id: exercise.exo_id, avatar_code: avatar.code, rig: avatar.rig },
-      });
-    },
-    [exercise, avatar, settings, startPoseEdit],
-  );
-  const onSavePoses = useCallback(
-    async (clipJson: PoseClipJson, label: string, mode: SaveMode) => {
-      if (!poseEdit || !token) return;
-      setSavingPoses(true);
-      try {
-        const form = new FormData();
-        form.set("file", new File([JSON.stringify(clipJson)], "poses.json", { type: "application/json" }));
-        let res: Response;
-        if (mode === "replace" && poseEdit.vectorId) {
-          // Overwrite the clip of the row being edited: no new row, no copies piling up.
-          form.set("meta", JSON.stringify({ model: "pose-editor" }));
-          res = await fetch(`/api/studio/vectors/${poseEdit.vectorId}/result`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
-        } else {
-          form.set(
-            "fields",
-            JSON.stringify({ exercise_id: poseEdit.exerciseId, avatar_id: poseEdit.avatarId, equipment: { items: poseEdit.items }, prompt: label, source: "pose-editor" }),
-          );
-          res = await fetch("/api/studio/vectors/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
-        }
-        const body = (await res.json()) as { vector?: MovementVector; error?: string };
-        if (!res.ok || !body.vector) throw new Error(body.error ?? `Save failed (${res.status})`);
-        stopPoseEdit();
-        await refresh();
-        setVector(body.vector.id);
-        toast.success(mode === "replace" ? `#${body.vector.seq} updated` : `Saved as #${body.vector.seq}`, "Poses saved");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not save the poses");
-      } finally {
-        setSavingPoses(false);
-      }
-    },
-    [poseEdit, token, stopPoseEdit, refresh, setVector, toast],
-  );
-  const [drafting, setDrafting] = useState(false);
-  const replacePoses = useStudioStore((s) => s.replacePoses);
-  const onDraftPoses = useCallback(
-    async (request: DraftRequest) => {
-      if (!poseEdit) return;
-      setDrafting(true);
-      try {
-        const body = (await staffFetch("/api/studio/poses/draft", {
-          method: "POST",
-          body: JSON.stringify({
-            exercise_id: poseEdit.exerciseId,
-            avatar_id: poseEdit.avatarId,
-            items: poseEdit.items,
-            two_handed: poseEdit.twoHanded,
-            instructions: request.instructions || null,
-            pose_count: request.poseCount,
-          }),
-        })) as { draft: { poses: PoseClipJson["keyframes"][number]["angles"][]; labels: string[]; weights: number[]; mode: "pingpong" | "cycle"; notes: string; grip: string | null } };
-        replacePoses({ poses: body.draft.poses, mode: body.draft.mode, weights: body.draft.weights, labels: body.draft.labels, grip: body.draft.grip });
-        toast.success(body.draft.notes || `${body.draft.poses.length} poses drafted`, "AI draft");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not draft the poses");
-      } finally {
-        setDrafting(false);
-      }
-    },
-    [poseEdit, staffFetch, replacePoses, toast],
-  );
-
-  // A finished clip from elsewhere as a new ready row of this exercise.
-  const onUploadClip = useCallback(
-    async (file: File, items: EquipmentItem[]) => {
-      if (!exercise || !avatar || !token) return;
-      try {
-        const form = new FormData();
-        form.set("file", file);
-        form.set(
-          "fields",
-          JSON.stringify({ exercise_id: exercise.id, avatar_id: avatar.id, equipment: { items }, prompt: `Uploaded clip: ${file.name}` }),
-        );
-        const res = await fetch("/api/studio/vectors/upload", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
-        const body = (await res.json()) as { vector?: MovementVector; error?: string };
-        if (!res.ok || !body.vector) throw new Error(body.error ?? `Upload failed (${res.status})`);
-        await refresh();
-        setVector(body.vector.id);
-        toast.success(`${file.name} added as #${body.vector.seq}`, "Clip uploaded");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not upload the clip");
-      }
-    },
-    [exercise, avatar, token, refresh, setVector, toast],
-  );
-
-  const onVectorAction = useCallback(
-    async (target: MovementVector, action: VectorAction, file?: File) => {
-      setBusyVectorId(target.id);
-      try {
-        if (action === "edit") {
-          await onEditPoses(target);
-          return;
-        }
-        if (action === "delete") {
-          const ok = await confirm({
-            title: `Delete movement #${target.seq}?`,
-            description: "The row is removed from the queue and history. The clip file, if any, stays in Storage.",
-            confirmLabel: "Delete",
-            variant: "danger",
-          });
-          if (!ok) return;
-          await staffFetch(`/api/studio/vectors/${target.id}`, { method: "DELETE" });
-          if (vectorId === target.id) setVector(null);
-          toast.success(`Movement #${target.seq} deleted`);
-        } else if (action === "upload") {
-          if (!file || !token) return;
-          const form = new FormData();
-          form.set("file", file);
-          const res = await fetch(`/api/studio/vectors/${target.id}/result`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-            body: form,
-          });
-          const body = (await res.json()) as { vector?: MovementVector; error?: string };
-          if (!res.ok || !body.vector) throw new Error(body.error ?? `Upload failed (${res.status})`);
-          setVector(body.vector.id);
-          toast.success(`Clip attached to #${target.seq}`, "Movement ready");
-        } else {
-          await staffFetch(`/api/studio/vectors/${target.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ action }),
-          });
-          if (action === "activate") setVector(target.id);
-          toast.success(
-            action === "activate"
-              ? `#${target.seq} is now the clip of this exercise`
-              : action === "deactivate"
-                ? `#${target.seq} is no longer active`
-                : `#${target.seq} is back in the queue`,
-          );
-        }
-        await refresh();
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "The action failed");
-      } finally {
-        setBusyVectorId(null);
-      }
-    },
-    [confirm, staffFetch, token, vectorId, setVector, toast, refresh, onEditPoses],
-  );
+  const chooseAvatar = (id: string) => {
+    if (id === avatar?.id) return;
+    void guard("avatar").then((ok) => {
+      if (ok) setAvatar(id);
+    });
+  };
 
   return (
     <>
@@ -486,15 +132,13 @@ export function StudioWorkspace() {
                 <span className="ml-2 font-mono text-[11px] opacity-60">#{exercise.exo_id}</span>
               </span>
             ) : null}
-            <AvatarMenu
-              avatars={avatars}
-              selected={avatar}
-              onSelect={(id) => setAvatar(id)}
-              onUpload={() => setAvatarDialog(true)}
-            />
+            <AvatarMenu avatars={avatars} selected={avatar} onSelect={chooseAvatar} onAdd={() => setAvatarDialog(true)} onManage={() => setManageDialog(true)} />
             <M3Button size="sm" variant="outlined" onClick={() => setEquipmentDialog(true)} title="3D models of the catalog equipment">
               <Dumbbell className="h-3.5 w-3.5" /> Equipment
             </M3Button>
+            <IconButton label="Studio settings (pipeline, defaults, prompt template, storage)" onClick={() => setSettingsDialog(true)} disabled={!settings} className="h-8 w-8">
+              <Settings2 className="h-3.5 w-3.5" />
+            </IconButton>
           </div>
         }
         left={<CatalogSidebar exercises={exercises} loading={catalogLoading} />}
@@ -504,44 +148,56 @@ export function StudioWorkspace() {
             <RigEditor
               avatar={avatar}
               onSaved={() => {
-                void mutateAvatars();
-                void mutateEquipment();
+                void data.mutateAvatars();
+                void data.mutateEquipment();
               }}
             />
           </>
         }
         right={
-          poseEdit ? (
-            <PoseEditor onSave={onSavePoses} saving={savingPoses} onDraft={onDraftPoses} drafting={drafting} />
+          poseEditing ? (
+            <PoseEditor onSave={poses.onSavePoses} saving={poses.saving} onDraft={poses.onDraftPoses} drafting={poses.drafting} />
           ) : (
-          <InspectorPanel
-            key={`${exercise?.id ?? "none"}:${avatar?.id ?? "none"}`}
-            exercise={exercise}
-            avatar={avatar}
-            settings={settings}
-            vectors={vectors}
-            vectorsLoading={vectorsLoading}
-            equipmentCodes={equipmentCodes}
-            supportCodes={supportCodes}
-            generating={generating}
-            busyVectorId={busyVectorId}
-            onGenerate={onGenerate}
-            onVectorAction={onVectorAction}
-            onUploadClip={onUploadClip}
-            onNewPoses={onNewPoses}
-          />
+            <InspectorPanel
+              // Remounted per exercise (fresh draft); an avatar change keeps what you typed.
+              key={exercise?.id ?? "none"}
+              exercise={exercise}
+              avatar={avatar}
+              settings={settings}
+              vectors={vectors}
+              vectorsLoading={vectorsLoading}
+              equipmentCodes={equipmentCodes}
+              supportCodes={supportCodes}
+              generating={actions.generating}
+              busyVectorId={actions.busyVectorId}
+              onGenerate={actions.onGenerate}
+              onVectorAction={actions.onVectorAction}
+              onUploadClip={actions.onUploadClip}
+              onNewPoses={poses.onNewPoses}
+            />
           )
         }
       />
-      {equipmentDialog ? <EquipmentDialog onClose={() => setEquipmentDialog(false)} onChanged={() => void mutateEquipment()} /> : null}
+      {equipmentDialog ? <EquipmentDialog onClose={() => setEquipmentDialog(false)} onChanged={() => void data.mutateEquipment()} /> : null}
+      {settingsDialog && settings ? <SettingsDialog settings={settings} onClose={() => setSettingsDialog(false)} onSaved={() => void data.mutateSettings()} /> : null}
+      {manageDialog ? (
+        <AvatarManageDialog
+          avatars={avatars}
+          onClose={() => setManageDialog(false)}
+          onChanged={() => {
+            void data.mutateAvatars();
+            void data.mutateCatalog();
+          }}
+        />
+      ) : null}
       {avatarDialog ? (
         <AvatarDialog
           hasDefault={avatars.some((a) => a.is_default)}
           onClose={() => setAvatarDialog(false)}
           onCreated={(created) => {
             setAvatarDialog(false);
-            void mutateAvatars();
-            setAvatar(created.id);
+            void data.mutateAvatars();
+            if (created.status === "ready") setAvatar(created.id);
           }}
         />
       ) : null}

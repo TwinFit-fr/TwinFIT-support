@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Clock3,
   Loader2,
+  OctagonX,
   PenLine,
   Plus,
   RotateCw,
@@ -15,38 +16,24 @@ import {
   Wand2,
 } from "lucide-react";
 import { useStudioStore } from "@/lib/studio/store";
+import { relativeTime } from "@/lib/studio/format";
 import { defaultEquipmentItems, equipmentSentence, fillPromptTemplate } from "@/lib/studio/prompt";
-import type {
-  BaseAvatar,
-  EquipmentItem,
-  MovementVector,
-  StudioExercise,
-  StudioSettings,
-  VectorFormat,
-} from "@/lib/studio/types";
-import { VECTOR_FORMATS, VECTOR_STATUS_LABEL } from "@/lib/studio/types";
+import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
+import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
-import { Chip, EmptyState, Field, IconButton, M3Button, Section, Select, StatusDot, TextArea, TextInput } from "./ui";
+import { Chip, EmptyState, Field, IconButton, M3Button, NumberField, Section, Select, StatusDot, TextArea } from "./ui";
 
 export type GenerateInput = {
   prompt: string;
   items: EquipmentItem[];
-  params: { fps: number; duration_s: number; loop: boolean };
-  format: VectorFormat;
+  params: { fps: number; duration_s: number; loop: boolean; loop_mode?: "cycle" | "pingpong"; pose_count?: number; model?: string };
 };
 
-export type VectorAction = "activate" | "deactivate" | "requeue" | "upload" | "delete" | "edit";
+/** stop = mark a queued / running row failed; prompt = change a queued row's prompt (payload: the text). */
+export type VectorAction = "activate" | "deactivate" | "requeue" | "upload" | "delete" | "edit" | "stop" | "prompt";
 
 /** Select value for an item held with both hands (socket hand_r + socket_b hand_l). */
 const BOTH_HANDS = "__both__";
-
-function relativeTime(iso: string): string {
-  const seconds = Math.round((Date.now() - Date.parse(iso)) / 1000);
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
-  if (seconds < 86400) return `${Math.round(seconds / 3600)} h ago`;
-  return `${Math.round(seconds / 86400)} d ago`;
-}
 
 function ItemRow({
   item,
@@ -62,48 +49,71 @@ function ItemRow({
   onRemove: () => void;
 }) {
   return (
-    <li className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded-xl bg-(--m3-surface-container) p-2">
-      <Chip tone={item.kind === "load" ? "primary" : "neutral"} className="h-6 px-2">
-        {item.kind}
-      </Chip>
-      <Select
-        value={item.code}
-        onChange={(e) => onChange({ ...item, code: e.target.value })}
-        className="h-8 py-0 text-xs"
-        aria-label="Equipment code"
-      >
-        {!codes.includes(item.code) ? <option value={item.code}>{item.code}</option> : null}
-        {codes.map((code) => (
-          <option key={code} value={code}>
-            {code}
-          </option>
-        ))}
-      </Select>
-      {item.kind === "load" ? (
+    <li className="space-y-1.5 rounded-xl bg-(--m3-surface-container) p-2">
+      <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2">
+        <Chip tone={item.kind === "load" ? "primary" : "neutral"} className="h-6 px-2">
+          {item.kind}
+        </Chip>
         <Select
-          value={item.socket_b ? BOTH_HANDS : (item.socket ?? "")}
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value === BOTH_HANDS) onChange({ ...item, socket: "hand_r", socket_b: "hand_l" });
-            else onChange({ ...item, socket: value || undefined, socket_b: undefined });
-          }}
-          className="h-8 w-28 py-0 text-xs"
-          aria-label="Socket"
+          value={item.code}
+          onChange={(e) => onChange({ ...item, code: e.target.value })}
+          className="h-8 py-0 text-xs"
+          aria-label="Equipment code"
         >
-          <option value="">no socket</option>
-          {sockets.includes("hand_l") && sockets.includes("hand_r") ? <option value={BOTH_HANDS}>both hands</option> : null}
-          {sockets.map((id) => (
-            <option key={id} value={id}>
-              {id}
+          {!codes.includes(item.code) ? <option value={item.code}>{item.code}</option> : null}
+          {codes.map((code) => (
+            <option key={code} value={code}>
+              {code}
             </option>
           ))}
         </Select>
-      ) : (
-        <span className="w-28 text-center text-[11px] text-(--m3-on-surface-variant)">floor</span>
-      )}
-      <IconButton label="Remove" onClick={onRemove} className="h-8 w-8">
-        <Trash2 className="h-3.5 w-3.5" />
-      </IconButton>
+        {item.kind === "load" ? (
+          <Select
+            value={item.socket_b ? BOTH_HANDS : (item.socket ?? "")}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === BOTH_HANDS) onChange({ ...item, socket: "hand_r", socket_b: "hand_l" });
+              else onChange({ ...item, socket: value || undefined, socket_b: undefined });
+            }}
+            className="h-8 w-28 py-0 text-xs"
+            aria-label="Socket"
+          >
+            <option value="">no socket</option>
+            {sockets.includes("hand_l") && sockets.includes("hand_r") ? <option value={BOTH_HANDS}>both hands</option> : null}
+            {sockets.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <span className="w-28 text-center text-[11px] text-(--m3-on-surface-variant)">floor</span>
+        )}
+        <IconButton label="Remove" onClick={onRemove} className="h-8 w-8">
+          <Trash2 className="h-3.5 w-3.5" />
+        </IconButton>
+      </div>
+      {item.kind === "load" ? (
+        <div className="flex items-center gap-3 pl-1 text-[10px] text-(--m3-on-surface-variant)">
+          <label className="flex items-center gap-1" title="How many of this item (two dumbbells, …)">
+            count
+            <NumberField aria-label="Count" min={1} max={20} step={1} value={item.count ?? 1} onCommit={(v) => onChange({ ...item, count: Math.round(v) })} className="h-6 w-12 px-1 py-0 text-[11px]" />
+          </label>
+          <label className="flex items-center gap-1" title="Load in kilograms (a hint for the prompt; 0 = unspecified)">
+            kg
+            <NumberField
+              aria-label="Weight in kilograms"
+              min={0}
+              max={1000}
+              step={0.5}
+              digits={1}
+              value={item.weight_kg ?? 0}
+              onCommit={(v) => onChange({ ...item, weight_kg: v > 0 ? v : undefined })}
+              className="h-6 w-14 px-1 py-0 text-[11px]"
+            />
+          </label>
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -120,10 +130,14 @@ function VectorRow({
   selected: boolean;
   busy: boolean;
   onSelect: () => void;
-  onAction: (action: VectorAction, file?: File) => void;
+  onAction: (action: VectorAction, payload?: File | string) => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  const [promptText, setPromptText] = useState(vector.prompt);
   const ready = vector.status === "ready";
+  const running = vector.status === "processing";
+  const queued = vector.status === "pending";
   return (
     <li
       className={cn(
@@ -131,7 +145,7 @@ function VectorRow({
         selected ? "bg-(--m3-secondary-container) text-(--m3-on-secondary-container)" : "bg-(--m3-surface-container)",
       )}
     >
-      <button type="button" onClick={onSelect} className="studio-state flex w-full cursor-pointer items-start gap-3 rounded-xl px-3 pt-2.5 pb-1.5 text-left">
+      <button type="button" onClick={onSelect} aria-pressed={selected} className="studio-state flex w-full cursor-pointer items-start gap-3 rounded-xl px-3 pt-2.5 pb-1.5 text-left">
         <StatusDot status={vector.status} className="mt-1.5" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-xs">
@@ -163,6 +177,27 @@ function VectorRow({
           </div>
         </div>
       </button>
+      {editingPrompt ? (
+        <div className="space-y-1.5 px-3 pb-2">
+          <TextArea rows={3} value={promptText} onChange={(e) => setPromptText(e.target.value)} aria-label="Prompt of this queued row" className="text-[11px]" />
+          <div className="flex justify-end gap-1">
+            <M3Button size="sm" variant="text" onClick={() => setEditingPrompt(false)}>
+              Cancel
+            </M3Button>
+            <M3Button
+              size="sm"
+              variant="tonal"
+              disabled={!promptText.trim() || promptText.trim() === vector.prompt}
+              onClick={() => {
+                onAction("prompt", promptText);
+                setEditingPrompt(false);
+              }}
+            >
+              Save prompt
+            </M3Button>
+          </div>
+        </div>
+      ) : null}
       <div className="flex items-center gap-0.5 px-2 pb-1.5">
         {busy ? <Loader2 className="ml-2 h-3.5 w-3.5 animate-spin text-(--m3-on-surface-variant)" /> : null}
         {ready ? (
@@ -177,39 +212,53 @@ function VectorRow({
           </IconButton>
         ) : null}
         {ready && vector.format === "json" ? (
-          <IconButton label="Edit the poses of this clip (opens the pose editor; saves as a new version)" onClick={() => onAction("edit")} disabled={busy} className="h-7 w-7">
+          <IconButton label="Edit the poses of this clip (Save overwrites it; Save as copy keeps it)" onClick={() => onAction("edit")} disabled={busy} className="h-7 w-7">
             <PenLine className="h-3.5 w-3.5" />
           </IconButton>
         ) : null}
-        {!ready && vector.status === "error" ? (
+        {queued ? (
+          <IconButton label="Edit the prompt before it runs" onClick={() => setEditingPrompt((v) => !v)} disabled={busy} className="h-7 w-7">
+            <PenLine className="h-3.5 w-3.5" />
+          </IconButton>
+        ) : null}
+        {vector.status === "error" ? (
           <IconButton label="Put back in the queue" onClick={() => onAction("requeue")} disabled={busy} className="h-7 w-7">
             <RotateCw className="h-3.5 w-3.5" />
           </IconButton>
         ) : null}
-        <IconButton
-          label={
-            ready
-              ? "Replace the clip with a file (.glb, .gltf, .fbx, .bvh, .json)"
-              : "Attach a finished clip (.glb, .gltf, .fbx, .bvh, .json): a DeepMotion or Mixamo export is retargeted to the avatar"
-          }
-          onClick={() => fileInput.current?.click()}
-          disabled={busy}
-          className="h-7 w-7"
-        >
-          <Upload className="h-3.5 w-3.5" />
-        </IconButton>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".glb,.gltf,.fbx,.bvh,.json"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (file) onAction("upload", file);
-          }}
-        />
-        {!vector.active ? (
+        {queued || running ? (
+          <IconButton label={running ? "Stop: mark this run failed (a worker that died, or one you do not want to wait for)" : "Take it out of the queue (marked failed; delete it after)"} onClick={() => onAction("stop")} disabled={busy} className="h-7 w-7">
+            <OctagonX className="h-3.5 w-3.5" />
+          </IconButton>
+        ) : null}
+        {!running ? (
+          <>
+            <IconButton
+              label={
+                ready
+                  ? "Replace the clip with a file (.glb, .gltf, .fbx, .bvh, .json)"
+                  : "Attach a finished clip (.glb, .gltf, .fbx, .bvh, .json): a DeepMotion or Mixamo export is retargeted to the avatar"
+              }
+              onClick={() => fileInput.current?.click()}
+              disabled={busy}
+              className="h-7 w-7"
+            >
+              <Upload className="h-3.5 w-3.5" />
+            </IconButton>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".glb,.gltf,.fbx,.bvh,.json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) onAction("upload", file);
+              }}
+            />
+          </>
+        ) : null}
+        {!vector.active && !running ? (
           <IconButton label="Delete" onClick={() => onAction("delete")} disabled={busy} className="ml-auto h-7 w-7">
             <Trash2 className="h-3.5 w-3.5" />
           </IconButton>
@@ -218,6 +267,8 @@ function VectorRow({
     </li>
   );
 }
+
+const POSE_COUNTS = ["auto", "2", "3", "4", "5", "6"] as const;
 
 /**
  * Generator and inspector of the selected exercise. Draft state is local (remounted per exercise
@@ -248,23 +299,28 @@ export function InspectorPanel({
   generating: boolean;
   busyVectorId: string | null;
   onGenerate: (input: GenerateInput) => Promise<void>;
-  onVectorAction: (vector: MovementVector, action: VectorAction, file?: File) => Promise<void>;
+  onVectorAction: (vector: MovementVector, action: VectorAction, payload?: File | string) => Promise<void>;
   /** A clip file as a new ready row (a DeepMotion / SayMotion / Mixamo export). */
   onUploadClip: (file: File, items: EquipmentItem[]) => Promise<void>;
-  /** Open the pose editor on a fresh three-pose clip for this exercise. */
+  /** Open the pose editor on a clip started from one neutral pose, for this exercise. */
   onNewPoses: (items: EquipmentItem[]) => void;
 }) {
   const sockets = useMemo(() => avatar?.sockets ?? [], [avatar]);
   const socketIds = useMemo(() => sockets.map((s) => s.id), [sockets]);
   const [userPrompt, setUserPrompt] = useState("");
-  const [items, setItems] = useState<EquipmentItem[]>(() =>
-    exercise ? defaultEquipmentItems(exercise, sockets) : [],
-  );
+  const [items, setItems] = useState<EquipmentItem[]>(() => (exercise ? defaultEquipmentItems(exercise, sockets) : []));
   const [fps, setFps] = useState<number>(Number(settings?.pipeline.fps ?? 30));
   const [duration, setDuration] = useState<number>(Number(settings?.pipeline.duration_s ?? 4));
   const [loop, setLoop] = useState<boolean>(settings?.pipeline.loop !== false);
-  const [format, setFormat] = useState<VectorFormat>("glb");
+  const [loopMode, setLoopMode] = useState<"auto" | "pingpong" | "cycle">(
+    settings?.pipeline.loop_mode === "cycle" || settings?.pipeline.loop_mode === "pingpong" ? settings.pipeline.loop_mode : "auto",
+  );
+  const [poseCount, setPoseCount] = useState<(typeof POSE_COUNTS)[number]>(
+    typeof settings?.pipeline.pose_count === "number" ? (String(settings.pipeline.pose_count) as (typeof POSE_COUNTS)[number]) : "auto",
+  );
+  const [model, setModel] = useState<string>(typeof settings?.pipeline.model === "string" ? settings.pipeline.model : "");
   const [showPrompt, setShowPrompt] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [uploadingClip, setUploadingClip] = useState(false);
   const clipInput = useRef<HTMLInputElement>(null);
 
@@ -298,6 +354,19 @@ export function InspectorPanel({
   }
 
   const canGenerate = Boolean(avatar) && finalPrompt.length > 0 && !generating;
+  const generate = () =>
+    onGenerate({
+      prompt: finalPrompt,
+      items,
+      params: {
+        fps,
+        duration_s: duration,
+        loop,
+        ...(loopMode !== "auto" ? { loop_mode: loopMode } : {}),
+        ...(poseCount !== "auto" ? { pose_count: Number(poseCount) } : {}),
+        ...(model.trim() ? { model: model.trim() } : {}),
+      },
+    });
 
   return (
     <div className="studio-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -326,11 +395,13 @@ export function InspectorPanel({
             rows={4}
             value={userPrompt}
             onChange={(e) => setUserPrompt(e.target.value)}
+            aria-label="Movement prompt"
             placeholder="Describe tempo, range of motion, stance, breathing cues… The exercise, its description and the equipment are added for you."
           />
           <button
             type="button"
             onClick={() => setShowPrompt((v) => !v)}
+            aria-expanded={showPrompt}
             className="mt-2 flex cursor-pointer items-center gap-1 text-[11px] text-(--m3-primary)"
           >
             <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showPrompt && "rotate-180")} />
@@ -393,23 +464,16 @@ export function InspectorPanel({
         <Section title="Pipeline">
           <div className="grid grid-cols-3 gap-2">
             <Field label="FPS">
-              <TextInput type="number" min={1} max={240} value={fps} onChange={(e) => setFps(Number(e.target.value))} />
+              <NumberField min={1} max={240} step={1} value={fps} onCommit={(v) => setFps(Math.round(v))} />
             </Field>
             <Field label="Seconds">
-              <TextInput
-                type="number"
-                min={0.5}
-                max={60}
-                step={0.5}
-                value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
-              />
+              <NumberField min={0.5} max={60} step={0.5} digits={1} value={duration} onCommit={setDuration} />
             </Field>
-            <Field label="Format">
-              <Select value={format} onChange={(e) => setFormat(e.target.value as VectorFormat)}>
-                {VECTOR_FORMATS.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
+            <Field label="Poses">
+              <Select value={poseCount} onChange={(e) => setPoseCount(e.target.value as (typeof POSE_COUNTS)[number])} title="How many key poses the AI drafts">
+                {POSE_COUNTS.map((k) => (
+                  <option key={k} value={k}>
+                    {k === "auto" ? "auto" : `${k} poses`}
                   </option>
                 ))}
               </Select>
@@ -424,18 +488,37 @@ export function InspectorPanel({
             />
             Seamless loop (ends in the start position)
           </label>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            aria-expanded={showAdvanced}
+            className="mt-2 flex cursor-pointer items-center gap-1 text-[11px] text-(--m3-primary)"
+          >
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-180")} />
+            Advanced
+          </button>
+          {showAdvanced ? (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Field label="Loop shape" hint="Boomerang: there and back; cycle: last pose returns to the first">
+                <Select value={loopMode} onChange={(e) => setLoopMode(e.target.value as typeof loopMode)} disabled={!loop}>
+                  <option value="auto">model&apos;s choice</option>
+                  <option value="pingpong">boomerang</option>
+                  <option value="cycle">cycle</option>
+                </Select>
+              </Field>
+              <Field label="Model" hint="OpenAI model that drafts the poses (empty = default)">
+                <input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="gpt-5-mini"
+                  className="w-full rounded-xl border border-(--m3-outline) bg-(--m3-surface-container-high) px-3.5 py-2.5 text-sm text-(--m3-on-surface) outline-none focus:border-(--m3-primary)"
+                />
+              </Field>
+            </div>
+          ) : null}
         </Section>
 
-        <M3Button
-          variant="filled"
-          size="lg"
-          className="w-full"
-          disabled={!canGenerate}
-          busy={generating}
-          onClick={() =>
-            onGenerate({ prompt: finalPrompt, items, params: { fps, duration_s: duration, loop }, format })
-          }
-        >
+        <M3Button variant="filled" size="lg" className="w-full" disabled={!canGenerate} busy={generating} onClick={generate}>
           <Wand2 className="h-4 w-4" />
           {avatar ? "Generate movement" : "Upload an avatar first"}
         </M3Button>
@@ -444,7 +527,7 @@ export function InspectorPanel({
           title="Queue & history"
           action={
             <div className="flex items-center gap-2">
-              <M3Button size="sm" variant="text" disabled={!avatar} onClick={() => onNewPoses(items)} title="Build the movement by hand: three poses you set with sliders, played in a loop">
+              <M3Button size="sm" variant="text" disabled={!avatar} onClick={() => onNewPoses(items)} title="Build the movement by hand: start from one pose, add the next ones, play them as a loop">
                 <PenLine className="h-3.5 w-3.5" /> New poses
               </M3Button>
               <M3Button
@@ -489,7 +572,7 @@ export function InspectorPanel({
                   selected={vector.id === vectorId}
                   busy={busyVectorId === vector.id}
                   onSelect={() => setVector(vector.id === vectorId ? null : vector.id)}
-                  onAction={(action, file) => void onVectorAction(vector, action, file)}
+                  onAction={(action, payload) => void onVectorAction(vector, action, payload)}
                 />
               ))}
             </ul>

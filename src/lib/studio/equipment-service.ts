@@ -4,7 +4,8 @@
  * uploaded model. Called by the /api/studio/equipment routes with the staff JWT.
  */
 
-import { defaultSizeM, defaultTexturePrompt } from "./equipment";
+import { randomUUID } from "node:crypto";
+import { defaultSizeM, defaultTexturePrompt } from "./equipment-sizes";
 import {
   MESHY_DEFAULTS,
   MeshyError,
@@ -40,9 +41,12 @@ function findEntry(list: StudioEquipment[], kind: EquipmentKind, code: string): 
   return entry;
 }
 
-function modelPath(model: Pick<EquipmentModel, "kind" | "code" | "id">, ext: string): string {
-  return `equipment/${model.kind}/${model.code.toLowerCase()}/${model.id}.${ext}`;
+function modelPath(model: Pick<EquipmentModel, "kind" | "code"> & { id?: string }, ext: string): string {
+  return `equipment/${model.kind}/${model.code.toLowerCase()}/${model.id ?? randomUUID()}.${ext}`;
 }
+
+/** A claimed finish whose request died: after this long the claim is released so the next poll stores the result again. */
+const CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Enqueue one generation: a row in processing with the Meshy task id, or in error when Meshy refused. */
 export async function generateEquipmentModel(token: string, input: GenerateEquipmentInput): Promise<EquipmentModel> {
@@ -124,12 +128,20 @@ export async function syncProcessingEquipment(token: string): Promise<number> {
   const rows = await listProcessingEquipmentModels(token);
   let changed = 0;
   for (const row of rows) {
-    if (!row.task_id || row.progress >= 100) continue; // 100 = another request is storing the result
+    if (!row.task_id) continue;
+    if (row.progress >= 100) {
+      // 100 = another request is storing the result; unless that request died a while ago.
+      if (Date.now() - Date.parse(row.updated_at) > CLAIM_TIMEOUT_MS) {
+        await updateEquipmentModel(token, row.id, { progress: 99 });
+        changed += 1;
+      }
+      continue;
+    }
     let task;
     try {
       task = await getImageTo3dTask(row.task_id);
     } catch (error) {
-      if (error instanceof MeshyError && error.status === 404) {
+      if (error instanceof MeshyError && error.upstreamStatus === 404) {
         await updateEquipmentModel(token, row.id, { status: "error", error: "Meshy task not found" });
         changed += 1;
       }
@@ -167,22 +179,24 @@ export async function storeUploadedEquipmentModel(
   input: { kind: EquipmentKind; code: string; bytes: Buffer; ext: "glb" | "gltf" },
 ): Promise<EquipmentModel> {
   const entry = findEntry(await listEquipment(token), input.kind, input.code);
-  const row = await createEquipmentModel(token, {
-    kind: input.kind,
-    code: input.code,
-    name: entry.name,
-    provider: "upload",
-    status: "pending",
-    params: { size_m: defaultSizeM(input.kind, input.code) },
-  });
+  // The file first, the row after: a failed upload leaves nothing behind, a failed insert only a file to drop.
   const file = await uploadStudioFile({
     token,
     bytes: input.bytes,
     mimeType: input.ext === "glb" ? "model/gltf-binary" : "model/gltf+json",
-    name: modelPath(row, input.ext),
+    name: modelPath({ kind: input.kind, code: input.code }, input.ext),
   });
   try {
-    return await updateEquipmentModel(token, row.id, { status: "ready", file_id: file.id, model_url: file.url });
+    return await createEquipmentModel(token, {
+      kind: input.kind,
+      code: input.code,
+      name: entry.name,
+      provider: "upload",
+      status: "ready",
+      file_id: file.id,
+      model_url: file.url,
+      params: { size_m: defaultSizeM(input.kind, input.code) },
+    });
   } catch (error) {
     await deleteStudioFile(token, file.id);
     throw error;

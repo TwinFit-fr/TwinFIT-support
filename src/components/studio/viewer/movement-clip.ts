@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import * as THREE from "three";
 import { isPoseClipJson, type PoseClipJson } from "@/lib/studio/anatomy";
+import { fetchStudioAsset } from "@/lib/studio/asset-auth";
 import { loadMocap, type MocapClip } from "@/lib/studio/mocap";
 import type { VectorFormat } from "@/lib/studio/types";
 
@@ -74,7 +75,7 @@ export function useMovementClip(url: string | null, format: VectorFormat | null)
         return loadMocap(url, format);
       }
       if (format === "json") {
-        const res = await fetch(url);
+        const res = await fetchStudioAsset(url);
         if (!res.ok) throw new Error(`Clip download failed (${res.status})`);
         const data = (await res.json()) as unknown;
         if (isPoseClipJson(data)) return data;

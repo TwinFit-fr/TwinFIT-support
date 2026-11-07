@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { VectorStatus } from "@/lib/studio/types";
 
@@ -47,9 +48,10 @@ export function M3Button({
   );
 }
 
+/** `active` makes the button a toggle (announced with aria-pressed); leave it out for a plain action. */
 export function IconButton({
   className,
-  active = false,
+  active,
   label,
   children,
   ...props
@@ -59,7 +61,7 @@ export function IconButton({
       type="button"
       aria-label={label}
       title={label}
-      aria-pressed={active}
+      aria-pressed={active === undefined ? undefined : active}
       className={cn(
         "studio-state inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-(--m3-primary)/60 disabled:cursor-not-allowed disabled:opacity-40",
         active
@@ -74,30 +76,98 @@ export function IconButton({
   );
 }
 
+/**
+ * A caption over a control. A single input is wrapped in a <label>; `group` renders a labelled
+ * group instead (for a segmented control or several inputs, where a label would activate the
+ * first button when its caption is clicked).
+ */
 export function Field({
   label,
   hint,
   className,
+  group = false,
   children,
 }: {
   label: string;
   hint?: string;
   className?: string;
+  group?: boolean;
   children: React.ReactNode;
 }) {
+  const id = useId();
+  const caption = (
+    <span id={group ? id : undefined} className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.12em] text-(--m3-on-surface-variant)">
+      {label}
+    </span>
+  );
+  const hintNode = hint ? <span className="mt-1 block text-[11px] text-(--m3-on-surface-variant)/80">{hint}</span> : null;
+  if (group) {
+    return (
+      <div role="group" aria-labelledby={id} className={cn("block", className)}>
+        {caption}
+        {children}
+        {hintNode}
+      </div>
+    );
+  }
   return (
     <label className={cn("block", className)}>
-      <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.12em] text-(--m3-on-surface-variant)">
-        {label}
-      </span>
+      {caption}
       {children}
-      {hint ? <span className="mt-1 block text-[11px] text-(--m3-on-surface-variant)/80">{hint}</span> : null}
+      {hintNode}
     </label>
   );
 }
 
 const fieldBase =
-  "w-full rounded-xl border border-transparent bg-(--m3-surface-container-high) px-3.5 py-2.5 text-sm text-(--m3-on-surface) outline-none transition-colors placeholder:text-(--m3-on-surface-variant)/60 hover:bg-(--m3-surface-container-highest) focus:border-(--m3-primary) focus:bg-(--m3-surface-container-highest) disabled:opacity-50";
+  "w-full rounded-xl border border-(--m3-outline) bg-(--m3-surface-container-high) px-3.5 py-2.5 text-sm text-(--m3-on-surface) outline-none transition-colors placeholder:text-(--m3-on-surface-variant)/80 hover:bg-(--m3-surface-container-highest) focus:border-(--m3-primary) focus:bg-(--m3-surface-container-highest) disabled:opacity-50";
+
+/**
+ * A number input that is pleasant to type in: it shows the value rounded while idle, keeps what
+ * you type while focused (decimals, a cleared field) and commits on blur or Enter; an empty or
+ * unparsable field goes back to the last value instead of becoming 0.
+ */
+export function NumberField({
+  value,
+  onCommit,
+  digits = 0,
+  className,
+  ...props
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & { value: number; onCommit: (value: number) => void; digits?: number }) {
+  const [text, setText] = useState<string | null>(null);
+  // A new value from outside drops what was being typed (state adjusted during render, no effect).
+  const [seen, setSeen] = useState(value);
+  if (value !== seen) {
+    setSeen(value);
+    setText(null);
+  }
+  const shown = text ?? (Number.isFinite(value) ? value.toFixed(digits) : "");
+  const commit = () => {
+    if (text === null) return;
+    const parsed = Number(text.replace(",", "."));
+    setText(null);
+    if (text.trim() !== "" && Number.isFinite(parsed) && parsed !== value) {
+      const min = props.min !== undefined ? Number(props.min) : -Infinity;
+      const max = props.max !== undefined ? Number(props.max) : Infinity;
+      onCommit(Math.min(max, Math.max(min, parsed)));
+    }
+  };
+  return (
+    <input
+      type="number"
+      inputMode="decimal"
+      className={cn(fieldBase, "font-mono tabular-nums", className)}
+      value={shown}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") setText(null);
+      }}
+      {...props}
+    />
+  );
+}
 
 export function TextInput({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(fieldBase, className)} {...props} />;

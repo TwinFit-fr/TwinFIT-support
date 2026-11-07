@@ -3,10 +3,10 @@ import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import { CLIP_EXTENSIONS, describeKeyframeJson } from "@/lib/studio/clip-files";
 import { createVector, deleteVector, updateVector } from "@/lib/studio/queries";
-import { uploadStudioFile } from "@/lib/studio/storage";
+import { routeError } from "@/lib/studio/route-error";
+import { MAX_CLIP_BYTES } from "@/lib/studio/schemas";
+import { deleteStudioFile, uploadStudioFile } from "@/lib/studio/storage";
 import type { MovementEquipment } from "@/lib/studio/types";
-
-const MAX_CLIP_BYTES = 100 * 1024 * 1024;
 
 const fieldsSchema = z.object({
   exercise_id: z.string().uuid(),
@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       not_before: "2999-01-01T00:00:00Z",
     });
 
+    let uploadedId: string | null = null;
     try {
       const bytes = Buffer.from(await file.arrayBuffer());
       const described = kind.format === "json" ? describeKeyframeJson(bytes.toString("utf8")) : null;
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
         mimeType: kind.mime,
         name: `clips/${vector.exercise_id}/${vector.id}.${ext}`,
       });
+      uploadedId = uploaded.id;
       const updated = await updateVector(token, vector.id, {
         status: "ready",
         error: null,
@@ -68,12 +70,12 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({ vector: updated }, { status: 201 });
     } catch (error) {
+      // Neither a zombie row nor an orphan file: undo both (best effort).
       await deleteVector(token, vector.id).catch(() => undefined);
+      if (uploadedId) await deleteStudioFile(token, uploadedId);
       throw error;
     }
   } catch (error) {
-    if (error instanceof Response) return error;
-    if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to upload the clip" }, { status: 500 });
+    return routeError(error, "Failed to upload the clip");
   }
 }

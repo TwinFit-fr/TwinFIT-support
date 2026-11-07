@@ -5,7 +5,13 @@ import {
   STUDIO_AVATAR,
   STUDIO_AVATARS,
   STUDIO_AVATARS_PROCESSING,
+  STUDIO_BUCKET_FILES,
+  STUDIO_CLAIM_AVATAR_STEP,
+  STUDIO_DELETE_AVATAR,
+  STUDIO_FINISH_DEFAULT_AVATAR,
+  STUDIO_SET_DEFAULT_AVATAR,
   STUDIO_STYLE_CHARACTER,
+  STUDIO_UPDATE_SETTINGS,
   STUDIO_CLAIM,
   STUDIO_CLAIM_EQUIPMENT_FINISH,
   STUDIO_CREATE_EQUIPMENT_MODEL,
@@ -133,11 +139,64 @@ export async function updateAvatar(token: string, id: string, set: AvatarPatch):
   return row;
 }
 
+/** True when this request won the step (see STUDIO_CLAIM_AVATAR_STEP). */
+export async function claimAvatarStep(token: string, id: string, step: { below: number; to: number; rigTaskNull: boolean }): Promise<boolean> {
+  const data = await staffGql<{ update_animation_studio_base_avatars: { affected_rows: number } }>(token, STUDIO_CLAIM_AVATAR_STEP, { id, ...step });
+  return data.update_animation_studio_base_avatars.affected_rows === 1;
+}
+
+/** Finish an avatar and make it the default in one transaction. */
+export async function finishDefaultAvatar(token: string, id: string, set: AvatarPatch): Promise<BaseAvatar> {
+  const data = await staffGql<{ set: BaseAvatar | null }>(token, STUDIO_FINISH_DEFAULT_AVATAR, { id, set: { ...set, is_default: true } });
+  if (!data.set) throw new Error("Avatar not found");
+  return data.set;
+}
+
+export async function setDefaultAvatar(token: string, id: string): Promise<BaseAvatar> {
+  const data = await staffGql<{ set: BaseAvatar | null }>(token, STUDIO_SET_DEFAULT_AVATAR, { id });
+  if (!data.set) throw new Error("Avatar not found");
+  return data.set;
+}
+
+export async function deleteAvatar(token: string, id: string): Promise<{ id: string; file_id: string | null } | null> {
+  const data = await staffGql<{ delete_animation_studio_base_avatars_by_pk: { id: string; file_id: string | null } | null }>(token, STUDIO_DELETE_AVATAR, { id });
+  return data.delete_animation_studio_base_avatars_by_pk;
+}
+
 export async function getStudioSettings(token: string): Promise<StudioSettings> {
   const data = await staffGql<{ animation_studio_settings: StudioSettings[] }>(token, STUDIO_SETTINGS);
   const settings = data.animation_studio_settings[0];
   if (!settings) throw new Error("animation_studio.settings has no row");
   return settings;
+}
+
+export type SettingsPatch = Partial<Pick<StudioSettings, "max_concurrency" | "stale_after_minutes" | "pipeline" | "prompt_template">>;
+
+export async function updateStudioSettings(token: string, set: SettingsPatch): Promise<StudioSettings> {
+  const data = await staffGql<{ update_animation_studio_settings: { returning: StudioSettings[] } }>(token, STUDIO_UPDATE_SETTINGS, { set });
+  const row = data.update_animation_studio_settings.returning[0];
+  if (!row) throw new Error("animation_studio.settings has no row");
+  return row;
+}
+
+export type BucketFile = { id: string; name: string; size: number | null; createdAt: string };
+
+/** Files of 3d-workspace that no Studio row points at. */
+export async function listOrphanFiles(token: string): Promise<BucketFile[]> {
+  const data = await staffGql<{
+    files: BucketFile[];
+    animation_studio_base_avatars: { file_id: string | null }[];
+    animation_studio_movement_vectors: { file_id: string | null }[];
+    animation_studio_equipment_models: { file_id: string | null; thumbnail_file_id: string | null }[];
+  }>(token, STUDIO_BUCKET_FILES);
+  const used = new Set<string>();
+  for (const r of data.animation_studio_base_avatars) if (r.file_id) used.add(r.file_id);
+  for (const r of data.animation_studio_movement_vectors) if (r.file_id) used.add(r.file_id);
+  for (const r of data.animation_studio_equipment_models) {
+    if (r.file_id) used.add(r.file_id);
+    if (r.thumbnail_file_id) used.add(r.thumbnail_file_id);
+  }
+  return data.files.filter((f) => !used.has(f.id));
 }
 
 export async function listVectors(token: string, exerciseId: string): Promise<MovementVector[]> {
@@ -272,6 +331,8 @@ export type NewEquipmentModelInput = {
   source_image_url?: string | null;
   prompt?: string | null;
   status?: VectorStatus;
+  file_id?: string | null;
+  model_url?: string | null;
   params: Record<string, unknown>;
 };
 

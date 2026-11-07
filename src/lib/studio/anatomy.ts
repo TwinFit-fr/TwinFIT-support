@@ -238,24 +238,6 @@ export const POSE_ANGLES_SCHEMA = {
   },
 } as const;
 
-export const POSE_SET_SCHEMA = {
-  name: "exercise_pose_angles",
-  strict: true,
-  schema: {
-    type: "object",
-    additionalProperties: false,
-    required: ["poses", "notes"],
-    properties: {
-      poses: {
-        type: "array",
-        description: "exactly three items: the start, mid and end frame, in this order",
-        items: POSE_ANGLES_SCHEMA,
-      },
-      notes: { type: "string", description: "one line on anything the texts leave ambiguous" },
-    },
-  },
-} as const;
-
 /** A pose with the time it takes to reach it from the previous one (the draft the editor asks for). */
 const TIMED_POSE_SCHEMA = {
   type: "object",
@@ -410,12 +392,6 @@ export function buildKeyframes(poses: PoseAngles[], durationS: number, mode: Loo
     if (k > 0) t += (durationS * segments[k - 1]) / total;
     return { t: k === order.length - 1 ? durationS : t, position: index, angles: poses[index] };
   });
-}
-
-/** Keyframes of one repetition from the three catalog poses (start, mid, end). */
-export function keyframesFromPoses(poses: PoseAngles[], durationS: number, loop: boolean): PoseKeyframe[] {
-  if (poses.length !== 3) throw new Error("Three poses are needed");
-  return buildKeyframes(poses, durationS, loop ? "cycle" : "once");
 }
 
 /** The editable poses of a clip: one per distinct `position`, in order; a trailing return to the start is dropped. */
