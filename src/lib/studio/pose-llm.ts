@@ -10,34 +10,49 @@ import { POSE_DRAFT_SCHEMA, jointLimitsText, sanitizePose, type LoopMode, type P
 
 export const DEFAULT_POSE_LLM_MODEL = "gpt-5-mini";
 
-const SYSTEM_PROMPT = `You convert written exercise poses into joint angles for a 3D avatar.
+/*
+ * Every worked example below was solved on a rig before being written here, and pose-clip.test.ts
+ * keeps them honest: change one there too. Wrong examples in this prompt have ruined clips before.
+ */
+const DRAFT_SYSTEM_PROMPT = `You convert a written exercise into the key poses of one repetition, as joint angles for a 3D avatar. An animator corrects them by hand afterwards.
 
-You receive one exercise (name, description, equipment) and the exact text of its three frames: start (0), mid (1) and end (2) of one repetition. Return one angle set per frame, in that order.
+ZERO. Every angle is measured from the anatomical position: standing erect, arms along the trunk, palms facing forward, feet parallel. A pose of all zeros is exactly that position. The avatar faces +Z, its left is +X, units are degrees and metres.
 
-Conventions (degrees; the avatar faces +Z, its left is +X):
-- orientation: standing when the feet carry the body; prone (face down: plank, push-up), supine (on the back), side_lying, kneeling, seated (on a bench or the floor), hanging (from a bar).
-- hips.pitch tilts the WHOLE body at the pelvis: 0 upright, 45 a hip hinge, 90 horizontal face down, -90 lying on the back. Keep the spine neutral (torso.flexion 0) unless the text says the back rounds or arches.
-- hips.height_m: pelvis height above the floor only when not standing (prone about 0.25 in a plank, supine about 0.15, seated on a bench about 0.5); null when standing.
-- hips.forward_m: pelvis shift from the standing position; a hinge sends it back (-0.1 to -0.2), a squat slightly back (-0.05).
-- Shoulders: abduction 0 = arm hanging, 90 = out to the side, 180 = overhead; flexion 0 = frontal plane, 90 = pointing forward. An arm hanging at the side is abduction 10, flexion 0. Hands at the shoulders for a press: abduction about 80, flexion about 20, elbow 110. Arms locked out overhead: abduction 170, flexion 10, elbow 5. A push-up top: abduction 60, flexion 85, elbow 5; push-up bottom: elbow 90.
-- Elbows: 0 straight, 90 right angle. Knees: 0 straight, 90 right angle, 120-130 a deep squat. Hip flexion: 0 standing tall, 90 thigh horizontal, 110-120 a deep squat; in a hinge the hip flexion equals the hips.pitch (thighs stay near vertical).
-- Ankle dorsiflexion rises with knee flexion while standing (about 0.2 x knee flexion).
-- Read the angles the text gives; interpolate sensibly when it gives a range; when a joint is not mentioned keep it near neutral and consistent with the frame. Use the same values for both sides unless the text describes an asymmetry (lunges, single-arm rows, side planks).
-- Frames must be physically consistent with each other: the same orientation across the three frames unless the movement itself changes it.
-- implement: when the message says the exercise uses a two-handed implement, give its centre (height above the floor, forward of the standing midline) and the grip width in EVERY frame, read from the text ("bar at mid-thigh", "bar over mid-foot", "locked out overhead", "at the shoulders") and scaled to the avatar height; the arms are then solved to reach it, so make the implement position the truthful one and let the shoulder / elbow angles be approximate. Otherwise implement is null.`;
+WHAT EACH ANGLE IS RELATIVE TO. This matters more than anything else here.
+- hips.pitch is the lean of the pelvis and everything above it: 0 upright, 45 hinged forward, 90 face down, -90 on the back. A neutral spine keeps torso.flexion 0 at any lean; use torso.flexion only when the text says the back rounds or arches.
+- Legs are relative to the pelvis, so the thigh's forward angle from vertical is hip_flexion minus hips.pitch. The shank's forward angle from vertical is that minus knee_flexion. A thigh parallel to the floor is 90 from vertical: at hips.pitch 35 that is hip_flexion 125.
+- Arms are relative to the trunk, not to the floor. An arm hanging straight down while the trunk leans by hips.pitch P has shoulder_flexion P. An arm vertical in a plank is the same rule.
 
-// ---------------------------------------------------------------------------
-// Drafts for the editor: the key poses of a repetition, with timing, read from the catalog's
-// three frames (images) and pose texts, inside the joint ranges. Also what the worker uses.
-// ---------------------------------------------------------------------------
+STANDING (orientation standing). feet_flat true means the soles stay on the floor: the ankles and the pelvis are worked out from the legs, so give no ankle_dorsiflexion (0), hips.height_m null and hips.forward_m 0. Only set hip and knee so that the thigh and shank angles above describe the leg you want. The pelvis goes back by itself in a hinge. feet_flat false is for lifted heels only (calf raise, tiptoe): there ankle_dorsiflexion is read, negative lifting the heels. A leg lifted off the floor keeps its own ankle value.
 
-const DRAFT_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
+OTHER SUPPORTS (prone, supine, side_lying, kneeling, seated, hanging). Give hips.height_m. Lying face down or up also needs hips.pitch, the orientation does not turn the body by itself.
 
-You are drafting the KEY POSES of one repetition for an animator who will correct them by hand. Return 2 to 6 poses in order, the first being the start position, each with a short label and transition_s (seconds taken to move into it; lowering phases are usually slower than lifting). Choose loop_mode pingpong when the repetition retraces the same poses backwards (presses, squats, curls, rows) and cycle when it returns to the start another way.
+SHOULDERS AND FOREARMS.
+- shoulder_abduction lifts the arm to the side (90 horizontal, 175 overhead), shoulder_flexion to the front (90 horizontal, 175 overhead). Do not combine them near 90 hoping to add up: with flexion near 90 abduction only twists the arm. For an arm straight in front use flexion alone.
+- shoulder_rotation + is external. Forearms vertical with the elbows out to the side need about 90.
+- forearm_pronation: 0 palm forward, 90 thumb forward (neutral: hammer grip, arms relaxed at the sides), 170 palm back. Those are for the arm in the anatomical position: the forearm turns with the humerus, so with shoulder_rotation 90 palms facing forward need forearm_pronation 90, as in the press below.
+
+ANGLES IN THE TEXTS. Flexion angles are 0 when straight. Texts often give the included angle instead, where straight is 180: "knees at about 150", "hips at 170", "arms near 180". Convert those: flexion = 180 - included. A joint "slightly bent" is 10 to 20, never 160.
+
+WORKED EXAMPLES (both sides alike, angles not listed are 0).
+- Arms relaxed at the sides: forearm_pronation 90.
+- Press at the shoulders: shoulder_abduction 80, shoulder_flexion 20, shoulder_rotation 90, elbow_flexion 110, forearm_pronation 90. Locked out overhead: shoulder_abduction 175, forearm_pronation 0.
+- Front raise, palms down: shoulder_flexion 90, forearm_pronation 170. Lateral raise: shoulder_abduction 90, forearm_pronation 90.
+- Top of a curl, palms up: elbow_flexion 140.
+- Bottom of a parallel squat: hips.pitch 35, hip_flexion 125, knee_flexion 110, hip_abduction 8, hip_rotation 10, shoulder_flexion as the arms need.
+- Romanian deadlift, bottom: hips.pitch 60, hip_flexion 75, knee_flexion 20, shoulder_flexion 60, forearm_pronation 170.
+- Deadlift from the floor: hips.pitch 65, hip_flexion 130, knee_flexion 90, implement height_m 0.22, forward_m 0.05. Lockout: all legs 0, hips.pitch 0, implement height_m 0.80, forward_m 0.05 (arms hang straight, so the bar is at mid-thigh, not at the hips).
+- Plank or top of a push-up: orientation prone, hips.pitch 70, hips.height_m 0.40, shoulder_flexion 70, forearm_pronation 170, wrist_flexion -70.
+- Seated upright: orientation seated, hips.height_m 0.55, hip_flexion 90, knee_flexion 90.
+- On a bench on the back, feet on the floor: orientation supine, hips.pitch -90, hips.height_m 0.55, knee_flexion 90, shoulder_flexion 90 for arms pointing up.
+
+IMPLEMENT. When the message says the exercise uses a two-handed implement, give its centre (height above the floor, forward of the standing midline) and the grip width in EVERY pose, read from the text and scaled to the avatar height; the arms are solved to reach it, so the implement position is what must be true and the shoulder and elbow angles only steer the elbows. A bar reachable with straight arms must be within arm's length of the shoulders, and heights must agree with how low the body is in that pose. Otherwise implement is null.
+
+KEY POSES. Return 2 to 6 poses in order, the first being the start position, each with a short label and transition_s (seconds taken to move into it; lowering phases are usually slower than lifting). Choose loop_mode pingpong when the repetition retraces the same poses backwards (presses, squats, curls, rows) and cycle when it returns to the start another way. Keep the same stance (hip_abduction, hip_rotation) in every pose unless the feet really move. Use the same values on both sides unless the exercise is unilateral. Keep the orientation across poses unless the movement itself changes it. Read the angles the text gives; when a joint is not mentioned keep it at 0.
 
 Joint ranges of motion, degrees (never exceed them): ${jointLimitsText()}.
 
-When images are attached they show the start, middle and end of the repetition: read torso lean, knee and elbow angles, stance width, where the hands and the bar are, and prefer them over the text when the two disagree. Keep poses physically consistent with each other and symmetric unless the exercise is unilateral.`;
+When images are attached they show the start, middle and end of the repetition: read trunk lean, knee and elbow angles, stance width, where the hands and the bar are, and prefer them over the text when the two disagree.`;
 
 export type PoseDraftResult = {
   poses: PoseAngles[];

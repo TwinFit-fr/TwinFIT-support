@@ -7,6 +7,8 @@ import {
   LOOP_MODES,
   ORIENTATIONS,
   POSE_GROUPS,
+  clinicalForearm,
+  flatAnkle,
   getPoseValue,
   mirrorPath,
   poseClipFromDraft,
@@ -41,6 +43,15 @@ const ANCHOR_LABEL: Record<AnchorId, string> = {
 
 const group = (id: string) => POSE_GROUPS.find((g) => g.id === id)!;
 
+/** The forearm as a goniometer reads it, next to the Studio's zero at full supination. */
+function forearmNote(value: number): string {
+  const clinical = Math.round(clinicalForearm(value));
+  return clinical === 0 ? "mid-position" : clinical > 0 ? `${clinical}° pronation` : `${-clinical}° supination`;
+}
+
+/** A foot this far above the other (metres) is off the floor, and its ankle is the animator's again. */
+const RAISED_M = 0.08;
+
 /**
  * One joint value: a slider for the gesture (its drag is one undo step) and a number field for
  * exact entry. Both are labelled for assistive tech.
@@ -51,17 +62,23 @@ function Slider({
   onChange,
   onGestureEnd,
   compact = false,
+  note,
+  locked,
 }: {
   field: PoseField;
   value: number | null;
   onChange: (value: number, gesture: boolean) => void;
   onGestureEnd: () => void;
   compact?: boolean;
+  /** A second reading of the value, under the slider. */
+  note?: string;
+  /** Why the value cannot be set here: it follows from something else. */
+  locked?: string;
 }) {
   const step = field.step ?? 1;
   const shown = value ?? 0;
   return (
-    <div className="text-[11px]">
+    <div className={cn("text-[11px]", locked && "opacity-60")} title={locked}>
       <div className="flex items-center justify-between gap-2">
         <span className={cn("truncate text-(--m3-on-surface-variant)", compact && "text-[10px]")}>{field.label}</span>
         <span className="flex items-center gap-0.5 font-mono tabular-nums">
@@ -72,6 +89,7 @@ function Slider({
             step={step}
             digits={field.unit === "m" ? 2 : 0}
             value={shown}
+            disabled={Boolean(locked)}
             onCommit={(v) => onChange(v, false)}
             className="h-6 w-14 rounded-md px-1 py-0 text-right text-[11px]"
           />
@@ -85,12 +103,14 @@ function Slider({
         max={field.max}
         step={step}
         value={shown}
+        disabled={Boolean(locked)}
         onChange={(e) => onChange(Number(e.target.value), true)}
         onPointerUp={onGestureEnd}
         onKeyUp={onGestureEnd}
         onBlur={onGestureEnd}
-        className="mt-1 h-1.5 w-full cursor-pointer accent-(--m3-primary)"
+        className={cn("mt-1 h-1.5 w-full accent-(--m3-primary)", locked ? "cursor-not-allowed" : "cursor-pointer")}
       />
+      {note ? <div className="mt-0.5 text-right text-[10px] text-(--m3-on-surface-variant)">{note}</div> : null}
     </div>
   );
 }
@@ -102,18 +122,36 @@ function Sliders({
   onChange,
   onGestureEnd,
   compact,
+  followsFloor = false,
+  side,
 }: {
   fields: PoseField[];
   pose: PoseAngles;
   onChange: (path: string, value: number, gesture: boolean) => void;
   onGestureEnd: () => void;
   compact?: boolean;
+  /** This leg's sole is on the floor, flat: its ankle is worked out from the leg. */
+  followsFloor?: boolean;
+  side?: "left" | "right";
 }) {
   return (
     <div className="space-y-2.5">
-      {fields.map((f) => (
-        <Slider key={f.path} field={f} value={getPoseValue(pose, f.path)} onChange={(v, g) => onChange(f.path, v, g)} onGestureEnd={onGestureEnd} compact={compact} />
-      ))}
+      {fields.map((f) => {
+        const value = getPoseValue(pose, f.path);
+        const ankle = followsFloor && side && f.path.endsWith(".ankle_dorsiflexion");
+        return (
+          <Slider
+            key={f.path}
+            field={f}
+            value={ankle ? flatAnkle(pose, side) : value}
+            onChange={(v, g) => onChange(f.path, v, g)}
+            onGestureEnd={onGestureEnd}
+            compact={compact}
+            note={f.path.endsWith(".forearm_pronation") ? forearmNote(value ?? 0) : undefined}
+            locked={ankle ? "Follows the floor: the sole stays flat. Turn off Flat feet in Body to set it." : undefined}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -230,6 +268,15 @@ export function PoseEditor({
   };
   const label = draft.sourceSeq ? `Edited from #${draft.sourceSeq}` : "Pose editor";
   const pinned = (id: AnchorId) => Boolean(pose.anchors?.[id]);
+  const standing = pose.orientation === "standing";
+  const feetFlat = pose.feet_flat !== false;
+  /** Standing with flat feet, this foot on the floor: its ankle is derived. */
+  const followsFloor = (side: "left" | "right") => {
+    if (!standing || !feetFlat) return false;
+    const own = probe[`${side}_foot`]?.[1];
+    const other = probe[`${side === "left" ? "right" : "left"}_foot`]?.[1];
+    return own === undefined || other === undefined || own - other < RAISED_M;
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -446,10 +493,20 @@ export function PoseEditor({
                       ))}
                     </Select>
                   </label>
-                  <div className="flex items-end text-[11px] text-(--m3-on-surface-variant)">
-                    <Chip selected={draft.twoHanded} onClick={() => setOptions({ twoHanded: !draft.twoHanded })} title="The hands hold a bar: its position per pose drives the arms" className="h-8 w-full justify-center">
-                      Bar in both hands
+                  <div className="flex items-end gap-1.5 text-[11px] text-(--m3-on-surface-variant)">
+                    <Chip selected={draft.twoHanded} onClick={() => setOptions({ twoHanded: !draft.twoHanded })} title="The hands hold a bar: its position per pose drives the arms" className="h-8 flex-1 justify-center">
+                      Bar in hands
                     </Chip>
+                    {standing ? (
+                      <Chip
+                        selected={feetFlat}
+                        onClick={() => updatePose(i, { ...pose, feet_flat: !feetFlat })}
+                        title="On: the soles stay flat on the floor and the ankles follow from the legs. Off: the ankle sliders lift the heels (calf raise, tiptoe) and the toes stay down."
+                        className="h-8 flex-1 justify-center"
+                      >
+                        Flat feet
+                      </Chip>
+                    ) : null}
                   </div>
                 </div>
                 <div className="rounded-2xl bg-(--m3-surface-container) p-3">
@@ -463,7 +520,7 @@ export function PoseEditor({
                           hips: { ...pose.hips, height_m: pose.hips.height_m === null ? (probe.hips?.[1] ?? 0.9) : null },
                         })
                       }
-                      title="Automatic: from the legs when standing (feet on the floor), else the support's default. Off: the slider sets it."
+                      title="Automatic: from the legs when standing, else the support's default. Off: the slider sets it, and standing the feet stay put while the legs follow."
                       className="h-6 normal-case tracking-normal"
                     >
                       Auto height
@@ -493,7 +550,7 @@ export function PoseEditor({
                         {side === "left" ? <ArrowRightToLine className="h-3 w-3" /> : <ArrowLeftToLine className="h-3 w-3" />}
                       </IconButton>
                     </div>
-                    <Sliders fields={group(`${side}_${tab === "arms" ? "arm" : "leg"}`).fields} pose={pose} onChange={change} onGestureEnd={endGesture} compact />
+                    <Sliders fields={group(`${side}_${tab === "arms" ? "arm" : "leg"}`).fields} pose={pose} onChange={change} onGestureEnd={endGesture} compact side={side} followsFloor={tab === "legs" && followsFloor(side)} />
                   </div>
                 ))}
               </div>
