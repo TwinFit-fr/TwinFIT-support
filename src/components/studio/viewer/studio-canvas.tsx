@@ -15,7 +15,9 @@ import {
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { isPoseClipJson } from "@/lib/studio/anatomy";
+import { isPoseClipJson, poseClipFromDraft } from "@/lib/studio/anatomy";
+import { DEFAULT_CLEANUP, cleanupClip } from "@/lib/studio/clip-cleanup";
+import { isMocapClip, retargetToAvatar } from "@/lib/studio/mocap";
 import { buildPoseClip, captureRestPose, type RestPose } from "@/lib/studio/pose-clip";
 import { useStudioStore, type CameraPreset } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
@@ -118,6 +120,14 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
   const items = useStudioStore((s) => s.previewItems);
   const models = useStudioStore((s) => s.equipmentModels);
   const showEquipment = useStudioStore((s) => s.showEquipment);
+  const cleanMocap = useStudioStore((s) => s.cleanMocap);
+  // The pose editor's draft replaces the selected clip while it is open.
+  const poseEdit = useStudioStore((s) => s.poseEdit);
+  const draft = useMemo(() => (poseEdit ? poseClipFromDraft(poseEdit) : null), [poseEdit]);
+  const holdTime = useMemo(() => {
+    if (!poseEdit || !draft) return null;
+    return draft.keyframes.find((k) => k.position === poseEdit.keyframe)?.t ?? 0;
+  }, [poseEdit, draft]);
 
   // Ground the model, centre it and bring it to metres (Mixamo exports are often in centimetres).
   // The three object is mutated in place: it is scene state, not React state.
@@ -161,14 +171,35 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
 
   // Anatomical keyframes become a three.js clip for this very rig; a ready clip is used as it is.
   const [resolvedClip, clipError] = useMemo<[THREE.AnimationClip | null, string | null]>(() => {
+    if (draft) {
+      try {
+        return [buildPoseClip(model, draft, rest, sockets), null];
+      } catch (error) {
+        return [null, error instanceof Error ? error.message : String(error)];
+      }
+    }
     if (!clip) return [null, null];
-    if (!isPoseClipJson(clip)) return [clip, null];
     try {
-      return [buildPoseClip(model, clip, rest, sockets), null];
+      if (isPoseClipJson(clip)) return [buildPoseClip(model, clip, rest, sockets), null];
+      if (isMocapClip(clip)) {
+        // Retargeting samples the avatar's bones: it needs them in their rest pose, as captured.
+        model.traverse((o) => {
+          if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.pose();
+        });
+        const { clip: retargeted, report } = retargetToAvatar(model, clip);
+        if (report.unmatched.length && process.env.NODE_ENV !== "production") {
+          console.info("[studio] mocap bones without an avatar bone:", report.unmatched.join(", "));
+        }
+        if (!cleanMocap) return [retargeted, null];
+        const cleaned = cleanupClip(model, retargeted, rest, DEFAULT_CLEANUP);
+        if (process.env.NODE_ENV !== "production") console.info("[studio] mocap clean-up:", cleaned.report);
+        return [cleaned.clip, null];
+      }
+      return [clip, null];
     } catch (error) {
       return [null, error instanceof Error ? error.message : String(error)];
     }
-  }, [clip, model, rest, sockets]);
+  }, [clip, draft, model, rest, sockets, cleanMocap]);
   useEffect(() => {
     if (clipError) onClipError?.(clipError);
   }, [clipError, onClipError]);
@@ -250,7 +281,9 @@ function AvatarModel({ modelUrl, heightM, sockets, clip, onModelInfo, onClipErro
   // Playback controls are read straight from the store every frame: toggling them never re-renders the scene.
   useFrame((_, delta) => {
     const { playing, speed, edit } = useStudioStore.getState();
-    if (playing && edit.mode === "off") mixer.update(delta * speed);
+    if (edit.mode !== "off") return;
+    if (playing) mixer.update(delta * speed);
+    else if (holdTime !== null) mixer.setTime(holdTime); // the pose editor holds the selected pose
   });
 
   // The gizmo moved the target: write its transform (metres, degrees) into the draft.

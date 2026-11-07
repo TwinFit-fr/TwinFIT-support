@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Clock3,
   Loader2,
+  PenLine,
   Plus,
   RotateCw,
   Sparkles,
@@ -34,7 +35,7 @@ export type GenerateInput = {
   format: VectorFormat;
 };
 
-export type VectorAction = "activate" | "deactivate" | "requeue" | "upload" | "delete";
+export type VectorAction = "activate" | "deactivate" | "requeue" | "upload" | "delete" | "edit";
 
 /** Select value for an item held with both hands (socket hand_r + socket_b hand_l). */
 const BOTH_HANDS = "__both__";
@@ -174,34 +175,40 @@ function VectorRow({
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
           </IconButton>
-        ) : (
-          <>
-            {vector.status === "error" ? (
-              <IconButton label="Put back in the queue" onClick={() => onAction("requeue")} disabled={busy} className="h-7 w-7">
-                <RotateCw className="h-3.5 w-3.5" />
-              </IconButton>
-            ) : null}
-            <IconButton
-              label="Attach a finished clip (.glb, .gltf, .bvh, .json)"
-              onClick={() => fileInput.current?.click()}
-              disabled={busy}
-              className="h-7 w-7"
-            >
-              <Upload className="h-3.5 w-3.5" />
-            </IconButton>
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".glb,.gltf,.bvh,.json"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) onAction("upload", file);
-              }}
-            />
-          </>
-        )}
+        ) : null}
+        {ready && vector.format === "json" ? (
+          <IconButton label="Edit the poses of this clip (opens the pose editor; saves as a new version)" onClick={() => onAction("edit")} disabled={busy} className="h-7 w-7">
+            <PenLine className="h-3.5 w-3.5" />
+          </IconButton>
+        ) : null}
+        {!ready && vector.status === "error" ? (
+          <IconButton label="Put back in the queue" onClick={() => onAction("requeue")} disabled={busy} className="h-7 w-7">
+            <RotateCw className="h-3.5 w-3.5" />
+          </IconButton>
+        ) : null}
+        <IconButton
+          label={
+            ready
+              ? "Replace the clip with a file (.glb, .gltf, .fbx, .bvh, .json)"
+              : "Attach a finished clip (.glb, .gltf, .fbx, .bvh, .json): a DeepMotion or Mixamo export is retargeted to the avatar"
+          }
+          onClick={() => fileInput.current?.click()}
+          disabled={busy}
+          className="h-7 w-7"
+        >
+          <Upload className="h-3.5 w-3.5" />
+        </IconButton>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".glb,.gltf,.fbx,.bvh,.json"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) onAction("upload", file);
+          }}
+        />
         {!vector.active ? (
           <IconButton label="Delete" onClick={() => onAction("delete")} disabled={busy} className="ml-auto h-7 w-7">
             <Trash2 className="h-3.5 w-3.5" />
@@ -228,6 +235,8 @@ export function InspectorPanel({
   busyVectorId,
   onGenerate,
   onVectorAction,
+  onUploadClip,
+  onNewPoses,
 }: {
   exercise: StudioExercise | null;
   avatar: BaseAvatar | null;
@@ -240,6 +249,10 @@ export function InspectorPanel({
   busyVectorId: string | null;
   onGenerate: (input: GenerateInput) => Promise<void>;
   onVectorAction: (vector: MovementVector, action: VectorAction, file?: File) => Promise<void>;
+  /** A clip file as a new ready row (a DeepMotion / SayMotion / Mixamo export). */
+  onUploadClip: (file: File, items: EquipmentItem[]) => Promise<void>;
+  /** Open the pose editor on a fresh three-pose clip for this exercise. */
+  onNewPoses: (items: EquipmentItem[]) => void;
 }) {
   const sockets = useMemo(() => avatar?.sockets ?? [], [avatar]);
   const socketIds = useMemo(() => sockets.map((s) => s.id), [sockets]);
@@ -252,6 +265,8 @@ export function InspectorPanel({
   const [loop, setLoop] = useState<boolean>(settings?.pipeline.loop !== false);
   const [format, setFormat] = useState<VectorFormat>("glb");
   const [showPrompt, setShowPrompt] = useState(false);
+  const [uploadingClip, setUploadingClip] = useState(false);
+  const clipInput = useRef<HTMLInputElement>(null);
 
   const setPreviewItems = useStudioStore((s) => s.setPreviewItems);
   const vectorId = useStudioStore((s) => s.vectorId);
@@ -427,7 +442,37 @@ export function InspectorPanel({
 
         <Section
           title="Queue & history"
-          action={<span className="text-[11px] tabular-nums text-(--m3-on-surface-variant)">{vectors.length}</span>}
+          action={
+            <div className="flex items-center gap-2">
+              <M3Button size="sm" variant="text" disabled={!avatar} onClick={() => onNewPoses(items)} title="Build the movement by hand: three poses you set with sliders, played in a loop">
+                <PenLine className="h-3.5 w-3.5" /> New poses
+              </M3Button>
+              <M3Button
+                size="sm"
+                variant="text"
+                disabled={!avatar || uploadingClip}
+                busy={uploadingClip}
+                onClick={() => clipInput.current?.click()}
+                title="Add a clip file as a ready movement: a DeepMotion, SayMotion or Mixamo export (.fbx, .bvh, .glb) is retargeted to the avatar"
+              >
+                <Upload className="h-3.5 w-3.5" /> Upload clip
+              </M3Button>
+              <input
+                ref={clipInput}
+                type="file"
+                accept=".glb,.gltf,.fbx,.bvh,.json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  setUploadingClip(true);
+                  void onUploadClip(file, items).finally(() => setUploadingClip(false));
+                }}
+              />
+              <span className="text-[11px] tabular-nums text-(--m3-on-surface-variant)">{vectors.length}</span>
+            </div>
+          }
         >
           {vectorsLoading && !vectors.length ? (
             <div className="space-y-1.5">

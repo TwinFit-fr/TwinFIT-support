@@ -11,6 +11,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { useStudioStore, type CameraPreset, type SceneSource } from "@/lib/studio/store";
@@ -68,6 +69,8 @@ function Toolbar() {
   const toggleGrid = useStudioStore((s) => s.toggleGrid);
   const showEquipment = useStudioStore((s) => s.showEquipment);
   const toggleEquipment = useStudioStore((s) => s.toggleEquipment);
+  const cleanMocap = useStudioStore((s) => s.cleanMocap);
+  const toggleCleanMocap = useStudioStore((s) => s.toggleCleanMocap);
   const resetView = useStudioStore((s) => s.resetView);
 
   useShortcuts({
@@ -104,6 +107,13 @@ function Toolbar() {
       </IconButton>
       <IconButton label="Equipment (E)" onClick={toggleEquipment} active={showEquipment}>
         <Dumbbell className="h-4 w-4" />
+      </IconButton>
+      <IconButton
+        label="Clean up motion-capture clips on load: feet on the floor and locked while in contact, hips drift removed, loop closed"
+        onClick={toggleCleanMocap}
+        active={cleanMocap}
+      >
+        <Sparkles className="h-4 w-4" />
       </IconButton>
     </div>
   );

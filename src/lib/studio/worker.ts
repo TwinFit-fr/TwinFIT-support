@@ -5,7 +5,7 @@
  * angles on the avatar's rig. Server side, with the staff JWT; a tick processes one row.
  */
 
-import { keyframesFromPoses, type PoseClipJson } from "./anatomy";
+import { buildKeyframes, type LoopMode, type PoseClipJson } from "./anatomy";
 import { extractPoseAngles } from "./pose-llm";
 import { equipmentSentence } from "./prompt";
 import {
@@ -54,6 +54,7 @@ async function processVector(token: string, vector: MovementVector): Promise<Mov
   const fps = clampInt(Number(vector.params.fps ?? 30), 1, 120);
   const durationS = clampNumber(Number(vector.params.duration_s ?? 4), 0.5, 60);
   const loop = vector.params.loop !== false;
+  const loopMode: LoopMode = !loop ? "once" : vector.params.loop_mode === "pingpong" ? "pingpong" : "cycle";
   const llmModel = typeof vector.params.model === "string" ? vector.params.model : null;
 
   const items = vector.equipment.items ?? [];
@@ -75,8 +76,9 @@ async function processVector(token: string, vector: MovementVector): Promise<Mov
     fps,
     duration: durationS,
     loop,
-    keyframes: keyframesFromPoses(extracted.poses, durationS, loop),
+    keyframes: buildKeyframes(extracted.poses, durationS, loopMode),
     meta: {
+      loop_mode: loopMode,
       exercise_id: exercise.id,
       exo_id: exercise.exo_id,
       avatar_code: avatar.code,
