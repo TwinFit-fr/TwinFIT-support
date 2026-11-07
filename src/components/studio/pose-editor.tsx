@@ -228,7 +228,7 @@ export function PoseEditor({ onSave, saving }: { onSave: (clip: PoseClipJson, la
         <div className="border-b border-(--m3-outline-variant) px-4 py-3">
           <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.16em] text-(--m3-on-surface-variant)">
             <span>Pinned in this pose</span>
-            <span className="normal-case tracking-normal">a pinned foot or hand stays put; a knee steers its leg</span>
+            <span className="normal-case tracking-normal">pinned points stay put while you move the rest</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {ANCHOR_IDS.map((id) => (
@@ -237,13 +237,17 @@ export function PoseEditor({ onSave, saving }: { onSave: (clip: PoseClipJson, la
                 selected={pinned(id)}
                 onClick={() => togglePin(id)}
                 title={probe[id] ? `${ANCHOR_LABEL[id]} at ${probe[id].map((v) => v.toFixed(2)).join(", ")} m` : "Position not known yet"}
-                className="h-7"
+                className={cn("h-7", draft.dragTarget === id && "ring-1 ring-(--m3-primary)")}
               >
                 {pinned(id) ? <Pin className="h-3 w-3" /> : <PinOff className="h-3 w-3 opacity-50" />}
                 {ANCHOR_LABEL[id]}
               </Chip>
             ))}
           </div>
+          <p className="mt-2 text-[11px] leading-snug text-(--m3-on-surface-variant)">
+            In the viewport, click a dot on a hand, foot, knee or the hips and drag it: the limb follows inside its range of motion and the sliders update.
+            {draft.dragTarget ? ` Dragging: ${draft.dragTarget === "hips" ? "hips" : ANCHOR_LABEL[draft.dragTarget as AnchorId]}.` : ""}
+          </p>
         </div>
 
         {/* Joints */}
