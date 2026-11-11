@@ -10,6 +10,7 @@ import { useStudioStore } from "@/lib/studio/store";
 import { templateDraft, templateExerciseOf } from "@/lib/studio/template-draft";
 import type { StudioExercise } from "@/lib/studio/types";
 import { normalizeParams, settingChange } from "@/lib/studio/template-settings";
+import { automaticDraft, keepSetByYou, keptSummary } from "@/lib/studio/point-state";
 
 export type SettingsApplied = {
   /** The poses were rebuilt (false: these settings are already what is on the stage). */
@@ -18,6 +19,8 @@ export type SettingsApplied = {
   replaced: Replaced;
   /** What changed, in words for the stage ("Range: deep"). */
   change: string | null;
+  /** What was set by hand and kept across the rebuild, in words ("Kept what you set: left hand in pose 2."); null: nothing. */
+  kept?: string | null;
   /** Nothing was rebuilt: the poses are a saved clip the user has not agreed to rebuild (rebuild-guard.ts). */
   blocked?: boolean;
 };
@@ -38,19 +41,24 @@ export function applyTemplateSettings(exercise: TemplateExercise, params: Templa
   const replaced = replacedOf(edit, exercise);
   const change = settingChange(from, next);
   if (!change && !replaced && edit.origin.kind === "template") return { changed: false, replaced: null, change: null };
-  const draft = templateDraft(exercise, next);
+  const built = templateDraft(exercise, next);
+  // What was set by hand stays where each pose has its automatic pose (point-state.ts).
+  const keep = keepSetByYou(edit, automaticDraft(exercise, edit), built);
+  const draft = keep?.next ?? built;
   state.replacePoses({
     poses: draft.poses,
     labels: draft.labels,
     weights: draft.weights,
     mode: draft.mode,
     grip: draft.grip,
-    twoHanded: draft.twoHanded,
+    // A bar the user put in both hands stays with what was kept.
+    twoHanded: keep?.edited ? edit.twoHanded : draft.twoHanded,
     meta: draft.meta,
     origin: draft.origin,
     keyframe: keyframe ?? edit.keyframe,
+    edited: keep?.edited ?? false,
   });
-  return { changed: true, replaced, change };
+  return { changed: true, replaced: keep ? null : replaced, change, kept: keep ? keptSummary(keep.kept) : null };
 }
 
 /** Says, with an Undo button, that a rebuild replaced manual edits or a clip's poses (a plain change needs no toast: the origin label says it). */
@@ -59,7 +67,7 @@ export function useRebuildNotice() {
   const undo = useStudioStore((s) => s.undoPose);
   return useCallback(
     (result: SettingsApplied) => {
-      const text = result.changed ? rebuildToast(result.replaced, result.change) : null;
+      const text = result.changed ? rebuildToast(result.replaced, result.change, result.kept ?? null) : null;
       if (text) toast.success(text, "Poses rebuilt", { label: "Undo", onClick: undo });
     },
     [toast, undo],

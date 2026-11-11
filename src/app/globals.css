@@ -51,6 +51,12 @@ body {
     --m3-success: #6ee7b7;
     --m3-warning: #fcd34d;
     --m3-scrim: rgba(3, 5, 9, 0.6);
+    /* States of a body point (point-state.ts), on the stage, in its legend and in its properties:
+       each one is a shape as well as a colour (round, diamond, square frame, dashed ring). */
+    --pose-auto: #7fe0c4;
+    --pose-set: #8fb8ff;
+    --pose-pin: #ff9a7a;
+    --pose-limit: #ff7a7a;
     --studio-glass: rgba(18, 22, 31, 0.72);
     --studio-glass-border: rgba(255, 255, 255, 0.07);
     --studio-glow: 0 0 0 1px rgba(163, 196, 255, 0.18), 0 12px 40px -12px rgba(40, 87, 168, 0.55);
@@ -324,13 +330,13 @@ body {
     stroke-width: 4;
   }
   .pose-short-line {
-    stroke: var(--pose-point-active);
+    stroke: var(--pose-limit);
     stroke-width: 1.5;
     stroke-dasharray: 2 5;
   }
   .pose-short circle {
     fill: none;
-    stroke: var(--pose-point-active);
+    stroke: var(--pose-limit);
     stroke-width: 1.5;
     filter: drop-shadow(0 0 1px var(--pose-point-edge));
   }
@@ -423,6 +429,80 @@ body {
     box-shadow:
       0 0 0 2px var(--pose-point-edge),
       0 0 20px 5px rgba(252, 211, 77, 0.5);
+  }
+  /* Point states (point-state.ts), drawn as shapes so they read without colour: automatic stays a
+     round teal dot; set by you is a blue diamond; pinned adds a square frame; a drag at its limit
+     turns the dragging ring into a dashed red one. Selection keeps the shape and turns it amber. */
+  .pose-point[data-auto="set"] .pose-point-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--pose-set);
+    transform: rotate(45deg) scale(var(--pose-dot, 1));
+  }
+  .pose-point[data-auto="set"][data-role="root"] .pose-point-dot {
+    width: 13px;
+    height: 13px;
+  }
+  .pose-point[data-auto="set"][data-hover] .pose-point-dot,
+  .pose-point[data-auto="set"][data-state="selected"] .pose-point-dot,
+  .pose-point[data-auto="set"][data-state="dragging"] .pose-point-dot {
+    transform: rotate(45deg) scale(max(var(--pose-dot, 1), 0.8));
+  }
+  .pose-point[data-auto="set"][data-hover] .pose-point-dot {
+    width: 13px;
+    height: 13px;
+    background: var(--pose-point-hot);
+  }
+  .pose-point[data-auto="set"][data-state="selected"] .pose-point-dot {
+    width: 12px;
+    height: 12px;
+    background: var(--pose-point-active);
+  }
+  .pose-point[data-auto="set"][data-state="dragging"] .pose-point-dot {
+    width: 14px;
+    height: 14px;
+    background: var(--pose-point-active);
+  }
+  .pose-point-pin {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 19px;
+    height: 19px;
+    margin: -9.5px 0 0 -9.5px;
+    border: 2px solid var(--pose-pin);
+    border-radius: 3px;
+    box-shadow:
+      0 0 0 1.5px var(--pose-point-edge),
+      inset 0 0 0 1.5px var(--pose-point-edge);
+    transform: scale(max(var(--pose-dot, 1), 0.85));
+    pointer-events: none;
+  }
+  .pose-point[data-role="root"] .pose-point-pin,
+  .pose-point[data-state="dragging"] .pose-point-pin {
+    width: 23px;
+    height: 23px;
+    margin: -11.5px 0 0 -11.5px;
+  }
+  .pose-point[data-limit]::before {
+    border-style: dashed;
+    border-color: var(--pose-limit);
+  }
+  .pose-point[data-limit] .pose-point-dot {
+    box-shadow:
+      0 0 0 2px var(--pose-point-edge),
+      0 0 18px 4px rgba(255, 122, 122, 0.45);
+  }
+  /* The legend of the marks (viewer/point-legend.tsx): the same shapes, drawn small. */
+  .point-mark {
+    flex: none;
+    display: inline-block;
+    vertical-align: middle;
+  }
+  .point-legend-item[data-live] {
+    color: var(--m3-on-surface);
+    background: rgba(255, 122, 122, 0.14);
   }
   .pose-point:focus-visible::after {
     content: "";

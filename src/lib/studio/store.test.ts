@@ -37,6 +37,14 @@ describe("pose editor undo", () => {
     assert.deepEqual(useStudioStore.getState().poseEdit?.weights, [1, 2, 3]);
   });
 
+  it("a rebuild that kept what was set by hand stays edited; a plain one is not", () => {
+    const s = useStudioStore.getState();
+    s.replacePoses({ poses: [NEUTRAL_POSE, NEUTRAL_POSE], origin: { kind: "template", template: "curl" }, edited: true });
+    assert.equal(useStudioStore.getState().poseEdit?.edited, true);
+    useStudioStore.getState().replacePoses({ poses: [NEUTRAL_POSE, NEUTRAL_POSE], origin: { kind: "template", template: "curl" } });
+    assert.equal(useStudioStore.getState().poseEdit?.edited, false);
+  });
+
   it("a rebuild from settings can stay on the pose being edited, and one undo brings the old poses and origin back", () => {
     const s = useStudioStore.getState();
     s.setPoseKeyframe(1);

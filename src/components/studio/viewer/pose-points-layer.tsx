@@ -8,11 +8,15 @@ import { HIT_MAX_PX, dotScale, hitSize, neighbourGaps, pickPoint, type ScreenPoi
 import { movesAlone } from "@/lib/studio/pose-legs";
 import { replacesNote } from "@/lib/studio/rebuild-words";
 import { DRAG_SLOP_PX, POINT_HINT, POINT_LABEL, isNudgeKey, isPointId, mirrorPoint, pointRole, type PointId } from "@/lib/studio/pose-points";
+import { pointName } from "@/lib/studio/point-state";
 import { useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
+import { usePointMarks } from "../hooks/use-point-marks";
 import { useRebuildNotice } from "../hooks/use-template-settings";
+import { giveBackPoint, togglePointPin } from "../point-actions";
 import { StageGuardConfirm } from "../rebuild-guard";
 import { DragModeControl, ExerciseBadge, ExerciseLine } from "./exercise-status";
+import { PointLegend } from "./point-legend";
 import { poseStage, type ExerciseStatus, type StageFrame } from "./pose-stage";
 
 type Press = { id: PointId; pointer: number; x: number; y: number; dragging: boolean };
@@ -48,7 +52,7 @@ function forStage(event: KeyboardEvent): boolean {
  * straight arm, a thigh that cannot get shorter) stays on the body, and a dashed line shows how far
  * the pointer is.
  */
-export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElement | null }) {
+export function PosePointsLayer({ statusHost = null, legendHost = null }: { statusHost?: HTMLElement | null; legendHost?: HTMLElement | null }) {
   const editorOpen = useStudioStore((s) => Boolean(s.poseEdit) && s.edit.mode === "off");
   const selected = useStudioStore((s) => (s.poseEdit && isPointId(s.poseEdit.dragTarget) ? s.poseEdit.dragTarget : null));
   const mirror = useStudioStore((s) => s.poseEdit?.mirror ?? false);
@@ -68,6 +72,7 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
   /** Exercise mode was picked on a locked saved clip: the clip it asks about, until the user answers. */
   const [asking, setAsking] = useState<string | null>(null);
   const dragMode = useDragMode();
+  const marks = usePointMarks();
   const exStatus = exState.exercise === dragMode.exercise ? exState.status : null;
   const notice = useRebuildNotice();
   const noticeRef = useRef(notice);
@@ -190,7 +195,7 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
         if (!result?.changed) return;
         const text = result.change ?? `${setting}: ${value?.toLowerCase()}`;
         setDone({ text, at: Date.now() });
-        setMessage(`${text}. Every pose rebuilt. Undo with Ctrl+Z.`);
+        setMessage(`${text}. Every pose rebuilt.${result.kept ? ` ${result.kept}` : ""} Undo with Ctrl+Z.`);
         noticeRef.current(result);
       },
     };
@@ -210,6 +215,13 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
         event.preventDefault();
         useStudioStore.getState().setPoseDragTarget(null);
         setMessage("Selection cleared.");
+      } else if (!event.shiftKey && event.key.toLowerCase() === "a") {
+        // Back to automatic: the counterpart of releasing a point the user had set.
+        event.preventDefault();
+        setMessage(giveBackPoint(current));
+      } else if (!event.shiftKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        setMessage(togglePointPin(current));
       } else if (isNudgeKey(event.key)) {
         event.preventDefault();
         poseStage.scene?.nudge(current, event.key, event.shiftKey);
@@ -309,6 +321,12 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
     press.current = null;
   };
 
+  // Reaching the limit during a drag is said once (the stage marks it with a dashed red ring).
+  const limitNow = Boolean(dragging && (short || (note !== null && !note.moves)));
+  useEffect(() => {
+    if (limitNow && draggingNow.current) setMessage(`${POINT_LABEL[draggingNow.current]}: at its limit.`);
+  }, [limitNow]);
+
   // What the last Exercise-mode drag applied stays on the status line for a few seconds.
   useEffect(() => {
     if (!done) return;
@@ -332,6 +350,8 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
   const active = dragging ?? selected;
   const other = active && !alone ? mirrorPoint(active) : null;
   const stuck = note !== null && !note.moves;
+  // The dragged point is as far as it goes: the limb cannot reach the pointer, or the setting has no further choice.
+  const atLimit = Boolean(dragging && (short || stuck || (exerciseMode && exStatus?.kind === "live" && exStatus.limit)));
   const moving = [stuck ? null : "moving", mirror && other ? `${POINT_LABEL[other].toLowerCase()} follows` : null, note?.text, short && !stuck ? "as far as it goes" : null].filter(Boolean).join(" · ");
   return (
     <div ref={root} className="pose-points pointer-events-none absolute inset-0 overflow-hidden" data-ready="false">
@@ -356,8 +376,11 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
             data-pose-point={id}
             data-role={pointRole(id)}
             data-state={dragging === id ? "dragging" : selected === id ? "selected" : "idle"}
+            data-auto={marks.states ? marks.states[id] : undefined}
+            data-pinned={marks.pinned.includes(id) ? "true" : undefined}
+            data-limit={atLimit && dragging === id ? "" : undefined}
             aria-pressed={selected === id}
-            aria-label={`${POINT_LABEL[id]}, dragging ${POINT_HINT[id]}`}
+            aria-label={pointName(id, { state: marks.states?.[id] ?? null, pinned: marks.pinned.includes(id), hint: POINT_HINT[id] })}
             aria-describedby="pose-points-help"
             className="pose-point pointer-events-auto"
             onPointerDown={onPointerDown(id)}
@@ -369,6 +392,7 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
               if (event.detail === 0) select(id);
             }}
           >
+            {marks.pinned.includes(id) ? <span className="pose-point-pin" aria-hidden="true" /> : null}
             <span className="pose-point-dot" aria-hidden="true" />
             <span className="pose-point-label" aria-hidden="true">
               {POINT_LABEL[id]}
@@ -432,13 +456,15 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
         </div>
       </div>
       , statusHost) : null}
+      {/* What the marks on the points mean: top left of the stage, under the status cards. */}
+      {legendHost ? createPortal(<PointLegend marks={marks} limit={atLimit} />, legendHost) : null}
       <div ref={linkRing} className="pose-link" style={{ display: "none" }} aria-hidden="true" data-pose-link>
         <span className="pose-link-ring" />
         <span className="pose-link-label" />
       </div>
       <ExerciseBadge ref={badge} status={exerciseMode ? exStatus : null} />
       <p id="pose-points-help" className="sr-only">
-        Press and drag to move it. Arrow keys move the selected point in the view plane, Page Up and Page Down in depth, Shift for bigger steps. Escape clears the selection.
+        Press and drag to move it. Arrow keys move the selected point in the view plane, Page Up and Page Down in depth, Shift for bigger steps. A gives the selected point back to automatic, P pins or unpins it. Escape clears the selection.
       </p>
       <div className="sr-only" role="status" aria-live="polite">
         {message}

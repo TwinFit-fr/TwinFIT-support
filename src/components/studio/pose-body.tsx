@@ -78,7 +78,7 @@ export function PoseBody() {
             ))}
           </div>
         ) : (
-          <span className="mt-0.5 min-w-0">Nothing pinned in this pose. Select a hand, knee or foot to pin it.</span>
+          <span className="mt-0.5 min-w-0">Nothing pinned in this pose. Select a hand, knee or foot and press P to pin it.</span>
         )}
       </div>
     </section>

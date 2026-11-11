@@ -125,10 +125,13 @@ function Hud({
   scene,
   clipState,
   info,
+  legendRef,
 }: {
   scene: SceneSource;
   clipState: { loading: boolean; error: string | null };
   info: ModelInfo | null;
+  /** Where the pose editor puts the legend of its point marks, under the status cards. */
+  legendRef?: (el: HTMLDivElement | null) => void;
 }) {
   const debug = useDebugReadouts();
   const issues = useStudioStore((s) => s.poseIssues);
@@ -206,6 +209,7 @@ function Hud({
           Sockets without a bone: {info.missingSockets.join(", ")}
         </div>
       ) : null}
+      <div ref={legendRef} className="empty:hidden" />
       {debug ? <CanvasCommits /> : null}
     </div>
   );
@@ -241,6 +245,8 @@ export const StudioViewport = memo(function StudioViewport() {
   const webgl = useWebGLSupport();
   // Where the pose editor puts its mode bar: above the view toolbar.
   const [barsHost, setBarsHost] = useState<HTMLDivElement | null>(null);
+  // Where it puts the legend of the point marks: under the status cards, top left.
+  const [legendHost, setLegendHost] = useState<HTMLDivElement | null>(null);
 
   if (webgl === false) {
     return (
@@ -277,7 +283,7 @@ export const StudioViewport = memo(function StudioViewport() {
         onError={onError}
         onClipError={onClipError}
       />
-      <PosePointsLayer statusHost={barsHost} />
+      <PosePointsLayer statusHost={barsHost} legendHost={legendHost} />
       {modelError ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="studio-glass flex max-w-[36ch] items-center gap-2 rounded-full px-3 py-1.5 text-center text-xs text-(--m3-error)">
@@ -291,6 +297,7 @@ export const StudioViewport = memo(function StudioViewport() {
         scene={scene}
         clipState={clipSolveError && clipSolveError.key === scene.clipUrl ? { ...clipState, error: clipSolveError.message } : clipState}
         info={info}
+        legendRef={setLegendHost}
       />
       {/* Left of the axis gizmo, only where the stage is wide enough for it next to the HUD. */}
       <div className="pointer-events-none absolute right-(--studio-gizmo-reserve) top-(--studio-stage-inset) hidden items-center gap-1 rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-(--m3-on-surface-variant) @4xl/stage:flex">
