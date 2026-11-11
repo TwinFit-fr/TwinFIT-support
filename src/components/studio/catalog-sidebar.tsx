@@ -18,11 +18,14 @@ import {
   type CatalogFilter,
   type StatusFilter,
 } from "@/lib/studio/catalog-filter";
+import { isSettled, type LoadState } from "@/lib/studio/load-state";
 import { useStudioStore } from "@/lib/studio/store";
 import type { StudioExercise } from "@/lib/studio/types";
+import { cn } from "@/lib/utils";
 import { useSelectionGuard } from "./hooks/use-selection-guard";
 import { CatalogRow } from "./catalog-row";
 import { ChipRow, type ChipRowItem } from "./chip-row";
+import { CatalogSkeletonRows, ErrorState, SkeletonBar } from "./load-states";
 import { Chip } from "./ui";
 
 const ROW_HEIGHT = 62;
@@ -40,15 +43,21 @@ function readRemembered(): CatalogFilter {
  * the muscle groups, a search, and a virtualized list. Arrow keys move focus; Enter or Space opens
  * the focused exercise (after a confirm when the pose or rig editor holds unsaved work).
  * Memoized: the workspace re-renders on every poll, the list only when the catalog or the
- * selection changes.
+ * selection changes. Until the catalog has answered it shows skeletons (loading) or the failure
+ * with Retry, never "0 exercises".
  */
 export const CatalogSidebar = memo(function CatalogSidebar({
   exercises,
-  loading,
+  state,
+  error,
+  onRetry,
 }: {
   exercises: StudioExercise[];
-  loading: boolean;
+  state: LoadState;
+  error?: unknown;
+  onRetry: () => unknown;
 }) {
+  const settled = isSettled(state);
   const selectedId = useStudioStore((s) => s.exerciseId);
   const selectInStore = useStudioStore((s) => s.selectExercise);
   const guard = useSelectionGuard();
@@ -249,8 +258,10 @@ export const CatalogSidebar = memo(function CatalogSidebar({
         <div>
           <div className="flex items-baseline justify-between gap-2 text-[12px] text-(--m3-on-surface)">
             <span className="tabular-nums">
-              {loading && !exercises.length ? (
-                "Loading catalog…"
+              {state === "loading" ? (
+                "Loading the catalog…"
+              ) : state === "failed" ? (
+                <span className="text-(--m3-on-surface-variant)">Catalog not loaded</span>
               ) : (
                 <>
                   <strong className="font-semibold">{animated}</strong> of {totals.total} animated
@@ -259,49 +270,72 @@ export const CatalogSidebar = memo(function CatalogSidebar({
             </span>
             {pending.length ? <span className="truncate text-[11px] text-(--m3-on-surface-variant)">{pending.join(" · ")}</span> : null}
           </div>
-          <div
-            role="progressbar"
-            aria-label="Exercises animated"
-            aria-valuemin={0}
-            aria-valuemax={Math.max(1, totals.total)}
-            aria-valuenow={animated}
-            className="mt-1.5 h-1 overflow-hidden rounded-full bg-(--m3-surface-container-highest)"
-          >
-            <div className="h-full rounded-full bg-(--m3-success)" style={{ width: `${totals.total ? (animated / totals.total) * 100 : 0}%` }} />
-          </div>
-        </div>
-
-        <div role="group" aria-label="Animation status" className="flex gap-1 overflow-x-auto">
-          {statusChips.map((chip) => (
-            <Chip
-              key={chip.value}
-              className="gap-1 px-1.5"
-              aria-label={chip.full ? `${chip.full} ${chip.count}` : undefined}
-              title={chip.full}
-              selected={filter.status === chip.value}
-              aria-pressed={filter.status === chip.value}
-              onClick={() => setStored((f) => ({ ...f, status: chip.value }))}
+          {settled ? (
+            <div
+              role="progressbar"
+              aria-label="Exercises animated"
+              aria-valuemin={0}
+              aria-valuemax={Math.max(1, totals.total)}
+              aria-valuenow={animated}
+              className="mt-1.5 h-1 overflow-hidden rounded-full bg-(--m3-surface-container-highest)"
             >
-              {chip.label}
-              <span className="tabular-nums opacity-100">{chip.count}</span>
-            </Chip>
-          ))}
-        </div>
-        <ChipRow label="Muscle group" items={groupChips} />
-        <div className="flex h-6 items-center justify-between text-[11px] text-(--m3-on-surface-variant)">
-          <span className="tabular-nums" role="status" aria-live="polite">
-            {loading && !exercises.length ? "" : narrowed ? `${filtered.length} of ${totals.total} shown` : `${totals.total} exercises`}
-          </span>
-          {narrowed ? (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="cursor-pointer rounded-md px-1.5 py-0.5 font-medium text-(--m3-primary) outline-none hover:underline focus-visible:ring-2 focus-visible:ring-(--m3-primary)"
-            >
-              Clear filters
-            </button>
+              <div className="h-full rounded-full bg-(--m3-success)" style={{ width: `${totals.total ? (animated / totals.total) * 100 : 0}%` }} />
+            </div>
+          ) : state === "loading" ? (
+            <div aria-hidden className="mt-1.5 h-1 rounded-full bg-(--m3-surface-container-highest)" />
           ) : null}
         </div>
+
+        {settled ? (
+          <>
+            {/* Two by two in a narrow catalog, one row when it fits: a chip is never cut mid-word. */}
+            <div role="group" aria-label="Animation status" className="grid grid-cols-2 gap-1 @[18rem]/pane:flex">
+              {statusChips.map((chip) => (
+                <Chip
+                  key={chip.value}
+                  className="justify-between gap-1 px-2 @[18rem]/pane:justify-center @[18rem]/pane:px-1.5"
+                  aria-label={chip.full ? `${chip.full} ${chip.count}` : undefined}
+                  title={chip.full}
+                  selected={filter.status === chip.value}
+                  aria-pressed={filter.status === chip.value}
+                  onClick={() => setStored((f) => ({ ...f, status: chip.value }))}
+                >
+                  {chip.label}
+                  <span className="tabular-nums opacity-100">{chip.count}</span>
+                </Chip>
+              ))}
+            </div>
+            <ChipRow label="Muscle group" items={groupChips} />
+            <div className="flex h-6 items-center justify-between text-[11px] text-(--m3-on-surface-variant)">
+              <span className="tabular-nums" role="status" aria-live="polite">
+                {narrowed ? `${filtered.length} of ${totals.total} shown` : `${totals.total} exercises`}
+              </span>
+              {narrowed ? (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="cursor-pointer rounded-md px-1.5 py-0.5 font-medium text-(--m3-primary) outline-none hover:underline focus-visible:ring-2 focus-visible:ring-(--m3-primary)"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </div>
+          </>
+        ) : state === "loading" ? (
+          // The filters wait for the catalog: no chip claims a count before the answer.
+          <div aria-hidden className="space-y-2.5 pb-1">
+            <div className="flex gap-1">
+              <SkeletonBar className="h-7 w-14 rounded-lg" />
+              <SkeletonBar className="h-7 w-16 rounded-lg" />
+              <SkeletonBar className="h-7 w-14 rounded-lg" />
+            </div>
+            <div className="flex gap-1">
+              <SkeletonBar className="h-7 w-10 rounded-lg" />
+              <SkeletonBar className="h-7 w-20 rounded-lg" />
+              <SkeletonBar className="h-7 w-16 rounded-lg" />
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div
@@ -309,14 +343,18 @@ export const CatalogSidebar = memo(function CatalogSidebar({
         role="group"
         aria-label="Exercises"
         onKeyDown={onListKeyDown}
-        className="studio-scroll relative mt-1 min-h-0 flex-1 overflow-y-auto"
+        // Skeleton rows never scroll (nothing to reach with the keyboard yet).
+        className={cn("studio-scroll relative mt-1 min-h-0 flex-1", state === "loading" ? "overflow-hidden" : "overflow-y-auto")}
       >
-        {loading && !exercises.length ? (
-          <ul className="space-y-1 px-2 pt-1" aria-hidden>
-            {Array.from({ length: 12 }).map((_, i) => (
-              <li key={i} className="h-[88px] animate-pulse rounded-xl bg-(--m3-surface-container)" />
-            ))}
-          </ul>
+        {state === "loading" ? (
+          <>
+            <span className="sr-only" role="status">
+              Loading the catalog
+            </span>
+            <CatalogSkeletonRows rows={14} rowHeight={ROW_HEIGHT} />
+          </>
+        ) : state === "failed" ? (
+          <ErrorState className="pt-10" title="The catalog did not load." error={error} onRetry={onRetry} />
         ) : (
           <div style={{ height: virtualizer.getTotalSize() }} className="relative w-full">
             {virtualizer.getVirtualItems().map((item) => {
@@ -337,7 +375,7 @@ export const CatalogSidebar = memo(function CatalogSidebar({
             })}
           </div>
         )}
-        {!loading && !filtered.length ? (
+        {settled && !filtered.length ? (
           <div className="flex flex-col items-center gap-3 px-6 pt-10 text-center">
             <p className="text-xs text-(--m3-on-surface-variant)">
               {narrowed ? "No exercise matches these filters." : "The catalog is empty."}

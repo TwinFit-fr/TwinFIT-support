@@ -14,6 +14,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useShortcuts } from "@/hooks/use-shortcuts";
+import { debugEnabled } from "@/lib/studio/load-state";
 import { editingStatus } from "@/lib/studio/pose-origin";
 import { useStudioStore, type CameraPreset, type SceneSource } from "@/lib/studio/store";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
@@ -21,18 +22,34 @@ import { cn } from "@/lib/utils";
 import { EmptyState, IconButton, Segmented } from "../ui";
 import { useMovementClip } from "./movement-clip";
 import { AiDraftChip } from "../ai-draft";
+import { StudioLoader } from "../load-states";
 import { PosePointsLayer } from "./pose-points-layer";
 import { useCanvasCommits } from "./render-stats";
 import type { ModelInfo } from "./studio-canvas";
 
 const StudioCanvas = dynamic(() => import("./studio-canvas"), {
   ssr: false,
-  loading: () => (
-    <div className="flex h-full items-center justify-center text-xs text-(--m3-on-surface-variant)">
-      Starting the 3D workspace…
-    </div>
-  ),
+  loading: () => <StudioLoader label="Starting the 3D view…" />,
 });
+
+/** Developer readout of canvas commits: only with ?debug=1, read once when the stage opens. */
+function useDebugReadouts(): boolean {
+  const [on] = useState(() => typeof window !== "undefined" && debugEnabled(window.location.search));
+  return on;
+}
+
+function CanvasCommits() {
+  const commits = useCanvasCommits();
+  return (
+    <div
+      data-dev-only
+      className="studio-glass rounded-full px-3 py-1 font-mono text-[10px] text-(--m3-on-surface-variant)"
+      title="React commits of the 3D canvas. It should stay still while you type, scroll or the queue refreshes."
+    >
+      canvas commits {commits}
+    </div>
+  );
+}
 
 /** False when the browser cannot give us a WebGL context (software-rendering sandboxes, disabled GPU). */
 function probeWebGL(): boolean {
@@ -131,7 +148,7 @@ function Hud({
   clipState: { loading: boolean; error: string | null };
   info: ModelInfo | null;
 }) {
-  const commits = useCanvasCommits();
+  const debug = useDebugReadouts();
   const issues = useStudioStore((s) => s.poseIssues);
   const errors = issues.filter((i) => i.severity === "error");
   // While the editor holds poses the stage shows them, not the selected clip: say so (a string, so slider ticks do not re-render this).
@@ -142,7 +159,7 @@ function Hud({
     ? editing
     : !scene.vectorId
       ? noExercise
-        ? "Pick an exercise in the catalog"
+        ? "No exercise open"
         : "No clip selected"
       : scene.vectorStatus !== "ready"
         ? `${VECTOR_STATUS_LABEL[scene.vectorStatus ?? "pending"]} · #${scene.vectorSeq}`
@@ -203,18 +220,11 @@ function Hud({
           Sockets without a bone: {info.missingSockets.join(", ")}
         </div>
       ) : null}
-      {process.env.NODE_ENV !== "production" ? (
-        <div
-          data-dev-only
-          className="studio-glass rounded-full px-3 py-1 font-mono text-[10px] text-(--m3-on-surface-variant)/70"
-          title="React commits of the 3D canvas. It should stay still while you type, scroll or the queue refreshes."
-        >
-          canvas commits {commits}
-        </div>
-      ) : null}
+      {debug ? <CanvasCommits /> : null}
     </div>
   );
 }
+
 
 /** Brings the waiting AI suggestion in the side panel into view and puts the focus on Apply. */
 function reviewSuggestion() {
@@ -254,12 +264,13 @@ export const StudioViewport = memo(function StudioViewport() {
     );
   }
 
+  // The workspace shows loading, failure and the first run itself; this is a ready avatar without a model file.
   if (!scene.modelUrl) {
     return (
       <EmptyState
         icon={<Box className="h-5 w-5" />}
-        title="No base avatar"
-        body="Upload a rigged .glb from the avatar menu in the top bar to start animating."
+        title="This avatar has no model file"
+        body="Choose another avatar in the top bar, or add one from its menu."
       />
     );
   }
@@ -278,18 +289,14 @@ export const StudioViewport = memo(function StudioViewport() {
         onClipError={onClipError}
       />
       <PosePointsLayer />
-      {progress !== null || modelError ? (
+      {modelError ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div
-            className={cn(
-              "studio-glass flex max-w-[36ch] items-center gap-2 rounded-full px-3 py-1.5 text-center text-xs",
-              modelError ? "text-(--m3-error)" : "text-(--m3-on-surface)",
-            )}
-          >
-            {modelError ? null : <span className="h-2 w-2 animate-pulse rounded-full bg-(--m3-primary)" />}
-            {modelError ? `Could not load the model: ${modelError}` : `Loading avatar… ${Math.round(progress ?? 0)}%`}
+          <div className="studio-glass flex max-w-[36ch] items-center gap-2 rounded-full px-3 py-1.5 text-center text-xs text-(--m3-error)">
+            {`Could not load the model: ${modelError}`}
           </div>
         </div>
+      ) : progress !== null ? (
+        <StudioLoader className="pointer-events-none absolute inset-0" label={`Loading avatar… ${Math.round(progress)}%`} />
       ) : null}
       <Hud
         scene={scene}

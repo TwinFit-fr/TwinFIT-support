@@ -7,6 +7,7 @@ import { useStaffSWR } from "@/hooks/use-staff-fetch";
 import { useToast } from "@/components/ui/toast";
 import { setStudioAccessToken } from "@/lib/studio/asset-auth";
 import { equipmentKey, placementOf } from "@/lib/studio/equipment";
+import { loadState, stageState } from "@/lib/studio/load-state";
 import { EMPTY_SCENE, useStudioStore, type SceneSource } from "@/lib/studio/store";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
 import type { ActiveEquipmentModels, BaseAvatar, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
@@ -58,12 +59,12 @@ export function useStudioData() {
     return () => setStudioAccessToken(null);
   }, [token]);
 
-  const { data: catalog, isLoading: catalogLoading, mutate: mutateCatalog } = useStaffSWR<{ exercises: StudioExercise[] }>("/api/studio/exercises");
+  const { data: catalog, error: catalogError, mutate: mutateCatalog } = useStaffSWR<{ exercises: StudioExercise[] }>("/api/studio/exercises");
   // Polls while an avatar is being generated: the list route advances the Meshy job.
-  const { data: avatarData, mutate: mutateAvatars } = useStaffSWR<{ avatars: BaseAvatar[] }>("/api/studio/avatars", {
+  const { data: avatarData, error: avatarsError, mutate: mutateAvatars } = useStaffSWR<{ avatars: BaseAvatar[] }>("/api/studio/avatars", {
     refreshInterval: (latest) => (latest?.avatars.some((a) => a.status === "pending" || a.status === "processing") ? 5000 : 0),
   });
-  const { data: settingsData, mutate: mutateSettings } = useStaffSWR<{ settings: StudioSettings }>("/api/studio/settings");
+  const { data: settingsData, error: settingsError, mutate: mutateSettings } = useStaffSWR<{ settings: StudioSettings }>("/api/studio/settings");
   // Same key as the equipment dialog: one cache, one poll while a Meshy task runs.
   const { data: equipmentData, mutate: mutateEquipment } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY);
 
@@ -81,10 +82,13 @@ export function useStudioData() {
 
   const {
     data: vectorData,
+    error: vectorsError,
     isLoading: vectorsLoading,
     mutate: mutateVectors,
   } = useStaffSWR<{ vectors: MovementVector[] }>(exerciseId ? `/api/studio/vectors?exercise=${exerciseId}` : null, {
     refreshInterval: (latest) => (latest?.vectors.some((v) => isQueued(v.status)) ? QUEUE_POLL_MS : 0),
+    // Another exercise's rows are never this one's answer: while the new list loads (or fails) there is none.
+    keepPreviousData: false,
   });
   // The fetcher keeps the previous key's data while the next loads: rows of another exercise are not this one's.
   const vectors = useMemo(() => (vectorData?.vectors ?? []).filter((v) => v.exercise_id === exerciseId), [vectorData, exerciseId]);
@@ -157,6 +161,13 @@ export function useStudioData() {
     () => [...new Set(exercises.map((e) => e.support_equipment?.code).filter((c): c is string => Boolean(c)))].sort(),
     [exercises],
   );
+  // Loading, failed, empty or ready per source: the panes say which instead of showing an empty list.
+  const catalogState = loadState({ data: catalog, error: catalogError }, (d) => d.exercises.length === 0);
+  const avatarsState = loadState({ data: avatarData, error: avatarsError }, (d) => d.avatars.length === 0);
+  const settingsState = loadState({ data: settingsData, error: settingsError }, () => false);
+  const vectorsState = loadState({ data: vectorData, error: vectorsError }, (d) => d.vectors.length === 0);
+  const stage = useMemo(() => stageState(avatarsState, avatars), [avatarsState, avatars]);
+
   /** Rows queued anywhere in the catalog (pending + processing): what keeps the worker ticking. */
   const queuedAnywhere = useMemo(() => exercises.reduce((n, e) => n + e.vectors.queued, 0), [exercises]);
 
@@ -171,7 +182,15 @@ export function useStudioData() {
     exercise,
     avatar,
     vector,
-    catalogLoading,
+    catalogState,
+    catalogError,
+    avatarsState,
+    avatarsError,
+    settingsState,
+    vectorsState,
+    vectorsError,
+    /** What the stage shows before it can draw an avatar (loading, failed, first run, a build). */
+    stage,
     vectorsLoading,
     equipmentCodes,
     supportCodes,
