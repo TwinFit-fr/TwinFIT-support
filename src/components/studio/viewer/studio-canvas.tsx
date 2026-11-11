@@ -16,18 +16,20 @@ import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useShallow } from "zustand/react/shallow";
-import { isPoseClipJson, poseClipFromDraft, type PoseAngles, type PoseClipJson } from "@/lib/studio/anatomy";
+import { isPoseClipJson, poseClipFromDraft } from "@/lib/studio/anatomy";
 import { studioAssetHeaders } from "@/lib/studio/asset-auth";
 import { DEFAULT_CLEANUP, cleanupClip } from "@/lib/studio/clip-cleanup";
 import { isMocapClip, retargetToAvatar } from "@/lib/studio/mocap";
-import { buildPoseClip, captureRestPose, probePose, restoreRestPose, solveLimbToTarget, type Limb, type LimbEffector, type RestPose } from "@/lib/studio/pose-clip";
-import { validatePoseClip } from "@/lib/studio/pose-validate";
+import { buildPoseClip, captureRestPose, restoreRestPose, type RestPose } from "@/lib/studio/pose-clip";
 import { useStudioStore, type CameraPreset } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
 import type { LoadedClip } from "./movement-clip";
 import { EquipmentMesh } from "./equipment-proxies";
 import { equipmentKey } from "@/lib/studio/equipment";
 import { recordCanvasCommit } from "./render-stats";
+import { PoseRig } from "./pose-rig";
+import { poseStage } from "./pose-stage";
+import { usePoseChecks } from "./use-pose-checks";
 
 export type SceneProps = {
   avatarId: string | null;
@@ -134,11 +136,6 @@ function recycleModelCache(url: string) {
   cachedModelUrl = url;
 }
 
-/** A pose clip with the held pose only: what the viewer solves while the editor is paused (one IK solve, two frames). */
-function heldPoseClip(draft: PoseClipJson, pose: PoseAngles): PoseClipJson {
-  return { ...draft, duration: 1 / draft.fps, keyframes: [{ t: 0, position: 0, angles: pose }] };
-}
-
 function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, onClipError }: SceneProps & { modelUrl: string }) {
   recycleModelCache(modelUrl);
   const { scene, animations } = useGLTF(modelUrl, true, true, (loader) => loader.setRequestHeader(studioAssetHeaders(modelUrl)));
@@ -148,12 +145,15 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   const showEquipment = useStudioStore((s) => s.showEquipment);
   const cleanMocap = useStudioStore((s) => s.cleanMocap);
 
-  // The pose editor's draft replaces the selected clip while it is open. Only what shapes the clip
-  // is read here (not the undo stacks, the drag target or the dirty flag), so bookkeeping in the
-  // store never re-bakes it.
+  // The pose editor's draft replaces the selected clip while it is open. Paused, the held pose is
+  // written straight onto the bones by PoseRig (no clip at all); playing, the draft is baked once.
+  // Only what shapes the clip is read, and only while playing, so a drag or a slider tick while
+  // paused never re-renders this component.
+  const editorOpen = useStudioStore((s) => Boolean(s.poseEdit));
+  const editorPlaying = useStudioStore((s) => Boolean(s.poseEdit) && s.playing);
   const draftSource = useStudioStore(
     useShallow((s) =>
-      s.poseEdit
+      s.poseEdit && s.playing
         ? {
             poses: s.poseEdit.poses,
             weights: s.poseEdit.weights,
@@ -167,14 +167,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
         : null,
     ),
   );
-  const heldPose = useStudioStore((s) => s.poseEdit?.poses[s.poseEdit.keyframe] ?? null);
-  const editorPlaying = useStudioStore((s) => Boolean(s.poseEdit) && s.playing);
   const draft = useMemo(() => (draftSource ? poseClipFromDraft(draftSource) : null), [draftSource]);
-  const holdTime = useMemo(() => {
-    if (!draft || !heldPose) return null;
-    const index = draftSource?.poses.indexOf(heldPose) ?? -1;
-    return draft.keyframes.find((k) => k.position === index)?.t ?? 0;
-  }, [draft, draftSource, heldPose]);
 
   // The bones as loaded. Their local transforms do not depend on the layout below, so a later
   // re-layout (the height was edited) starts from them instead of from a frame of the clip.
@@ -228,12 +221,11 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   const liveSockets = draftSockets ?? sockets;
 
   // Anatomical keyframes become a three.js clip for this very rig; a ready clip is used as it is.
-  // While the editor is paused only the held pose is solved: a slider tick costs one solve, not a bake.
   const [resolvedClip, clipError] = useMemo<[THREE.AnimationClip | null, string | null]>(() => {
+    if (editorOpen && !draft) return [null, null]; // paused editor: PoseRig holds the pose
     if (draft) {
       try {
-        const source = editorPlaying || !heldPose ? draft : heldPoseClip(draft, heldPose);
-        return [buildPoseClip(model, source, rest, liveSockets, draftSource?.poses[0]), null];
+        return [buildPoseClip(model, draft, rest, liveSockets, draftSource?.poses[0]), null];
       } catch (error) {
         return [null, error instanceof Error ? error.message : String(error)];
       }
@@ -255,38 +247,13 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
     } catch (error) {
       return [null, error instanceof Error ? error.message : String(error)];
     }
-  }, [clip, draft, draftSource, editorPlaying, heldPose, model, rest, liveSockets, cleanMocap]);
+  }, [clip, draft, draftSource, editorOpen, model, rest, liveSockets, cleanMocap]);
   useEffect(() => {
     if (clipError) onClipError?.(clipError);
   }, [clipError, onClipError]);
 
-  // The clip on screen, checked as a body on this rig; after the sliders settle, not on every tick.
-  useEffect(() => {
-    const source = draft ?? (clip && isPoseClipJson(clip) ? clip : null);
-    const { setPoseIssues } = useStudioStore.getState();
-    if (!source) {
-      setPoseIssues([]);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      try {
-        setPoseIssues(validatePoseClip(model, source, rest, liveSockets).issues);
-      } catch {
-        setPoseIssues([]);
-      }
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [draft, clip, model, rest, liveSockets]);
-
-  // The pose editor pins to where the held pose puts feet, hands and knees: computed off the rig.
-  useEffect(() => {
-    if (!heldPose || !draftSource) return;
-    try {
-      useStudioStore.getState().setPoseProbe(probePose(model, rest, heldPose, { twoHanded: draftSource.twoHanded, grip: draftSource.grip, sockets: liveSockets, stance: draftSource.poses[0] }));
-    } catch {
-      // A rig without the legs or arms: nothing to pin.
-    }
-  }, [heldPose, draftSource?.twoHanded, draftSource?.grip, draftSource, model, rest, liveSockets]);
+  // The clip on screen, checked as a body on this rig once the edits settle.
+  usePoseChecks(model, rest, liveSockets, clip);
 
   useEffect(() => {
     onModelInfo?.(info);
@@ -354,10 +321,15 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   const mixer = useMemo(() => new THREE.AnimationMixer(model), [model]);
   useEffect(() => () => mixer.uncacheRoot(model), [mixer, model]);
   const editing = edit.mode !== "off";
+  const holding = editorOpen && !editorPlaying;
   useEffect(() => {
     if (editing) {
       mixer.stopAllAction();
       restoreRestPose(model, rest);
+      return;
+    }
+    if (holding) {
+      mixer.stopAllAction(); // PoseRig writes the held pose onto the bones
       return;
     }
     const active = resolvedClip ?? animations[0] ?? null;
@@ -369,13 +341,19 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
       mixer.uncacheAction(active);
       mixer.uncacheClip(active);
     };
-  }, [mixer, model, rest, resolvedClip, animations, editing]);
+  }, [mixer, model, rest, resolvedClip, animations, editing, holding]);
+  // The pose editor's frame (held pose, drag, points) runs after the mixer, so its points sit on the bones as drawn.
+  const poseFrame = useRef<(() => void) | null>(null);
+  const playhead = useRef(0);
   // Playback controls are read straight from the store every frame: toggling them never re-renders the scene.
   useFrame((_, delta) => {
-    const { playing, speed, edit, poseEdit } = useStudioStore.getState();
+    const { playing, speed, edit } = useStudioStore.getState();
     if (edit.mode !== "off") return;
-    if (playing) mixer.update(delta * speed);
-    else if (poseEdit) mixer.setTime(editorPlaying ? (holdTime ?? 0) : 0); // paused editor: the clip is the held pose
+    if (playing) {
+      mixer.update(delta * speed);
+      playhead.current = mixer.time;
+    }
+    poseFrame.current?.();
   });
 
   // The gizmo moved the target: write its transform (metres, degrees) into the draft.
@@ -463,7 +441,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
             />
           ))
         : null}
-      <PoseHandles model={model} rest={rest} sockets={liveSockets} />
+      <PoseRig model={model} rest={rest} sockets={liveSockets} frameRef={poseFrame} timeRef={playhead} />
       {editing && editObject ? (
         <TransformControls
           object={editObject}
@@ -474,96 +452,6 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
           translationSnap={edit.snap ? 0.005 : null}
           onMouseUp={commitEdit}
         />
-      ) : null}
-    </>
-  );
-}
-
-const HANDLE_LIMB: Record<string, { limb: Limb; effector: LimbEffector }> = {
-  left_hand: { limb: "left_arm", effector: "end" },
-  right_hand: { limb: "right_arm", effector: "end" },
-  left_foot: { limb: "left_leg", effector: "end" },
-  right_foot: { limb: "right_leg", effector: "end" },
-  left_knee: { limb: "left_leg", effector: "mid" },
-  right_knee: { limb: "right_leg", effector: "mid" },
-};
-
-/**
- * Pose editor handles: a dot on each hand, foot, knee and the hips of the held pose. Click one to
- * get a gizmo; dragging it moves that limb inside its joints' range of motion (the hips handle
- * sets the pelvis height and forward offset). The solved pose is written to the draft, so the
- * sliders follow, and the handle snaps back to where the limb could actually reach.
- */
-function PoseHandles({ model, rest, sockets }: { model: THREE.Object3D; rest: RestPose; sockets: AvatarSocket[] }) {
-  const editorOpen = useStudioStore((s) => Boolean(s.poseEdit));
-  const dragTarget = useStudioStore((s) => s.poseEdit?.dragTarget ?? null);
-  const probe = useStudioStore((s) => s.poseProbe);
-  const editMode = useStudioStore((s) => s.edit.mode);
-  const [handle, setHandle] = useState<THREE.Object3D | null>(null);
-  const handleRef = useCallback((o: THREE.Object3D | null) => setHandle(o), []);
-  const lastSolve = useRef(0);
-
-  const applyDrag = useCallback(
-    (final: boolean) => {
-      const state = useStudioStore.getState();
-      const edit = state.poseEdit;
-      if (!edit || !edit.dragTarget || !handle) return;
-      const now = performance.now();
-      if (!final && now - lastSolve.current < 60) return;
-      lastSolve.current = now;
-      const pose = edit.poses[edit.keyframe];
-      const p = handle.position;
-      if (edit.dragTarget === "hips") {
-        // forward_m is measured from where the legs put the pelvis, so the drag adds to it.
-        const forward = pose.hips.forward_m + p.z - (state.poseProbe.hips?.[2] ?? p.z);
-        state.updatePose(
-          edit.keyframe,
-          { ...pose, goal: undefined, hips: { ...pose.hips, height_m: +Math.max(0.05, p.y).toFixed(3), forward_m: +THREE.MathUtils.clamp(forward, -0.6, 0.6).toFixed(3) } },
-          true,
-        );
-      } else {
-        const map = HANDLE_LIMB[edit.dragTarget];
-        if (!map) return;
-        const solved = solveLimbToTarget(model, rest, pose, { twoHanded: edit.twoHanded, grip: edit.grip, sockets, stance: edit.poses[0] }, map.limb, map.effector, [p.x, p.y, p.z]);
-        state.updatePose(edit.keyframe, solved, true);
-      }
-      if (final) state.endPoseGesture(); // the whole drag is one undo step
-    },
-    [handle, model, rest, sockets],
-  );
-
-  if (!editorOpen || editMode !== "off") return null;
-  const ids = Object.keys(probe);
-  return (
-    <>
-      {ids.map((id) => {
-        const pos = probe[id];
-        const selected = dragTarget === id;
-        const isHips = id === "hips";
-        return (
-          <mesh
-            key={id}
-            ref={selected ? handleRef : undefined}
-            position={pos}
-            renderOrder={998}
-            onClick={(e) => {
-              e.stopPropagation();
-              useStudioStore.getState().setPoseDragTarget(selected ? null : id);
-            }}
-            onPointerOver={() => {
-              document.body.style.cursor = "grab";
-            }}
-            onPointerOut={() => {
-              document.body.style.cursor = "";
-            }}
-          >
-            <sphereGeometry args={[isHips ? 0.035 : 0.025, 16, 12]} />
-            <meshBasicMaterial color={selected ? "#7fe0c4" : isHips ? "#ffb86b" : "#7fa6ff"} depthTest={false} transparent opacity={selected ? 0.95 : 0.7} />
-          </mesh>
-        );
-      })}
-      {handle && dragTarget ? (
-        <TransformControls object={handle} mode="translate" space="world" size={0.6} translationSnap={null} onObjectChange={() => applyDrag(false)} onMouseUp={() => applyDrag(true)} />
       ) : null}
     </>
   );
@@ -677,6 +565,13 @@ export default function StudioCanvas(props: SceneProps) {
         scene.fog = new THREE.Fog("#090b10", 9, 18);
       }}
       className="h-full w-full"
+      // A click on empty space (not a drag that orbited, not the axis gizmo) clears the selected body point.
+      onPointerMissed={() => {
+        const { poseEdit, edit, setPoseDragTarget } = useStudioStore.getState();
+        if (!poseEdit?.dragTarget || edit.mode !== "off" || poseStage.scene?.gizmoBusy()) return;
+        setPoseDragTarget(null);
+        poseStage.layer?.announce("Selection cleared.");
+      }}
     >
       <color attach="background" args={["#090b10"]} />
       <hemisphereLight args={["#aebbd6", "#0a0c12", 0.8]} />
@@ -715,7 +610,9 @@ export default function StudioCanvas(props: SceneProps) {
         target={TARGET}
       />
       <CameraRig />
-      <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
+      {/* Top right, like an animation tool's view cube: the bottom of the stage stays free for the
+          playback toolbar and the timeline dock. Its space is --studio-gizmo-reserve in the CSS. */}
+      <GizmoHelper alignment="top-right" margin={[64, 64]}>
         <GizmoViewport axisColors={["#ff6b81", "#7fe0c4", "#7fa6ff"]} labelColor="#e3e7f0" />
       </GizmoHelper>
     </Canvas>

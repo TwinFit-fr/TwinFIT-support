@@ -50,15 +50,16 @@ function ItemRow({
 }) {
   return (
     <li className="space-y-1.5 rounded-xl bg-(--m3-surface-container) p-2">
-      <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
         <Chip tone={item.kind === "load" ? "primary" : "neutral"} className="h-6 px-2">
           {item.kind}
         </Chip>
         <Select
           value={item.code}
           onChange={(e) => onChange({ ...item, code: e.target.value })}
-          className="h-8 py-0 text-xs"
+          className="h-8 py-0 pl-2.5 text-xs"
           aria-label="Equipment code"
+          title={item.code}
         >
           {!codes.includes(item.code) ? <option value={item.code}>{item.code}</option> : null}
           {codes.map((code) => (
@@ -67,37 +68,36 @@ function ItemRow({
             </option>
           ))}
         </Select>
-        {item.kind === "load" ? (
-          <Select
-            value={item.socket_b ? BOTH_HANDS : (item.socket ?? "")}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === BOTH_HANDS) onChange({ ...item, socket: "hand_r", socket_b: "hand_l" });
-              else onChange({ ...item, socket: value || undefined, socket_b: undefined });
-            }}
-            className="h-8 w-28 py-0 text-xs"
-            aria-label="Socket"
-          >
-            <option value="">no socket</option>
-            {sockets.includes("hand_l") && sockets.includes("hand_r") ? <option value={BOTH_HANDS}>both hands</option> : null}
-            {sockets.map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
-          </Select>
-        ) : (
-          <span className="w-28 text-center text-[11px] text-(--m3-on-surface-variant)">floor</span>
-        )}
         <IconButton label="Remove" onClick={onRemove} className="h-8 w-8">
           <Trash2 className="h-3.5 w-3.5" />
         </IconButton>
       </div>
       {item.kind === "load" ? (
-        <div className="flex items-center gap-3 pl-1 text-[10px] text-(--m3-on-surface-variant)">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-1 text-[11px] text-(--m3-on-surface-variant)">
+          <label className="flex min-w-0 flex-1 basis-24 items-center gap-1.5" title="Where the item is held">
+            on
+            <Select
+              value={item.socket_b ? BOTH_HANDS : (item.socket ?? "")}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === BOTH_HANDS) onChange({ ...item, socket: "hand_r", socket_b: "hand_l" });
+                else onChange({ ...item, socket: value || undefined, socket_b: undefined });
+              }}
+              className="h-7 min-w-0 py-0 pl-2.5 pr-2 text-[11px]"
+              aria-label="Socket"
+            >
+              <option value="">no socket</option>
+              {sockets.includes("hand_l") && sockets.includes("hand_r") ? <option value={BOTH_HANDS}>both hands</option> : null}
+              {sockets.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </Select>
+          </label>
           <label className="flex items-center gap-1" title="How many of this item (two dumbbells, …)">
             count
-            <NumberField aria-label="Count" min={1} max={20} step={1} value={item.count ?? 1} onCommit={(v) => onChange({ ...item, count: Math.round(v) })} className="h-6 w-12 px-1 py-0 text-[11px]" />
+            <NumberField aria-label="Count" min={1} max={20} step={1} value={item.count ?? 1} onCommit={(v) => onChange({ ...item, count: Math.round(v) })} className="h-7 w-11 px-1 py-0 text-[11px]" />
           </label>
           <label className="flex items-center gap-1" title="Load in kilograms (a hint for the prompt; 0 = unspecified)">
             kg
@@ -109,11 +109,13 @@ function ItemRow({
               digits={1}
               value={item.weight_kg ?? 0}
               onCommit={(v) => onChange({ ...item, weight_kg: v > 0 ? v : undefined })}
-              className="h-6 w-14 px-1 py-0 text-[11px]"
+              className="h-7 w-12 px-1 py-0 text-[11px]"
             />
           </label>
         </div>
-      ) : null}
+      ) : (
+        <div className="pl-1 text-[11px] text-(--m3-on-surface-variant)">Stands on the floor</div>
+      )}
     </li>
   );
 }
@@ -510,8 +512,15 @@ export function InspectorPanel({
 
         <Section
           title="Queue & history"
+          meta={
+            vectors.length ? (
+              <span className="rounded-full bg-(--m3-surface-container-high) px-1.5 text-[11px] tabular-nums text-(--m3-on-surface-variant)" aria-label={`${vectors.length} rows`}>
+                {vectors.length}
+              </span>
+            ) : null
+          }
           action={
-            <div className="flex items-center gap-2">
+            <>
               <M3Button size="sm" variant="text" disabled={!avatar} onClick={() => onNewPoses(items)} title="Build the movement by hand: start from one pose, add the next ones, play them as a loop">
                 <PenLine className="h-3.5 w-3.5" /> New poses
               </M3Button>
@@ -538,8 +547,7 @@ export function InspectorPanel({
                   void onUploadClip(file, items).finally(() => setUploadingClip(false));
                 }}
               />
-              <span className="text-[11px] tabular-nums text-(--m3-on-surface-variant)">{vectors.length}</span>
-            </div>
+            </>
           }
         >
           {vectorsLoading && !vectors.length ? (

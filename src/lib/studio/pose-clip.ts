@@ -8,7 +8,6 @@ import {
   setPoseValue,
   swingAxis,
   upgradePoseClip,
-  type AnchorId,
   type ArmAngles,
   type HeightRef,
   type LegAngles,
@@ -37,7 +36,7 @@ const LOGICAL = [
   "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot",
   "LeftToeBase", "RightToeBase",
 ] as const;
-type Logical = (typeof LOGICAL)[number];
+export type Logical = (typeof LOGICAL)[number];
 
 /**
  * Resolve the rig's bone name for each logical Mixamo bone: exact Mixamo names first, then any
@@ -77,7 +76,7 @@ const CLAVICLE_RISE = 0.05;
  * Rotation of every bone away from the anatomical position, in the character frame, each one
  * relative to its parent (s = +1 left side, -1 right side). All zeros gives identity everywhere.
  */
-function characterDeltas(p: PoseAngles, rig: Rig): Partial<Record<Logical, THREE.Quaternion>> {
+export function characterDeltas(p: PoseAngles, rig: Rig): Partial<Record<Logical, THREE.Quaternion>> {
   const arm = (a: ArmAngles, s: 1 | -1, shoulder: Logical) => {
     const axis = new THREE.Vector3(...swingAxis(a.shoulder_plane, s));
     // Plane and elevation are one swing of the arm, then the rotation about it: the ISB sequence
@@ -131,7 +130,7 @@ function characterDeltas(p: PoseAngles, rig: Rig): Partial<Record<Logical, THREE
   return deltas;
 }
 
-type Solved = {
+export type Solved = {
   local: Map<string, THREE.Quaternion>;
   hipsPosition: THREE.Vector3;
   /** Where the pelvis went from its rest position, world metres. */
@@ -147,6 +146,8 @@ export type SolveContext = {
   sockets: AvatarSocket[];
   /** The clip's first pose: where the feet are planted for the poses that follow. */
   stance?: PoseAngles;
+  /** A drag trying a pose: a free foot is left where its angles put it, even under the floor, so the search can see that and keep it out itself. */
+  trial?: boolean;
 };
 
 /** A foot further than this from where the first pose planted it has stepped: it is not held there. */
@@ -168,7 +169,7 @@ type RigFoot = {
   home: THREE.Vector3;
 };
 
-type Rig = {
+export type Rig = {
   names: Partial<Record<Logical, string>>;
   rest: RestPose;
   /** Rest world rotation of each bone's parent (identity for a bone under a non-bone node). */
@@ -317,7 +318,7 @@ function calibrate(model: THREE.Object3D, rest: RestPose, names: Partial<Record<
 }
 
 /** Bone-local rotation for a rotation away from the anatomical position, relative to the parent. */
-function localFor(rig: Rig, name: string, delta: THREE.Quaternion): THREE.Quaternion {
+export function localFor(rig: Rig, name: string, delta: THREE.Quaternion): THREE.Quaternion {
   const r = rig.rest.get(name)!;
   const pw = rig.parentWorld.get(name) ?? new THREE.Quaternion();
   const own = rig.correction.get(name);
@@ -333,7 +334,7 @@ function localFor(rig: Rig, name: string, delta: THREE.Quaternion): THREE.Quater
 const rigs = new WeakMap<RestPose, Rig>();
 
 /** The rig of a rest pose, calibrated once: the rest pose object changes when the model is laid out again. */
-function buildRig(model: THREE.Object3D, rest: RestPose): Rig {
+export function buildRig(model: THREE.Object3D, rest: RestPose): Rig {
   const cached = rigs.get(rest);
   if (cached) return cached;
   const names = resolveNames(model);
@@ -486,14 +487,16 @@ function standOnFeet(
     offset.x += ((foot.home.x - pos.x) * support[i]) / total;
     offset.z += ((foot.home.z - pos.z) * support[i]) / total;
   });
+  // A free foot leaves the body where a foot mirroring the other would: lifting it does not slide the body sideways.
+  if (p.free_foot) offset.x = 0;
   offset.y = -lowest;
   return { offset, support };
 }
 
-type WorldTransform = { pos: THREE.Vector3; quat: THREE.Quaternion };
+export type WorldTransform = { pos: THREE.Vector3; quat: THREE.Quaternion };
 
-/** World transform of every bone for a set of local quaternions (rest positions, hips moved). */
-function forwardKinematics(rig: Rig, local: Map<string, THREE.Quaternion>, hipsPosition: THREE.Vector3): Map<string, WorldTransform> {
+/** World transform of every bone (or only of `only` and their parents) for a set of local quaternions (rest positions, hips moved). */
+export function forwardKinematics(rig: Rig, local: Map<string, THREE.Quaternion>, hipsPosition: THREE.Vector3, only?: string[]): Map<string, WorldTransform> {
   const out = new Map<string, WorldTransform>();
   const hipsName = rig.names.Hips;
   const worldOf = (name: string): WorldTransform | null => {
@@ -515,7 +518,7 @@ function forwardKinematics(rig: Rig, local: Map<string, THREE.Quaternion>, hipsP
     out.set(name, t);
     return t;
   };
-  for (const name of rig.rest.keys()) worldOf(name);
+  for (const name of only ?? rig.rest.keys()) worldOf(name);
   return out;
 }
 
@@ -692,7 +695,7 @@ function reachHands(rig: Rig, local: Map<string, THREE.Quaternion>, hipsPosition
 export type Limb = "left_arm" | "right_arm" | "left_leg" | "right_leg";
 export type LimbEffector = "end" | "mid";
 
-const LIMB_CHAIN: Record<Limb, { root: Logical; mid: Logical; end: Logical; dofs: string[] }> = {
+export const LIMB_CHAIN: Record<Limb, { root: Logical; mid: Logical; end: Logical; dofs: string[] }> = {
   left_arm: { root: "LeftArm", mid: "LeftForeArm", end: "LeftHand", dofs: ["left_arm.shoulder_elevation", "left_arm.shoulder_plane", "left_arm.shoulder_rotation", "left_arm.elbow_flexion"] },
   right_arm: { root: "RightArm", mid: "RightForeArm", end: "RightHand", dofs: ["right_arm.shoulder_elevation", "right_arm.shoulder_plane", "right_arm.shoulder_rotation", "right_arm.elbow_flexion"] },
   left_leg: { root: "LeftUpLeg", mid: "LeftLeg", end: "LeftFoot", dofs: ["left_leg.hip_flexion", "left_leg.hip_abduction", "left_leg.hip_rotation", "left_leg.knee_flexion"] },
@@ -836,7 +839,7 @@ function reachGoal(p: PoseAngles, rig: Rig, ctx: SolveContext): PoseAngles {
 }
 
 /** The pose as it will be drawn: its goal reached, pinned points become limb angles. */
-function resolvePose(given: PoseAngles, rig: Rig, ctx: SolveContext): PoseAngles {
+export function resolvePose(given: PoseAngles, rig: Rig, ctx: SolveContext): PoseAngles {
   const p = reachGoal(given, rig, ctx);
   const anchors = p.anchors;
   if (!anchors || !Object.keys(anchors).length) return p;
@@ -857,30 +860,7 @@ function resolvePose(given: PoseAngles, rig: Rig, ctx: SolveContext): PoseAngles
   return pose;
 }
 
-/**
- * Move a limb so its hand / foot (or elbow / knee) reaches a world point, inside every joint's
- * range of motion: the pose with the new angles, for the editor to keep.
- */
-export function solveLimbToTarget(
-  model: THREE.Object3D,
-  rest: RestPose,
-  pose: PoseAngles,
-  ctx: SolveContext,
-  limb: Limb,
-  effector: LimbEffector,
-  target: [number, number, number],
-): PoseAngles {
-  const rig = buildRig(model, rest);
-  const core = solvePoseCore(pose, rig, ctx);
-  const fk = forwardKinematics(rig, core.local, core.hipsPosition);
-  const solved = solveLimbAngles(rig, fk, pose, limb, effector, new THREE.Vector3(...target));
-  // A foot of a later pose is planted where the first pose put it: dragging it away pins it there.
-  if (effector !== "end" || !limb.endsWith("_leg") || !ctx.stance || ctx.stance === pose || pose.orientation !== "standing") return solved;
-  const id: AnchorId = limb === "left_leg" ? "left_foot" : "right_foot";
-  return { ...solved, anchors: { ...solved.anchors, [id]: target } };
-}
-
-function solvePose(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
+export function solvePose(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
   return solvePoseCore(resolvePose(p, rig, ctx), rig, ctx);
 }
 
@@ -890,7 +870,7 @@ function solvePose(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
  * the pelvis was moved by hand) and the legs reach them from the pelvis. Cheap: this runs for
  * every frame of a clip.
  */
-function solvePoseCore(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
+export function solvePoseCore(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
   const deltas = characterDeltas(p, rig);
   const local = locals(rig, deltas);
   const hipsName = rig.names.Hips;
@@ -926,7 +906,7 @@ function solvePoseCore(p: PoseAngles, rig: Rig, ctx: SolveContext): Solved {
         reachFeet(rig, local, hipsPosition, targets);
         if (p.feet_flat !== false) flattenFeet(rig, local, deltas, hipsPosition, support);
       }
-      if (p.free_foot) keepOffFloor(rig, local, hipsPosition, p.free_foot);
+      if (p.free_foot && !ctx.trial) keepOffFloor(rig, local, hipsPosition, p.free_foot);
     } else {
       // Any other support: a height set by hand, else the orientation's default.
       const y = p.hips.height_m ?? HIPS_HEIGHT_BY_ORIENTATION[p.orientation as Exclude<typeof p.orientation, "standing">] ?? 0.9;
@@ -975,27 +955,6 @@ export function solveWorld(model: THREE.Object3D, rest: RestPose, pose: PoseAngl
     const t = rig.names[logical] ? fk.get(rig.names[logical]!) : undefined;
     if (t) out[logical] = { position: t.pos, quaternion: t.quat };
   }
-  return out;
-}
-
-/** World position of the pinnable points of a pose on this rig (what the editor pins to). */
-export function probePose(model: THREE.Object3D, rest: RestPose, pose: PoseAngles, ctx: SolveContext): Record<string, [number, number, number]> {
-  const rig = buildRig(model, rest);
-  const { local, hipsPosition } = solvePose(pose, rig, ctx);
-  const fk = forwardKinematics(rig, local, hipsPosition);
-  const out: Record<string, [number, number, number]> = {};
-  const read = (id: string, logical: Logical) => {
-    const name = rig.names[logical];
-    const t = name ? fk.get(name) : undefined;
-    if (t) out[id] = [+t.pos.x.toFixed(3), +t.pos.y.toFixed(3), +t.pos.z.toFixed(3)];
-  };
-  read("hips", "Hips");
-  read("left_foot", "LeftFoot");
-  read("right_foot", "RightFoot");
-  read("left_hand", "LeftHand");
-  read("right_hand", "RightHand");
-  read("left_knee", "LeftLeg");
-  read("right_knee", "RightLeg");
   return out;
 }
 

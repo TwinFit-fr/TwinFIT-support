@@ -198,7 +198,7 @@ export function Chip({
   const interactive = typeof props.onClick === "function";
   const classes = cn(
     "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium tracking-tight transition-colors",
-    interactive ? "studio-state cursor-pointer" : "cursor-default",
+    interactive ? "studio-state cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-(--m3-primary)/70" : "cursor-default",
     selected
       ? "border-transparent bg-(--m3-secondary-container) text-(--m3-on-secondary-container)"
       : "border-(--m3-outline-variant) bg-transparent text-(--m3-on-surface-variant)",
@@ -271,11 +271,15 @@ export function Segmented<T extends string>({
 
 export function Section({
   title,
+  meta,
   action,
   className,
   children,
 }: {
   title: string;
+  /** Next to the title (a count, a status). */
+  meta?: React.ReactNode;
+  /** Right of the title; wraps under it when the pane is narrow. */
   action?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
@@ -287,11 +291,14 @@ export function Section({
         className,
       )}
     >
-      <header className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-(--m3-on-surface-variant)">
-          {title}
-        </h3>
-        {action}
+      <header className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <div className="flex items-center gap-2">
+          <h3 className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.14em] text-(--m3-on-surface-variant)">
+            {title}
+          </h3>
+          {meta}
+        </div>
+        {action ? <div className="ml-auto flex flex-wrap items-center justify-end gap-1">{action}</div> : null}
       </header>
       {children}
     </section>

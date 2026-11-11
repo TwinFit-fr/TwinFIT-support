@@ -7,11 +7,21 @@ export type ShortcutHandlers = Partial<Record<string, () => void>>;
 
 const FORM_CONTROL = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
 
-/** Keys typed into a form control, or chorded with a modifier, belong to the browser. */
+/** Keys a range slider uses itself; any other single key still reaches the page's shortcuts. */
+const SLIDER_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Tab"]);
+
+/**
+ * Keys typed into a form control, or chorded with a modifier, belong to the browser. A range
+ * slider keeps focus after it is dragged, but it types nothing: only its own keys stay with it,
+ * so Space and the view keys keep working right after a slider was touched.
+ */
 function belongsToBrowser(event: KeyboardEvent): boolean {
   if (event.defaultPrevented || event.isComposing) return true;
   if (event.ctrlKey || event.metaKey || event.altKey) return true;
-  return event.target instanceof Element && event.target.closest(FORM_CONTROL) !== null;
+  if (!(event.target instanceof Element)) return false;
+  const control = event.target.closest(FORM_CONTROL);
+  if (!control) return false;
+  return !(control instanceof HTMLInputElement && control.type === "range" && !SLIDER_KEYS.has(event.key));
 }
 
 /**

@@ -54,6 +54,33 @@ body {
     --studio-glass: rgba(18, 22, 31, 0.72);
     --studio-glass-border: rgba(255, 255, 255, 0.07);
     --studio-glow: 0 0 0 1px rgba(163, 196, 255, 0.18), 0 12px 40px -12px rgba(40, 87, 168, 0.55);
+    /* Layout tokens of the workspace shell. Pane sizes and limits are in
+       src/lib/studio/workspace-layout.ts (the shell sets them live as --studio-pane-*). */
+    --studio-topbar-h: 44px;
+    --studio-pane-header-h: 36px;
+    --studio-control-sm: 28px;
+    --studio-control-md: 32px;
+    --studio-space-1: 4px;
+    --studio-space-2: 8px;
+    --studio-space-3: 12px;
+    --studio-space-4: 16px;
+    --studio-radius-sm: 6px;
+    --studio-radius-md: 10px;
+    --studio-radius-lg: 14px;
+    --studio-text-2xs: 10px;
+    --studio-text-xs: 11px;
+    --studio-text-sm: 13px;
+    --studio-stage-inset: 16px;
+    /* Room the axis gizmo takes in the stage's top-right corner (GizmoHelper margin 64 px). */
+    --studio-gizmo-reserve: 128px;
+    /* Room the floating playback toolbar takes at the bottom of the stage. */
+    --studio-stage-toolbar-reserve: 88px;
+    --studio-splitter-hit: 10px;
+    --studio-splitter-line: 2px;
+    --studio-avatar-select-w: 11rem;
+    --studio-avatar-select-max: 19rem;
+    --studio-motion: 180ms;
+    --studio-float-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--studio-glass-border);
     background: var(--m3-surface);
     color: var(--m3-on-surface);
     font-feature-settings: "cv02", "cv03", "cv04", "tnum";
@@ -119,6 +146,327 @@ body {
     .studio-pulse {
       animation: none;
       opacity: 0.7;
+    }
+  }
+
+  /* Workspace panes: they slide open and closed, but follow a separator drag instantly. A closed
+     pane stays mounted (its state survives) and is hidden once the slide is over. */
+  .studio-pane {
+    transition:
+      width var(--studio-motion) ease,
+      height var(--studio-motion) ease;
+  }
+  .studio-pane[data-open="false"] {
+    visibility: hidden;
+    transition:
+      width var(--studio-motion) ease,
+      height var(--studio-motion) ease,
+      visibility 0s linear var(--studio-motion);
+  }
+  .studio-shell[data-resizing] .studio-pane {
+    transition: none;
+  }
+  .studio-shell[data-resizing] {
+    user-select: none;
+  }
+
+  /* A pane separator: a thin line with a wider invisible grab area, highlighted on hover, focus and drag. */
+  .studio-splitter {
+    position: relative;
+    z-index: 25;
+    flex: none;
+    outline: none;
+    touch-action: none;
+  }
+  .studio-splitter[aria-orientation="vertical"] {
+    width: 0;
+    cursor: col-resize;
+  }
+  .studio-splitter[aria-orientation="horizontal"] {
+    height: 0;
+    cursor: row-resize;
+  }
+  .studio-splitter::before {
+    content: "";
+    position: absolute;
+    inset: calc(var(--studio-splitter-hit) / -2);
+  }
+  .studio-splitter[aria-orientation="vertical"]::before {
+    inset-block: 0;
+  }
+  .studio-splitter[aria-orientation="horizontal"]::before {
+    inset-inline: 0;
+  }
+  .studio-splitter::after {
+    content: "";
+    position: absolute;
+    background: var(--m3-primary);
+    opacity: 0;
+    transition: opacity 120ms ease;
+    pointer-events: none;
+  }
+  .studio-splitter[aria-orientation="vertical"]::after {
+    inset-block: 0;
+    left: calc(var(--studio-splitter-line) / -2);
+    width: var(--studio-splitter-line);
+  }
+  .studio-splitter[aria-orientation="horizontal"]::after {
+    inset-inline: 0;
+    top: calc(var(--studio-splitter-line) / -2);
+    height: var(--studio-splitter-line);
+  }
+  .studio-splitter:hover::after {
+    opacity: 0.55;
+    transition-delay: 150ms;
+  }
+  .studio-splitter:focus-visible::after,
+  .studio-splitter[data-dragging]::after {
+    opacity: 1;
+    transition-delay: 0s;
+  }
+
+  /* Tooltip for icon-only tools: the accessible name stays in aria-label, this repeats it on
+     hover and keyboard focus. `data-tip-align` = start | end keeps it inside the window. */
+  .studio-tip[data-tip]::before {
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    z-index: 60;
+    width: max-content;
+    max-width: 260px;
+    padding: 5px 8px;
+    border-radius: var(--studio-radius-sm);
+    background: var(--m3-surface-container-highest);
+    box-shadow: 0 0 0 1px var(--m3-outline), 0 8px 24px -8px rgba(0, 0, 0, 0.8);
+    color: var(--m3-on-surface);
+    font-size: var(--studio-text-xs);
+    font-weight: 400;
+    line-height: 1.35;
+    letter-spacing: normal;
+    text-align: left;
+    text-transform: none;
+    white-space: normal;
+    opacity: 0;
+    transform: translateX(-50%);
+    pointer-events: none;
+    transition: opacity 100ms ease;
+  }
+  .studio-tip[data-tip-align="start"]::before {
+    left: 0;
+    transform: none;
+  }
+  .studio-tip[data-tip-align="end"]::before {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+  .studio-tip[data-tip]:hover,
+  .studio-tip[data-tip]:focus-visible {
+    z-index: 60;
+  }
+  .studio-tip[data-tip]:hover::before {
+    opacity: 1;
+    transition-delay: 450ms;
+  }
+  .studio-tip[data-tip]:focus-visible::before {
+    opacity: 1;
+  }
+  .studio-tip[aria-expanded="true"]::before {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .studio-pane,
+    .studio-pane[data-open="false"],
+    .studio-splitter::after,
+    .studio-tip[data-tip]::before {
+      transition: none;
+    }
+  }
+  /* Body points of the pose editor (viewer/pose-points-layer.tsx): a round hit area of 24 to 32 px
+     centred on each joint (--pose-hit, as large as the neighbours leave room for; overlaps go to
+     the nearest point), a dot with a dark edge so it reads on any avatar colour and on the dark
+     stage, shrunk when crowded (--pose-dot), and a stick figure under them. Idle teal, hover
+     (data-hover, set by the nearest-point rule) white with its name, dragging and selected amber. */
+  .pose-points {
+    --pose-point: #7fe0c4;
+    --pose-point-edge: #03100c;
+    --pose-point-hot: #ffffff;
+    --pose-point-active: #fcd34d;
+    --pose-line: rgba(127, 224, 196, 0.92);
+    --pose-line-halo: rgba(3, 6, 10, 0.72);
+  }
+  .pose-points[data-ready="false"] .pose-point,
+  .pose-points[data-ready="false"] svg {
+    visibility: hidden;
+  }
+  .pose-skeleton-halo,
+  .pose-skeleton-line {
+    fill: none;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .pose-skeleton-halo {
+    stroke: var(--pose-line-halo);
+    stroke-width: 4.5;
+  }
+  .pose-skeleton-line {
+    stroke: var(--pose-line);
+    stroke-width: 1.75;
+  }
+  /* A dragged point that cannot reach the pointer: a dashed line from the point to where the pointer asks it to be. */
+  .pose-short line {
+    fill: none;
+    stroke-linecap: round;
+  }
+  .pose-short-halo {
+    stroke: var(--pose-line-halo);
+    stroke-width: 4;
+  }
+  .pose-short-line {
+    stroke: var(--pose-point-active);
+    stroke-width: 1.5;
+    stroke-dasharray: 2 5;
+  }
+  .pose-short circle {
+    fill: none;
+    stroke: var(--pose-point-active);
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 1px var(--pose-point-edge));
+  }
+  .pose-point {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--pose-hit, 28px);
+    height: var(--pose-hit, 28px);
+    margin: calc(var(--pose-hit, 28px) / -2) 0 0 calc(var(--pose-hit, 28px) / -2);
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    display: grid;
+    place-items: center;
+    cursor: grab;
+    touch-action: none;
+    outline: none;
+    will-change: transform;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pose-point[data-hover],
+  .pose-point:focus-visible,
+  .pose-point[data-state="selected"],
+  .pose-point[data-state="dragging"] {
+    z-index: 2;
+  }
+  .pose-point[data-state="dragging"] {
+    cursor: grabbing;
+  }
+  .pose-point-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 999px;
+    background: var(--pose-point);
+    box-shadow:
+      0 0 0 2px var(--pose-point-edge),
+      0 0 0 3.5px rgba(255, 255, 255, 0.28);
+    transform: scale(var(--pose-dot, 1));
+    transition:
+      transform 120ms ease,
+      width 120ms ease,
+      height 120ms ease,
+      background-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+  .pose-point[data-role="root"] .pose-point-dot {
+    width: 15px;
+    height: 15px;
+  }
+  .pose-point[data-hover] .pose-point-dot,
+  .pose-point[data-state="selected"] .pose-point-dot,
+  .pose-point[data-state="dragging"] .pose-point-dot {
+    transform: scale(max(var(--pose-dot, 1), 0.8));
+  }
+  .pose-point[data-hover] .pose-point-dot {
+    width: 15px;
+    height: 15px;
+    background: var(--pose-point-hot);
+  }
+  .pose-point[data-role="root"][data-hover] .pose-point-dot {
+    width: 18px;
+    height: 18px;
+  }
+  .pose-point[data-state="selected"] .pose-point-dot {
+    width: 13px;
+    height: 13px;
+    background: var(--pose-point-active);
+  }
+  .pose-point[data-state="selected"]::before,
+  .pose-point[data-state="dragging"]::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border-radius: 999px;
+    border: 2px solid var(--pose-point-active);
+    box-shadow:
+      0 0 0 1.5px var(--pose-point-edge),
+      inset 0 0 0 1.5px var(--pose-point-edge);
+    pointer-events: none;
+  }
+  .pose-point[data-state="dragging"]::before {
+    inset: -5px;
+  }
+  .pose-point[data-state="dragging"] .pose-point-dot {
+    width: 17px;
+    height: 17px;
+    background: var(--pose-point-active);
+    box-shadow:
+      0 0 0 2px var(--pose-point-edge),
+      0 0 20px 5px rgba(252, 211, 77, 0.5);
+  }
+  .pose-point:focus-visible::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 999px;
+    box-shadow:
+      0 0 0 2px var(--m3-primary),
+      0 0 0 4px var(--pose-point-edge);
+    pointer-events: none;
+  }
+  .pose-point-label {
+    position: absolute;
+    left: calc(100% + 4px);
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--m3-on-surface);
+    background: rgba(9, 11, 16, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+  .pose-point[data-hover] .pose-point-label,
+  .pose-point:focus-visible .pose-point-label,
+  .pose-point[data-state="dragging"] .pose-point-label {
+    opacity: 1;
+  }
+  .pose-status {
+    bottom: var(--studio-stage-toolbar-reserve);
+  }
+  .pose-status-live {
+    box-shadow: 0 0 0 1px rgba(252, 211, 77, 0.45);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pose-point-dot,
+    .pose-point-label {
+      transition: none;
     }
   }
 }

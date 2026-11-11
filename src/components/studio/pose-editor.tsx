@@ -7,22 +7,18 @@ import {
   LOOP_MODES,
   ORIENTATIONS,
   POSE_GROUPS,
-  clinicalForearm,
-  flatAnkle,
-  getPoseValue,
-  mirrorPath,
   poseClipFromDraft,
-  setPoseValue,
   type AnchorId,
   type LoopMode,
   type Orientation,
-  type PoseAngles,
   type PoseClipJson,
-  type PoseField,
 } from "@/lib/studio/anatomy";
 import { useConfirm } from "@/components/ui/confirm";
+import { applyPoseEdit } from "@/lib/studio/pose-drag";
+import { POINT_LABEL, isPointId } from "@/lib/studio/pose-points";
 import { MAX_POSES, useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
+import { PoseSliders as Sliders } from "./pose-sliders";
 import { Chip, IconButton, M3Button, NumberField, Segmented, Select, TextArea, TextInput } from "./ui";
 
 const LOOP_LABEL: Record<LoopMode, { label: string; title: string }> = {
@@ -43,118 +39,8 @@ const ANCHOR_LABEL: Record<AnchorId, string> = {
 
 const group = (id: string) => POSE_GROUPS.find((g) => g.id === id)!;
 
-/** The forearm as a goniometer reads it, next to the Studio's zero at full supination. */
-function forearmNote(value: number): string {
-  const clinical = Math.round(clinicalForearm(value));
-  return clinical === 0 ? "mid-position" : clinical > 0 ? `${clinical}° pronation` : `${-clinical}° supination`;
-}
-
 /** A foot this far above the other (metres) is off the floor, and its ankle is the animator's again. */
 const RAISED_M = 0.08;
-
-/**
- * One joint value: a slider for the gesture (its drag is one undo step) and a number field for
- * exact entry. Both are labelled for assistive tech.
- */
-function Slider({
-  field,
-  value,
-  onChange,
-  onGestureEnd,
-  compact = false,
-  note,
-  locked,
-}: {
-  field: PoseField;
-  value: number | null;
-  onChange: (value: number, gesture: boolean) => void;
-  onGestureEnd: () => void;
-  compact?: boolean;
-  /** A second reading of the value, under the slider. */
-  note?: string;
-  /** Why the value cannot be set here: it follows from something else. */
-  locked?: string;
-}) {
-  const step = field.step ?? 1;
-  const shown = value ?? 0;
-  return (
-    <div className={cn("text-[11px]", locked && "opacity-60")} title={locked}>
-      <div className="flex items-center justify-between gap-2">
-        <span className={cn("truncate text-(--m3-on-surface-variant)", compact && "text-[10px]")}>{field.label}</span>
-        <span className="flex items-center gap-0.5 font-mono tabular-nums">
-          <NumberField
-            aria-label={`${field.label} (${field.unit})`}
-            min={field.min}
-            max={field.max}
-            step={step}
-            digits={field.unit === "m" ? 2 : 0}
-            value={shown}
-            disabled={Boolean(locked)}
-            onCommit={(v) => onChange(v, false)}
-            className="h-6 w-14 rounded-md px-1 py-0 text-right text-[11px]"
-          />
-          <span className="w-3 text-(--m3-on-surface-variant)">{field.unit}</span>
-        </span>
-      </div>
-      <input
-        type="range"
-        aria-label={field.label}
-        min={field.min}
-        max={field.max}
-        step={step}
-        value={shown}
-        disabled={Boolean(locked)}
-        onChange={(e) => onChange(Number(e.target.value), true)}
-        onPointerUp={onGestureEnd}
-        onKeyUp={onGestureEnd}
-        onBlur={onGestureEnd}
-        className={cn("mt-1 h-1.5 w-full accent-(--m3-primary)", locked ? "cursor-not-allowed" : "cursor-pointer")}
-      />
-      {note ? <div className="mt-0.5 text-right text-[10px] text-(--m3-on-surface-variant)">{note}</div> : null}
-    </div>
-  );
-}
-
-/** One column of sliders, for a side or a central group. */
-function Sliders({
-  fields,
-  pose,
-  onChange,
-  onGestureEnd,
-  compact,
-  followsFloor = false,
-  side,
-}: {
-  fields: PoseField[];
-  pose: PoseAngles;
-  onChange: (path: string, value: number, gesture: boolean) => void;
-  onGestureEnd: () => void;
-  compact?: boolean;
-  /** This leg's sole is on the floor, flat: its ankle is worked out from the leg. */
-  followsFloor?: boolean;
-  side?: "left" | "right";
-}) {
-  return (
-    <div className="space-y-2.5">
-      {fields.map((f) => {
-        const value = getPoseValue(pose, f.path);
-        const ankle = followsFloor && side && f.path.endsWith(".ankle_dorsiflexion");
-        return (
-          <Slider
-            key={f.path}
-            field={f}
-            value={ankle ? flatAnkle(pose, side) : value}
-            onChange={(v, g) => onChange(f.path, v, g)}
-            onGestureEnd={onGestureEnd}
-            compact={compact}
-            note={f.path.endsWith(".forearm_pronation") ? forearmNote(value ?? 0) : undefined}
-            locked={ankle ? "Follows the floor: the sole stays flat. Turn off Flat feet in Body to set it." : undefined}
-          />
-        );
-      })}
-    </div>
-  );
-}
 
 /**
  * Keyframe editor of a pose clip. Poses are added one by one and played as a boomerang (or a
@@ -246,14 +132,8 @@ export function PoseEditor({
   const i = draft.keyframe;
   const n = draft.poses.length;
 
-  const change = (path: string, value: number, gesture: boolean) => {
-    let next = setPoseValue(pose, path, value);
-    const other = draft.mirror ? mirrorPath(path) : null;
-    if (other) next = setPoseValue(next, other, value);
-    // A template's goal would move the pelvis back: touching it by hand ends the goal.
-    if (path.startsWith("hips.") && next.goal) next = { ...next, goal: undefined };
-    updatePose(i, next, gesture);
-  };
+  // The same rule as a drag on the stage (Mirror, goals): see pose-drag.ts.
+  const change = (path: string, value: number, gesture: boolean) => updatePose(i, applyPoseEdit(pose, { [path]: value }, { mirror: draft.mirror }), gesture);
   const errors = issues.filter((issue) => issue.severity === "error");
   /** Saving what fails as a body takes a decision: the animator may mean it. */
   const save = async (mode: SaveMode) => {
@@ -299,9 +179,9 @@ export function PoseEditor({
       {/* Header: title, play, close */}
       <div className="flex items-center justify-between border-b border-(--m3-outline-variant) px-4 py-3">
         <div className="min-w-0">
-          <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-(--m3-on-surface-variant)">Pose editor</div>
+          {/* The pane header already says "Pose editor": the title names the clip being edited. */}
           <h2 className="truncate text-sm font-semibold tracking-tight">
-            {label}
+            {draft.sourceSeq ? label : "New movement"}
             {draft.dirty ? <span className="ml-1.5 text-(--m3-warning)" title="Unsaved changes">•</span> : null}
           </h2>
         </div>
@@ -314,7 +194,8 @@ export function PoseEditor({
           </IconButton>
           <M3Button size="sm" variant={playing ? "tonal" : "filled"} onClick={togglePlaying} title={playing ? "Pause and hold the selected pose" : "Play the loop"}>
             {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-            {playing ? "Pause" : "Play"}
+            {/* Icon-only in a narrow pane, so the clip's title keeps its room. */}
+            <span className="sr-only @[22rem]/pane:not-sr-only">{playing ? "Pause" : "Play"}</span>
           </M3Button>
           <IconButton label="Close the editor" onClick={() => void close()} disabled={saving} className="h-8 w-8">
             <X className="h-4 w-4" />
@@ -380,7 +261,8 @@ export function PoseEditor({
               value={draft.labels?.[i] ?? ""}
               onChange={(e) => setLabel(i, e.target.value)}
               onBlur={endGesture}
-              placeholder={`Name of pose ${i + 1} (bottom, lockout…)`}
+              placeholder={`Name of pose ${i + 1}`}
+              title="A short name for this pose, e.g. bottom or lockout"
               aria-label={`Name of pose ${i + 1}`}
               className="h-7 px-2 py-0 text-[11px]"
             />
@@ -466,8 +348,8 @@ export function PoseEditor({
 
         {/* Pins */}
         <div className="border-b border-(--m3-outline-variant) px-4 py-3">
-          <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.16em] text-(--m3-on-surface-variant)">
-            <span>Pinned in this pose</span>
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-(--m3-on-surface-variant)">
+            <span className="whitespace-nowrap">Pinned in this pose</span>
             <span className="normal-case tracking-normal">pinned points stay put while you move the rest</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -485,8 +367,8 @@ export function PoseEditor({
             ))}
           </div>
           <p className="mt-2 text-[11px] leading-snug text-(--m3-on-surface-variant)">
-            In the viewport, click a dot on a hand, foot, knee or the hips and drag it: the limb follows inside its range of motion and the sliders update.
-            {draft.dragTarget ? ` Dragging: ${draft.dragTarget === "hips" ? "hips" : ANCHOR_LABEL[draft.dragTarget as AnchorId]}.` : ""}
+            On the stage, press any point of the body and drag it: the limb follows inside its range of motion and the sliders update. Arrow keys nudge the selected point.
+            {isPointId(draft.dragTarget) ? ` Selected: ${POINT_LABEL[draft.dragTarget]}.` : ""}
           </p>
         </div>
 
@@ -502,7 +384,7 @@ export function PoseEditor({
           <div className="mt-3">
             {tab === "body" ? (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
                   <label className="text-[11px] text-(--m3-on-surface-variant)">
                     Support
                     <Select
@@ -519,7 +401,7 @@ export function PoseEditor({
                     </Select>
                   </label>
                   <div className="flex items-end gap-1.5 text-[11px] text-(--m3-on-surface-variant)">
-                    <Chip selected={draft.twoHanded} onClick={() => setOptions({ twoHanded: !draft.twoHanded })} title="The hands hold a bar: its position per pose drives the arms" className="h-8 flex-1 justify-center">
+                    <Chip selected={draft.twoHanded} onClick={() => setOptions({ twoHanded: !draft.twoHanded })} title="The hands hold a bar: its position per pose drives the arms" className="h-8 flex-1 justify-center whitespace-nowrap">
                       Bar in hands
                     </Chip>
                     {standing ? (
@@ -527,7 +409,7 @@ export function PoseEditor({
                         selected={feetFlat}
                         onClick={() => updatePose(i, { ...pose, feet_flat: !feetFlat })}
                         title="On: the soles stay flat on the floor and the ankles follow from the legs. Off: the ankle sliders lift the heels (calf raise, tiptoe) and the toes stay down."
-                        className="h-8 flex-1 justify-center"
+                        className="h-8 flex-1 justify-center whitespace-nowrap"
                       >
                         Flat feet
                       </Chip>
@@ -560,7 +442,8 @@ export function PoseEditor({
               </div>
             ) : null}
             {tab === "arms" || tab === "legs" ? (
-              <div className="grid grid-cols-2 gap-3">
+              // Side by side only where each side gets a usable slider track; stacked in a narrow pane.
+              <div className="grid grid-cols-1 gap-3 @[32rem]/pane:grid-cols-2">
                 {(["left", "right"] as const).map((side) => (
                   <div key={side} className="rounded-2xl bg-(--m3-surface-container) p-3">
                     <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.16em] text-(--m3-on-surface-variant)">

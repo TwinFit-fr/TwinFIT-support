@@ -7,6 +7,7 @@ import { useStudioStore } from "@/lib/studio/store";
 import type { StudioExercise } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
 import { useSelectionGuard } from "./hooks/use-selection-guard";
+import { ChipRow, type ChipRowItem } from "./chip-row";
 import { Chip, StatusDot } from "./ui";
 
 const ROW_HEIGHT = 64;
@@ -33,21 +34,24 @@ const Row = memo(function Row({
   height: number;
 }) {
   const { vectors } = exercise;
+  const meta = [exercise.group?.name, exercise.equipment && exercise.equipment.code !== "NONE" ? exercise.equipment.name : null].filter(Boolean).join(" · ");
   return (
     <button
       type="button"
       // Primitive props keep the memo effective (a style object would be new on every render).
       style={{ top, height }}
       onClick={() => onSelect(exercise.id)}
-      aria-current={selected ? "true" : undefined}
+      role="option"
+      aria-selected={selected}
       className={cn(
-        "studio-state absolute left-2 right-2 flex cursor-pointer items-center gap-3 rounded-xl px-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-(--m3-primary)/60",
+        "studio-state absolute left-2 right-2 flex cursor-pointer items-center gap-2 rounded-xl px-2 text-left @[17rem]/pane:gap-3 @[17rem]/pane:px-2.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-(--m3-primary)/60",
         selected
           ? "bg-(--m3-secondary-container) text-(--m3-on-secondary-container)"
           : "text-(--m3-on-surface)",
       )}
     >
-      <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-(--m3-surface-container-highest)">
+      {/* A smaller thumbnail in a narrow pane leaves the name and its group uncut. */}
+      <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-(--m3-surface-container-highest) @[17rem]/pane:h-11 @[17rem]/pane:w-11">
         {exercise.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -64,15 +68,16 @@ const Row = memo(function Row({
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-[13px] font-medium leading-tight">{exercise.display_name}</span>
+        {/* Two lines before it ellipsizes: long catalog names stay readable in a narrow pane. */}
+        <div className="line-clamp-2 break-words text-[13px] font-medium leading-tight" title={exercise.display_name}>
+          {exercise.display_name}
         </div>
         <div className="mt-1 flex items-center gap-1.5 text-[11px] text-(--m3-on-surface-variant)">
-          <span className="font-mono tabular-nums opacity-70">#{exercise.exo_id}</span>
-          {exercise.group ? <span className="truncate">{exercise.group.name}</span> : null}
-          {exercise.equipment && exercise.equipment.code !== "NONE" ? (
-            <span className="truncate opacity-80">· {exercise.equipment.name}</span>
-          ) : null}
+          <span className="shrink-0 font-mono tabular-nums">#{exercise.exo_id}</span>
+          {/* One run of text, cut once at its end (not one ellipsis per part). */}
+          <span className="min-w-0 truncate" title={meta}>
+            {meta}
+          </span>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5" title={vectorTitle(vectors)}>
@@ -132,6 +137,14 @@ export const CatalogSidebar = memo(function CatalogSidebar({
     return [...seen.entries()].map(([code, name]) => ({ code, name }));
   }, [exercises]);
 
+  const groupChips = useMemo<ChipRowItem[]>(
+    () => [
+      { key: "all", label: "All", selected: group === null, onSelect: () => setGroup(null) },
+      ...groups.map((g) => ({ key: g.code, label: g.name, selected: group === g.code, onSelect: () => setGroup(g.code) })),
+    ],
+    [groups, group],
+  );
+
   const filtered = useMemo(
     () =>
       exercises.filter(
@@ -180,8 +193,8 @@ export const CatalogSidebar = memo(function CatalogSidebar({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search exercises, muscles, equipment…"
-            aria-label="Search exercises"
+            placeholder="Search exercises…"
+            aria-label="Search exercises by name, muscle or equipment"
             type="search"
             className="h-10 w-full rounded-full border border-transparent bg-(--m3-surface-container-high) pl-10 pr-9 text-sm text-(--m3-on-surface) outline-none transition-colors placeholder:text-(--m3-on-surface-variant)/60 focus:border-(--m3-primary)"
           />
@@ -196,22 +209,14 @@ export const CatalogSidebar = memo(function CatalogSidebar({
             </button>
           ) : null}
         </div>
-        <div className="studio-scroll flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
-          <Chip selected={group === null} onClick={() => setGroup(null)}>
-            All
-          </Chip>
-          {groups.map((g) => (
-            <Chip key={g.code} selected={group === g.code} onClick={() => setGroup(g.code)}>
-              {g.name}
-            </Chip>
-          ))}
-        </div>
+        <ChipRow label="Muscle group" items={groupChips} />
         <div className="flex items-center justify-between text-[11px] text-(--m3-on-surface-variant)">
           <span className="tabular-nums">
             {loading ? "Loading catalog…" : `${filtered.length} of ${exercises.length} exercises`}
           </span>
           <Chip
             selected={onlyWithMovement}
+            aria-pressed={onlyWithMovement}
             onClick={() => setOnlyWithMovement((v) => !v)}
             className="h-6"
           >

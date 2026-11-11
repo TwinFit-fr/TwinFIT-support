@@ -35,7 +35,7 @@ export type PoseEditState = PoseSnapshot & {
   keyframe: number;
   /** Edits of a left-side field apply to the right side too, and vice versa. */
   mirror: boolean;
-  /** Handle being dragged in the viewport (left_hand, right_foot, hips, …), or null. */
+  /** Body point selected on the stage (left_hand, chest, hips, … see pose-points.ts), or null. */
   dragTarget: string | null;
   dirty: boolean;
   meta: Record<string, unknown>;
@@ -135,8 +135,6 @@ function sameJson(a: unknown, b: unknown): boolean {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
-export type Panes = { left: boolean; right: boolean };
-
 /**
  * Workspace state shared by the three panes. Components subscribe to slices with selectors, so
  * typing in the inspector, scrolling the catalog or a queue refresh never re-renders the 3D
@@ -161,8 +159,6 @@ export type StudioState = {
   cameraPreset: CameraPreset;
   /** Bumped by "Reset view" so the camera rig re-applies the preset. */
   viewNonce: number;
-  /** Side panes shown (the centre pane takes the room of a hidden one). */
-  panes: Panes;
   edit: EditState;
   poseEdit: PoseEditState | null;
   /** World position of the pinnable points of the pose the editor holds (from the canvas). */
@@ -190,7 +186,6 @@ export type StudioState = {
   toggleCleanMocap: () => void;
   setCameraPreset: (preset: CameraPreset) => void;
   resetView: () => void;
-  togglePane: (pane: keyof Panes) => void;
   setEdit: (edit: Partial<EditState>) => void;
   setModelBones: (bones: string[]) => void;
   setPoseIssues: (issues: PoseIssue[]) => void;
@@ -244,7 +239,6 @@ export const useStudioStore = create<StudioState>((set) => ({
   cleanMocap: true,
   cameraPreset: "three-quarter",
   viewNonce: 0,
-  panes: { left: true, right: true },
   edit: NO_EDIT,
   poseEdit: null,
   poseProbe: {},
@@ -270,7 +264,6 @@ export const useStudioStore = create<StudioState>((set) => ({
   toggleCleanMocap: () => set((s) => ({ cleanMocap: !s.cleanMocap })),
   setCameraPreset: (cameraPreset) => set((s) => ({ cameraPreset, viewNonce: s.viewNonce + 1 })),
   resetView: () => set((s) => ({ viewNonce: s.viewNonce + 1 })),
-  togglePane: (pane) => set((s) => ({ panes: { ...s.panes, [pane]: !s.panes[pane] } })),
   setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
   setModelBones: (modelBones) => set((s) => (sameJson(s.modelBones, modelBones) ? s : { modelBones })),
   setPoseIssues: (poseIssues) => set((s) => (sameJson(s.poseIssues, poseIssues) ? s : { poseIssues })),
@@ -348,8 +341,11 @@ export const useStudioStore = create<StudioState>((set) => ({
         ? { poseEdit: { ...s.poseEdit, keyframe: Math.max(0, Math.min(index, s.poseEdit.poses.length - 1)), gestureOpen: false }, playing: false }
         : s,
     ),
+  // An edit pauses playback and holds the pose being edited, so the change is seen where it was made.
   updatePose: (index, pose, gesture = false) =>
-    set((s) => (s.poseEdit ? { poseEdit: { ...remember(s.poseEdit, gesture), poses: s.poseEdit.poses.map((p, i) => (i === index ? pose : p)), dirty: true } } : s)),
+    set((s) =>
+      s.poseEdit ? { poseEdit: { ...remember(s.poseEdit, gesture), poses: s.poseEdit.poses.map((p, i) => (i === index ? pose : p)), dirty: true }, playing: false } : s,
+    ),
   endPoseGesture: () => set((s) => (s.poseEdit?.gestureOpen ? { poseEdit: { ...s.poseEdit, gestureOpen: false } } : s)),
   setPoseEditOptions: (options) =>
     set((s) => {
