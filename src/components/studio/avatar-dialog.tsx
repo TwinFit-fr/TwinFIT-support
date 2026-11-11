@@ -9,15 +9,28 @@ import { readAsDataUrl } from "@/lib/studio/format";
 import { codeFromFileName, defaultSockets } from "@/lib/studio/prompt";
 import type { AvatarRig, AvatarSocket, AvatarSubject, BaseAvatar } from "@/lib/studio/types";
 import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
+import { MANNEQUIN_DEFAULTS, postMannequin } from "./hooks/use-mannequin";
 import { Field, M3Button, Segmented, Select, TextArea, TextInput } from "./ui";
 
 type Mode = "style" | "generate" | "upload" | "url";
 
+/** What the paid Meshy build costs, said on its tab and on its button. */
+const STYLE_COST = "about 35 credits, 3–5 min";
+
+// The free, instant mannequin comes first and is the default; the paid build says its cost where it is chosen.
 const MODES: { value: Mode; label: React.ReactNode; title: string }[] = [
-  { value: "style", label: "TwinFIT style", title: "Build the catalog's character with Meshy from its reference image, auto-rigged (about 35 credits)" },
-  { value: "generate", label: "Mannequin", title: "Build a mannequin with the Mixamo skeleton, no file needed" },
+  { value: "generate", label: "Mannequin · free", title: "Build a mannequin with the Mixamo skeleton right here: free, ready in seconds, no file needed" },
   { value: "upload", label: "Upload", title: "Upload a rigged .glb / .gltf" },
   { value: "url", label: "From URL", title: "Import a .glb from an https URL (Ready Player Me, a CDN…)" },
+  {
+    value: "style",
+    label: (
+      <>
+        TwinFIT style <span className="font-normal opacity-80">· 35 cr · 3–5 min</span>
+      </>
+    ),
+    title: `Build the catalog's character with Meshy from its reference image, auto-rigged (${STYLE_COST})`,
+  },
 ];
 
 type Fields = {
@@ -33,7 +46,10 @@ type Fields = {
 
 type StyleBody = { mode: "style"; code: string; name: string; subject: "man" | "woman"; height_m: number; is_default: boolean; image_data_url?: string | null };
 
-/** Register a base avatar: generate a Mixamo-rigged mannequin, upload a rigged model, or import one from a URL. */
+/**
+ * Register a base avatar: the free in-browser mannequin (the default), a rigged model upload, an
+ * import from a URL, or the paid Meshy build of the catalog's character.
+ */
 export function AvatarDialog({
   hasDefault,
   onClose,
@@ -45,7 +61,7 @@ export function AvatarDialog({
 }) {
   const staffFetch = useStaffFetch();
   const toast = useToast();
-  const [mode, setMode] = useState<Mode>("style");
+  const [mode, setMode] = useState<Mode>("generate");
   /** POST /api/studio/avatars: multipart (file + fields), `{url, fields}` or the style body; a 502 carries the provider's message. */
   const postAvatar = async (body: FormData | { url: string; fields: Fields } | StyleBody): Promise<BaseAvatar> => {
     const json = (await staffFetch("/api/studio/avatars", { method: "POST", body: body instanceof FormData ? body : JSON.stringify(body) })) as { avatar: BaseAvatar };
@@ -54,9 +70,9 @@ export function AvatarDialog({
   const [file, setFile] = useState<File | null>(null);
   const [image, setImage] = useState<File | null>(null);
   const [url, setUrl] = useState("");
-  const [code, setCode] = useState("TWINFIT_MAN");
-  const [name, setName] = useState("TwinFIT man");
-  const [subject, setSubject] = useState<AvatarSubject>("man");
+  const [code, setCode] = useState(MANNEQUIN_DEFAULTS.code);
+  const [name, setName] = useState(MANNEQUIN_DEFAULTS.name);
+  const [subject, setSubject] = useState<AvatarSubject>(MANNEQUIN_DEFAULTS.subject);
   const [rig, setRig] = useState<AvatarRig>("mixamo");
   const [height, setHeight] = useState("1.75");
   const [socketsText, setSocketsText] = useState(() => JSON.stringify(defaultSockets("mixamo"), null, 2));
@@ -66,9 +82,9 @@ export function AvatarDialog({
   const changeMode = (next: Mode) => {
     setMode(next);
     if (next === "generate") {
-      setCode("MANNEQUIN_MIXAMO");
-      setName("Mannequin (Mixamo rig)");
-      setSubject("neutral");
+      setCode(MANNEQUIN_DEFAULTS.code);
+      setName(MANNEQUIN_DEFAULTS.name);
+      setSubject(MANNEQUIN_DEFAULTS.subject);
       setRig("mixamo");
       setSocketsText(JSON.stringify(defaultSockets("mixamo"), null, 2));
     } else if (next === "style") {
@@ -76,7 +92,7 @@ export function AvatarDialog({
       setSubject(s);
       setCode(`TWINFIT_${s.toUpperCase()}`);
       setName(`TwinFIT ${s}`);
-    } else if (code === "MANNEQUIN_MIXAMO" || code.startsWith("TWINFIT_")) {
+    } else if (code === MANNEQUIN_DEFAULTS.code || code.startsWith("TWINFIT_")) {
       setCode("");
       setName("");
     }
@@ -142,23 +158,7 @@ export function AvatarDialog({
         return;
       }
       if (mode === "generate") {
-        // three.js only loads when the mannequin is asked for.
-        const { exportMannequinGlb, mannequinSockets } = await import("@/lib/studio/mannequin");
-        const heightM = fields.height_m ?? 1.75;
-        const glb = await exportMannequinGlb(heightM);
-        const form = new FormData();
-        form.set("file", glb);
-        form.set(
-          "fields",
-          JSON.stringify({
-            ...fields,
-            height_m: heightM,
-            sockets: mannequinSockets(heightM),
-            provider: "mannequin",
-            params: { generated: "mannequin", forward_axis: "+z", rest_pose: "T" },
-          }),
-        );
-        avatar = await postAvatar(form);
+        avatar = await postMannequin(staffFetch, fields);
       } else if (mode === "upload") {
         if (!file) return;
         const form = new FormData();
@@ -236,7 +236,7 @@ export function AvatarDialog({
               <Bone className="h-4 w-4" />
             </span>
             <p className="text-xs leading-relaxed text-(--m3-on-surface-variant)">
-              Builds a neutral mannequin right here: the Mixamo skeleton (<code className="font-mono">mixamorigHips</code>,
+              <strong className="font-medium text-(--m3-on-surface)">Free, ready in a few seconds.</strong> Builds a neutral mannequin right here: the Mixamo skeleton (<code className="font-mono">mixamorigHips</code>,
               arms, legs, head) in T-pose, capsule limbs, sockets on the hands, back and feet. No file, no licence; any
               clip authored for Mixamo drives it. Scaled to the height below.
             </p>
@@ -317,7 +317,7 @@ export function AvatarDialog({
           Cancel
         </M3Button>
         <M3Button variant="filled" onClick={submit} busy={busy} disabled={!canSubmit}>
-          {mode === "style" ? "Build with Meshy" : mode === "generate" ? "Generate mannequin" : mode === "upload" ? "Upload avatar" : "Import avatar"}
+          {mode === "style" ? `Build with Meshy (${STYLE_COST})` : mode === "generate" ? "Create the mannequin" : mode === "upload" ? "Upload avatar" : "Import avatar"}
         </M3Button>
       </div>
     </Modal>

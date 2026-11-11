@@ -19,7 +19,9 @@ import { relativeTime } from "@/lib/studio/format";
 import { defaultEquipmentItems, equipmentSentence, fillPromptTemplate } from "@/lib/studio/prompt";
 import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
+import type { GuideFocus } from "@/lib/studio/load-state";
 import { cn } from "@/lib/utils";
+import { ErrorState } from "./load-states";
 import { PickExerciseGuide } from "./pick-exercise-guide";
 import { Chip, Field, IconButton, M3Button, NumberField, Section, Select, StatusDot, TextArea } from "./ui";
 
@@ -280,6 +282,9 @@ export function InspectorPanel({
   settings,
   vectors,
   vectorsLoading,
+  vectorsFailed,
+  onRetryVectors,
+  guide,
   equipmentCodes,
   supportCodes,
   generating,
@@ -294,6 +299,11 @@ export function InspectorPanel({
   settings: StudioSettings | null;
   vectors: MovementVector[];
   vectorsLoading: boolean;
+  /** The clips request failed (its error), shown with Retry instead of "no generation yet". */
+  vectorsFailed?: unknown;
+  onRetryVectors: () => unknown;
+  /** What the three-step guide puts first while no exercise is open (loading, a failed list, no avatar). */
+  guide?: GuideFocus;
   equipmentCodes: string[];
   supportCodes: string[];
   generating: boolean;
@@ -340,7 +350,7 @@ export function InspectorPanel({
   }, [exercise, settings, avatar, items, userPrompt]);
 
   if (!exercise) {
-    return <PickExerciseGuide />;
+    return <PickExerciseGuide focus={guide} />;
   }
 
   const canGenerate = Boolean(avatar) && finalPrompt.length > 0 && !generating;
@@ -500,8 +510,9 @@ export function InspectorPanel({
 
         <M3Button variant="filled" size="lg" className="w-full" disabled={!canGenerate} busy={generating} onClick={generate}>
           <Wand2 className="h-4 w-4" />
-          {avatar ? "Generate movement" : "Upload an avatar first"}
+          Generate movement
         </M3Button>
+        {avatar ? null : <p className="-mt-2 text-center text-[11px] text-(--m3-on-surface-variant)">Needs an avatar: create the mannequin on the stage.</p>}
 
         <Section
           title="Queue & history"
@@ -540,7 +551,9 @@ export function InspectorPanel({
             </>
           }
         >
-          {vectorsLoading && !vectors.length ? (
+          {vectorsFailed && !vectors.length ? (
+            <ErrorState className="py-2" title="The clips of this exercise did not load." error={vectorsFailed} onRetry={onRetryVectors} />
+          ) : vectorsLoading && !vectors.length ? (
             <div className="space-y-1.5">
               {[0, 1].map((i) => (
                 <div key={i} className="h-16 animate-pulse rounded-xl bg-(--m3-surface-container)" />

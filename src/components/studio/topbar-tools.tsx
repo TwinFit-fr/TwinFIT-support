@@ -3,6 +3,7 @@
 import { ChevronDown, Download, Dumbbell, MoreHorizontal, Plus, Settings2, Users } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import { downloadStudioAsset } from "@/lib/studio/asset-auth";
+import type { LoadState } from "@/lib/studio/load-state";
 import { useStudioStore } from "@/lib/studio/store";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
 import type { BaseAvatar, StudioExercise } from "@/lib/studio/types";
@@ -15,11 +16,21 @@ function avatarOptionText(a: BaseAvatar): string {
 }
 
 /** The exercise being worked on, in the middle of the top bar. */
-export function CurrentExercise({ exercise }: { exercise: StudioExercise | null }) {
-  const editing = useStudioStore((s) => Boolean(s.poseEdit));
+export function CurrentExercise({
+  exercise,
+  catalog = "ready",
+  editingShown = true,
+}: {
+  exercise: StudioExercise | null;
+  catalog?: LoadState;
+  /** False while the stage cannot draw an avatar: the pose draft is not shown, so not "Editing poses". */
+  editingShown?: boolean;
+}) {
+  const editing = useStudioStore((s) => Boolean(s.poseEdit)) && editingShown;
   const dirty = useStudioStore((s) => s.poseEdit?.dirty ?? false);
   if (!exercise) {
-    return <span className="truncate text-(length:--studio-text-sm) text-(--m3-on-surface-variant)">Pick an exercise in the catalog</span>;
+    const text = catalog === "loading" ? "Loading the catalog…" : catalog === "failed" ? "The catalog did not load" : catalog === "empty" ? "The catalog is empty" : "Pick an exercise in the catalog";
+    return <span className="truncate text-(length:--studio-text-sm) text-(--m3-on-surface-variant)">{text}</span>;
   }
   return (
     <div className="flex min-w-0 items-center gap-(--studio-space-2)" title={`${exercise.display_name} · #${exercise.exo_id}`}>
@@ -47,8 +58,10 @@ export function CurrentExercise({ exercise }: { exercise: StudioExercise | null 
  */
 export function TopbarTools({
   avatars,
+  avatarsState,
   selected,
-  settingsReady,
+  settingsState,
+  onRetrySettings,
   onSelectAvatar,
   onAddAvatar,
   onManageAvatars,
@@ -56,8 +69,11 @@ export function TopbarTools({
   onSettings,
 }: {
   avatars: BaseAvatar[];
+  avatarsState: LoadState;
   selected: BaseAvatar | null;
-  settingsReady: boolean;
+  settingsState: LoadState;
+  /** The settings failed to load: the settings button asks for them again instead of staying dead. */
+  onRetrySettings: () => void;
   onSelectAvatar: (id: string) => void;
   onAddAvatar: () => void;
   onManageAvatars: () => void;
@@ -90,17 +106,18 @@ export function TopbarTools({
         className="studio-state relative flex h-(--studio-control-md) w-(--studio-avatar-select-w) min-w-0 max-w-(--studio-avatar-select-max) items-center rounded-(--studio-radius-md) border border-(--m3-outline-variant) bg-(--m3-surface-container-high) pl-(--studio-space-3) pr-8 text-(length:--studio-text-xs) text-(--m3-on-surface) has-[select:focus-visible]:border-(--m3-primary) has-[select:focus-visible]:ring-2 has-[select:focus-visible]:ring-(--m3-primary)/70 xl:w-auto"
       >
         <span aria-hidden className="min-w-0 truncate">
-          {selected ? selected.name : avatars.length ? "Choose an avatar" : "No avatar"}
+          {selected ? selected.name : avatarsState === "loading" ? "Loading avatars…" : avatarsState === "failed" ? "Avatars not loaded" : avatars.length ? "Choose an avatar" : "No avatar"}
           {selected ? <span className="hidden text-(--m3-on-surface-variant) xl:inline">{avatarOptionText(selected).slice(selected.name.length)}</span> : null}
         </span>
         <select
           value={selected?.id ?? ""}
           onChange={(e) => onSelectAvatar(e.target.value)}
           aria-label="Base avatar"
+          disabled={avatarsState === "loading" || avatarsState === "failed"}
           // Colours still apply to the open list, which the browser draws without the opacity.
           className="absolute inset-0 h-full w-full cursor-pointer appearance-none bg-(--m3-surface-container-high) text-(length:--studio-text-xs) text-(--m3-on-surface) opacity-0 outline-none"
         >
-          {!avatars.length ? <option value="">No avatar</option> : null}
+          {!avatars.length ? <option value="">{avatarsState === "loading" ? "Loading avatars…" : avatarsState === "failed" ? "Avatars not loaded" : "No avatar"}</option> : null}
           {avatars.map((a) => (
             <option key={a.id} value={a.id} disabled={a.status !== "ready"}>
               {avatarOptionText(a)}
@@ -114,7 +131,18 @@ export function TopbarTools({
       <ToolButton label="Equipment library: 3D models of the catalog equipment" tipAlign="end" text="Equipment" textClassName="hidden min-[1440px]:inline" onClick={onEquipment}>
         <Dumbbell className="h-4 w-4" />
       </ToolButton>
-      <ToolButton label="Studio settings: pipeline, defaults, prompt template, storage" tipAlign="end" onClick={onSettings} disabled={!settingsReady}>
+      <ToolButton
+        label={
+          settingsState === "loading"
+            ? "Studio settings (loading…)"
+            : settingsState === "failed"
+              ? "Studio settings did not load: click to try again"
+              : "Studio settings: pipeline, defaults, prompt template, storage"
+        }
+        tipAlign="end"
+        onClick={settingsState === "failed" ? onRetrySettings : onSettings}
+        disabled={settingsState === "loading"}
+      >
         <Settings2 className="h-4 w-4" />
       </ToolButton>
     </div>
