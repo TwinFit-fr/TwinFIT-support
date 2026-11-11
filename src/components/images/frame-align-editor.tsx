@@ -71,23 +71,28 @@ export function FrameAlignEditor({
     height: number;
   } | null>(null);
 
-  const frameKey = sorted.map((f) => f.id).join(",");
-  useEffect(() => {
-    if (!open) return;
-    // Prefer adjusting a non-Start frame first; Start can still be selected.
-    const preferred =
-      sorted.find((f) => f.position !== 0)?.id ?? sorted[0]?.id ?? null;
-    const guide =
-      sorted.find((f) => f.id !== preferred && f.position === 0)?.id ??
-      sorted.find((f) => f.id !== preferred)?.id ??
-      null;
-    setActiveId(preferred);
-    setGuideId(guide);
-    setNudges(Object.fromEntries(sorted.map((f) => [f.id, { ...IDENTITY_NUDGE }])));
-    setMode("align");
-    setPlayStep(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, subject, frameKey]);
+  // Reset the editor when it opens or its frame set / subject changes. Done during
+  // render (store previous key in state) instead of in an effect.
+  const resetKey = `${subject}|${sorted.map((f) => f.id).join(",")}`;
+  const [appliedKey, setAppliedKey] = useState<string | null>(null);
+  const currentKey = open ? resetKey : null;
+  if (currentKey !== appliedKey) {
+    setAppliedKey(currentKey);
+    if (currentKey !== null) {
+      // Prefer adjusting a non-Start frame first; Start can still be selected.
+      const preferred =
+        sorted.find((f) => f.position !== 0)?.id ?? sorted[0]?.id ?? null;
+      const guide =
+        sorted.find((f) => f.id !== preferred && f.position === 0)?.id ??
+        sorted.find((f) => f.id !== preferred)?.id ??
+        null;
+      setActiveId(preferred);
+      setGuideId(guide);
+      setNudges(Object.fromEntries(sorted.map((f) => [f.id, { ...IDENTITY_NUDGE }])));
+      setMode("align");
+      setPlayStep(0);
+    }
+  }
 
   const active = sorted.find((f) => f.id === activeId) ?? null;
   const guide = sorted.find((f) => f.id === guideId) ?? null;
