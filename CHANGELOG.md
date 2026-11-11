@@ -62,6 +62,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: [Sem
 - Frame generation: support and load equipment references no longer set the camera angle or left/right orientation. The object is rotated or mirrored so the athlete faces its working side.
 
 ### Fixed
+- Sign-in: a page reload no longer signs the user out in development (the auth machine started twice under React strict mode and both starts spent the same single-use refresh token; `NhostSessionProvider` starts it once). A signed-out visit returns to the page it came from after sign-in (`/login?next=…`, safe paths only), with a dark sign-in screen when coming from the Studio. The app has a favicon.
 - 3D Studio: `hips.roll` tilted the wrong way (a positive roll now raises the left hip, as documented).
 - 3D Studio: a rig exported under a scaled Armature (every Meshy avatar) no longer shrinks to a hundredth of its size when the rig editor opens, nor breaks when a motion-capture clip is retargeted or cleaned up: the avatar goes back to the rest pose captured at load instead of `skeleton.pose()`.
 - 3D Studio → motion-capture clips move each limb relative to the rest pose of both rigs instead of copying world rotations, so a clip no longer folds the body of an avatar whose bones have other axes (every Meshy avatar) and a source in a T drives an avatar resting in an A. A file is played without retargeting only when it was made on this very rig (same rest pose), not merely because its bone names match.
