@@ -233,10 +233,10 @@ export default function LoginPage({ searchParams }: { searchParams: Promise<Reco
   const next = safeNextPath(typeof raw === "string" ? raw : null);
   const t = isStudioPath(next) ? DARK : LIGHT;
   return (
-    <div className={cn("flex min-h-screen items-center justify-center px-4", t.page)}>
+    <main className={cn("flex min-h-screen items-center justify-center px-4", t.page)}>
       <Suspense fallback={<p className={cn("text-sm", t.muted)}>Loading…</p>}>
         <LoginForm next={next} />
       </Suspense>
-    </div>
+    </main>
   );
 }

@@ -457,8 +457,41 @@ body {
   .pose-point[data-state="dragging"] .pose-point-label {
     opacity: 1;
   }
-  .pose-status {
-    bottom: var(--studio-stage-toolbar-reserve);
+  /* The stage is a size container: on a short one the bottom bars leave the canvas and sit in a strip under it. */
+  .studio-stage {
+    container: stage / size;
+  }
+  .stage-bars {
+    position: absolute;
+    inset-inline: var(--studio-stage-inset);
+    bottom: var(--studio-stage-inset);
+  }
+  .stage-hud {
+    flex-direction: column;
+  }
+  @container stage (max-height: 620px) {
+    .stage-bars {
+      position: static;
+      gap: 8px;
+      padding: 8px var(--studio-stage-inset);
+      border-top: 1px solid var(--m3-outline-variant);
+      background: var(--m3-surface-container-lowest);
+    }
+    /* The status pills and the in-between notice share rows instead of stacking over the avatar. */
+    .stage-hud {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      column-gap: 8px;
+    }
+    /* Secondary detail leaves the screen (not the page) so the top-left cards stay short. */
+    .stage-short-hide {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
   .pose-status-live {
     box-shadow: 0 0 0 1px rgba(252, 211, 77, 0.45);

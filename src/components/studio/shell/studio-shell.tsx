@@ -55,7 +55,7 @@ export function StudioShell({
   const layout = useLayoutStore();
   const narrow = useMediaQuery(`(max-width: ${LAYOUT_TOKENS.overlayBelow - 1}px)`);
   const body = useRef<HTMLDivElement>(null);
-  const stageColumn = useRef<HTMLDivElement>(null);
+  const stageColumn = useRef<HTMLElement>(null);
   const measured = useElementSize(body);
   const column = useElementSize(stageColumn);
   const bodyWidth = measured.width || (typeof window === "undefined" ? 1440 : window.innerWidth);
@@ -102,6 +102,7 @@ export function StudioShell({
   return (
     <div className="studio-shell flex h-full min-w-0 flex-col" data-resizing={layout.resizing ?? undefined}>
       <header className="relative z-40 flex h-(--studio-topbar-h) shrink-0 items-center gap-(--studio-space-2) border-b border-(--m3-outline-variant) bg-(--m3-surface-container-lowest) px-(--studio-space-2)">
+        <h1 className="sr-only">3D Studio</h1>
         <div className="flex shrink-0 items-center gap-(--studio-space-1)">
           <Link
             href="/"
@@ -160,21 +161,33 @@ export function StudioShell({
         <SidePane id={LEFT_ID} side="left" label={leftLabel} open={leftOpen} width={leftWidth} contentWidth={leftWidth} floating={floating} onClose={() => toggle("left")}>
           {left}
         </SidePane>
-        {!floating || leftOpen ? (
-          <PaneSplitter
-            pane="left"
-            label={`Resize the ${leftLabel.toLowerCase()}`}
-            controls={LEFT_ID}
-            grow="ArrowRight"
-            size={leftWidth}
-            max={leftMax}
-            open={leftOpen}
-            style={floating ? { position: "absolute", insetBlock: 0, left: leftWidth, zIndex: 35 } : undefined}
-          />
-        ) : null}
-
-        <div ref={stageColumn} className="flex min-w-0 flex-1 flex-col">
-          <main className="@container/stage relative isolate min-h-0 min-w-0 flex-1 bg-(--m3-surface-dim)">{center}</main>
+        <main ref={stageColumn} className="relative flex min-w-0 flex-1 flex-col">
+          {/* The side splitters sit inside the landmark: zero-width, on the column's own edges. */}
+          {!floating || leftOpen ? (
+            <PaneSplitter
+              pane="left"
+              label={`Resize the ${leftLabel.toLowerCase()}`}
+              controls={LEFT_ID}
+              grow="ArrowRight"
+              size={leftWidth}
+              max={leftMax}
+              open={leftOpen}
+              style={{ position: "absolute", insetBlock: 0, left: floating ? leftWidth : 0, zIndex: floating ? 35 : undefined }}
+            />
+          ) : null}
+          {!floating || rightOpen ? (
+            <PaneSplitter
+              pane="right"
+              label={`Resize the ${rightLabel.toLowerCase()}`}
+              controls={RIGHT_ID}
+              grow="ArrowLeft"
+              size={rightWidth}
+              max={rightMax}
+              open={rightOpen}
+              style={{ position: "absolute", insetBlock: 0, right: floating ? rightWidth : 0, zIndex: floating ? 35 : undefined }}
+            />
+          ) : null}
+          <div className="studio-stage relative isolate min-h-0 min-w-0 flex-1 bg-(--m3-surface-dim)">{center}</div>
           {/* The dock slot is always in the page; empty, it is hidden and takes no space. */}
           {dock ? (
             <PaneSplitter pane="dock" label={`Resize the ${dockLabel.toLowerCase()}`} controls={DOCK_ID} grow="ArrowUp" size={dockHeight} max={dockMax} open={dockOpen} />
@@ -191,20 +204,8 @@ export function StudioShell({
           >
             {dock}
           </section>
-        </div>
+        </main>
 
-        {!floating || rightOpen ? (
-          <PaneSplitter
-            pane="right"
-            label={`Resize the ${rightLabel.toLowerCase()}`}
-            controls={RIGHT_ID}
-            grow="ArrowLeft"
-            size={rightWidth}
-            max={rightMax}
-            open={rightOpen}
-            style={floating ? { position: "absolute", insetBlock: 0, right: rightWidth, zIndex: 35 } : undefined}
-          />
-        ) : null}
         <SidePane id={RIGHT_ID} side="right" label={rightLabel} title={rightTitle} open={rightOpen} width={rightWidth} contentWidth={rightWidth} floating={floating} onClose={() => toggle("right")}>
           {right}
         </SidePane>

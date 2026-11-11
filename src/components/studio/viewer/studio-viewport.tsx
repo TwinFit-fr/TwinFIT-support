@@ -152,7 +152,7 @@ function Hud({
             : `Playing #${scene.vectorSeq}${scene.vectorFps ? ` · ${scene.vectorFps} fps` : ""}`;
   return (
     // Leaves room on the right for the axis gizmo and the rig editor button under it.
-    <div className="pointer-events-none absolute left-(--studio-stage-inset) top-(--studio-stage-inset) flex max-w-[calc(100%-var(--studio-gizmo-reserve)-2*var(--studio-stage-inset))] flex-col items-start gap-2">
+    <div className="stage-hud pointer-events-none absolute left-(--studio-stage-inset) top-(--studio-stage-inset) flex max-w-[calc(100%-var(--studio-gizmo-reserve)-2*var(--studio-stage-inset))] items-start gap-2">
       {/* Wraps onto a second line on a narrow stage instead of cutting the details. */}
       <div className="studio-glass flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-2xl px-3 py-1.5 text-[11px]">
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--m3-primary)" />
@@ -160,7 +160,7 @@ function Hud({
         {scene.rig ? (
           <span className="text-(--m3-on-surface-variant)">
             {scene.rig}
-            {info ? ` · ${info.bones} bones · ${info.heightM.toFixed(2)} m` : ""}
+            <span className="stage-short-hide">{info ? ` · ${info.bones} bones · ${info.heightM.toFixed(2)} m` : ""}</span>
           </span>
         ) : null}
       </div>
@@ -196,7 +196,9 @@ function Hud({
           className={cn("studio-glass max-w-[38ch] rounded-2xl px-3 py-1.5 text-[11px]", errors.length ? "text-(--m3-error)" : "text-(--m3-warning)")}
           title={issues.map((i) => i.message).join("\n")}
         >
-          {errors.length ? `${errors.length} body check${errors.length === 1 ? "" : "s"} failed: ${errors[0].message}` : `${issues.length} warning${issues.length === 1 ? "" : "s"}: ${issues[0].message}`}
+          {errors.length ? `${errors.length} body check${errors.length === 1 ? "" : "s"} failed` : `${issues.length} warning${issues.length === 1 ? "" : "s"}`}
+          {/* On a short stage only the count shows here: the right panel's body checks give the full text. */}
+          <span className="stage-short-hide">{`: ${(errors[0] ?? issues[0]).message}`}</span>
         </div>
       ) : null}
       {info?.missingSockets.length ? (
@@ -237,6 +239,8 @@ export const StudioViewport = memo(function StudioViewport() {
   const [clipSolveError, setClipSolveError] = useState<{ key: string | null; message: string } | null>(null);
   const onClipError = useCallback((message: string) => setClipSolveError({ key: scene.clipUrl, message }), [scene.clipUrl]);
   const webgl = useWebGLSupport();
+  // Where the pose editor puts its mode bar: above the view toolbar.
+  const [barsHost, setBarsHost] = useState<HTMLDivElement | null>(null);
 
   if (webgl === false) {
     return (
@@ -260,7 +264,8 @@ export const StudioViewport = memo(function StudioViewport() {
   }
 
   return (
-    <div className="relative h-full w-full">
+    <div className="stage-frame relative flex h-full w-full flex-col">
+      <div className="relative min-h-0 flex-1">
       <StudioCanvas
         avatarId={scene.avatarId}
         modelUrl={scene.modelUrl}
@@ -272,7 +277,7 @@ export const StudioViewport = memo(function StudioViewport() {
         onError={onError}
         onClipError={onClipError}
       />
-      <PosePointsLayer />
+      <PosePointsLayer statusHost={barsHost} />
       {modelError ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="studio-glass flex max-w-[36ch] items-center gap-2 rounded-full px-3 py-1.5 text-center text-xs text-(--m3-error)">
@@ -287,12 +292,15 @@ export const StudioViewport = memo(function StudioViewport() {
         clipState={clipSolveError && clipSolveError.key === scene.clipUrl ? { ...clipState, error: clipSolveError.message } : clipState}
         info={info}
       />
-      <div className="pointer-events-none absolute inset-x-(--studio-stage-inset) bottom-(--studio-stage-inset) flex justify-center">
-        <Toolbar />
-      </div>
       {/* Left of the axis gizmo, only where the stage is wide enough for it next to the HUD. */}
       <div className="pointer-events-none absolute right-(--studio-gizmo-reserve) top-(--studio-stage-inset) hidden items-center gap-1 rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-(--m3-on-surface-variant) @4xl/stage:flex">
         <Crosshair className="h-3 w-3" /> orbit · pan · zoom
+      </div>
+      </div>
+      {/* The bottom bars. Over the canvas on a tall stage; in a strip under it on a short one (globals.css), so they never cover the avatar. */}
+      <div className="stage-bars pointer-events-none flex flex-col items-center gap-5">
+        <div ref={setBarsHost} className="flex w-full justify-center empty:hidden" />
+        <Toolbar />
       </div>
     </div>
   );

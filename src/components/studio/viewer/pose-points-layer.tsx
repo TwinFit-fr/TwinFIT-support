@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Hand, Link2, Unlink2 } from "lucide-react";
 import { useDragMode, useDragModeStore } from "@/lib/studio/drag-mode";
 import { HIT_MAX_PX, dotScale, hitSize, neighbourGaps, pickPoint, type ScreenPoints } from "@/lib/studio/pose-hit";
@@ -47,7 +48,7 @@ function forStage(event: KeyboardEvent): boolean {
  * straight arm, a thigh that cannot get shorter) stays on the body, and a dashed line shows how far
  * the pointer is.
  */
-export function PosePointsLayer() {
+export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElement | null }) {
   const editorOpen = useStudioStore((s) => Boolean(s.poseEdit) && s.edit.mode === "off");
   const selected = useStudioStore((s) => (s.poseEdit && isPointId(s.poseEdit.dragTarget) ? s.poseEdit.dragTarget : null));
   const mirror = useStudioStore((s) => s.poseEdit?.mirror ?? false);
@@ -357,8 +358,9 @@ export function PosePointsLayer() {
           </button>
         ))}
       </div>
-      {/* What is being edited and how Mirror applies, just above the playback bar. */}
-      <div className="pose-status pointer-events-none absolute inset-x-(--studio-stage-inset) flex justify-center">
+      {/* What is being edited and how Mirror applies: in the stage's bottom bars, above the view toolbar. */}
+      {statusHost ? createPortal(
+<div className="pose-status pointer-events-none flex w-full justify-center">
         <div
           className={cn("studio-glass pointer-events-auto flex max-w-full items-center gap-2 rounded-full py-1 pr-1 text-[11px] text-(--m3-on-surface)", dragMode.draggable ? "pl-1" : "pl-3", dragging && "pose-status-live")}
           data-pose-status
@@ -411,6 +413,7 @@ export function PosePointsLayer() {
           )}
         </div>
       </div>
+      , statusHost) : null}
       <ExerciseBadge ref={badge} status={exerciseMode ? exStatus : null} />
       <p id="pose-points-help" className="sr-only">
         Press and drag to move it. Arrow keys move the selected point in the view plane, Page Up and Page Down in depth, Shift for bigger steps. Escape clears the selection.

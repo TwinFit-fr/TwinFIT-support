@@ -28,7 +28,9 @@ export function InBetweenNote() {
       <Diamond className="h-3 w-3 shrink-0 text-(--m3-warning)" aria-hidden="true" />
       <span className="min-w-0 leading-snug">
         <span className="font-semibold">In-between · {formatSeconds(info.t, 2)}</span>
-        <span className="text-(--m3-on-surface-variant)">{` · pose ${info.a} → ${info.b}. A drag edits ${info.near}, the nearest key.`}</span>
+        <span className="text-(--m3-on-surface-variant)">{` · pose ${info.a} → ${info.b}.`}</span>
+        {/* On a short stage only the first line shows: the button already names the nearest key. */}
+        <span className="stage-short-hide text-(--m3-on-surface-variant)">{` A drag edits ${info.near}, the nearest key.`}</span>
       </span>
       <button
         type="button"

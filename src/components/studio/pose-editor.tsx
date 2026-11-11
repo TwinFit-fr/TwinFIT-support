@@ -212,8 +212,6 @@ export function PoseEditor({
       <div className="studio-scroll min-h-0 flex-1 overflow-y-auto">
         {/* The template's settings and "Draft with AI", which sets them: a change rebuilds every pose */}
         <ExerciseSettings />
-        {/* What the validator says about these poses on this avatar, right under what changes them */}
-        <BodyChecks />
         {/* Pose strip */}
         <div className="border-b border-(--m3-outline-variant) px-4 py-3">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
@@ -443,6 +441,11 @@ export function PoseEditor({
             ) : null}
           </div>
         </div>
+      </div>
+
+      {/* What the validator says about these poses on this avatar: pinned between the scroll area and the footer, so it is never scrolled out of sight or covered. */}
+      <div className="studio-scroll max-h-[34%] shrink-0 overflow-y-auto">
+        <BodyChecks />
       </div>
 
       <PoseEditorActions quiet={noTemplate} vectorId={draft.vectorId} sourceSeq={draft.sourceSeq} dirty={draft.dirty} saving={saving} onSave={(mode) => void save(mode)} onRevert={() => void revert()} />
