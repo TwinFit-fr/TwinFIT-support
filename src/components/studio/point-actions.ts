@@ -1,8 +1,7 @@
 "use client";
 
 import { useDragModeStore } from "@/lib/studio/drag-mode";
-import { giveBack, isPinnable, pointStates, withPin } from "@/lib/studio/point-state";
-import { mirrorApplies } from "@/lib/studio/pose-drag";
+import { giveBack, isPinnable, pinnedPoints, pointStates, withPin } from "@/lib/studio/point-state";
 import { POINT_LABEL, mirrorPoint, type PointId } from "@/lib/studio/pose-points";
 import { useStudioStore } from "@/lib/studio/store";
 import { heldWithAuto } from "./hooks/use-point-marks";
@@ -21,14 +20,18 @@ export function giveBackPoint(point: PointId): string {
   const name = POINT_LABEL[point];
   if (!held?.pose || !held.auto) return `${name}: ${noAutoWords(held?.missing ?? null).replace(/^./, (c) => c.toLowerCase())}`;
   const states = pointStates(held.pose, held.auto);
-  // Mirror on: the other side goes back too, as a change here is copied there (not a standing leg, which moves alone).
-  const other = state.poseEdit?.mirror && mirrorApplies(held.pose, point) ? mirrorPoint(point) : null;
+  // Mirror on: the other side goes back too when it was set, as the point's controls copy every change there
+  // (a standing leg dragged on the stage moves alone, and then the other leg is still automatic).
+  const other = state.poseEdit?.mirror ? mirrorPoint(point) : null;
   const both = other && states[other] === "set" ? other : null;
   if (states[point] === "automatic" && !both) return `${name} is already automatic.`;
   let next = giveBack(held.pose, held.auto, point);
   if (both) next = giveBack(next, held.auto, both);
   state.updatePose(held.index, next);
-  return `${both ? `${name} and ${POINT_LABEL[both].toLowerCase()} are` : `${name} is`} back to automatic. Undo with Ctrl+Z.`;
+  // A pin is set and cleared on its own: say so when it keeps the point where it is.
+  const pins = [point, ...(both ? [both] : [])].filter((id) => pinnedPoints(next).includes(id));
+  const pinNote = pins.length ? ` ${pins.map((id) => POINT_LABEL[id]).join(" and ")} ${pins.length > 1 ? "stay" : "stays"} pinned where ${pins.length > 1 ? "they are" : "it is"}: unpin with P to let ${pins.length > 1 ? "them" : "it"} go.` : "";
+  return `${both ? `${name} and ${POINT_LABEL[both].toLowerCase()} are` : `${name} is`} back to automatic.${pinNote} Undo with Ctrl+Z.`;
 }
 
 /** Pin the point where it is drawn now, or unpin it (one undo step). */

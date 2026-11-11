@@ -20,6 +20,8 @@ export type StageFrame = {
   joints: Record<string, ScreenXY>;
   /** While a dragged point cannot follow the pointer: from the point to where the pointer asks it to be. */
   short?: { from: ScreenXY; to: ScreenXY };
+  /** Any world point (metres) to CSS pixels with this frame's camera; null behind the camera. */
+  project?: (x: number, y: number, z: number) => ScreenXY | null;
 };
 
 export type StageScene = {
@@ -72,10 +74,19 @@ export type StageLayer = {
   exerciseDone: (done: { id: PointId; result: SettingsApplied | null; setting: string | null; value: string | null }) => void;
 };
 
+/** A second layer drawn from the same frames: where the body checks fail (viewer/body-check-marks.tsx). */
+export type StageMarks = { frame: (frame: StageFrame | null) => void };
+
 /** The joint a properties control turns, marked on the stage while the control is hovered or focused. */
 export type StageLink = { bones: string[]; label: string };
 
-export const poseStage: { scene: StageScene | null; layer: StageLayer | null; available: PointId[]; link: StageLink | null } = { scene: null, layer: null, available: [], link: null };
+export const poseStage: { scene: StageScene | null; layer: StageLayer | null; marks: StageMarks | null; available: PointId[]; link: StageLink | null } = {
+  scene: null,
+  layer: null,
+  marks: null,
+  available: [],
+  link: null,
+};
 
 /** Mark (or, with null, unmark) the joint a control turns; the layer draws it on its next frame. */
 export function linkJoint(link: StageLink | null): void {
