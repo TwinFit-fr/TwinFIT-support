@@ -16,6 +16,7 @@
  */
 
 import { ROM, ROOT_LIMITS } from "./rom.ts";
+import { clipLabels } from "./pose-names.ts";
 
 export const ORIENTATIONS = ["standing", "prone", "supine", "side_lying", "kneeling", "seated", "hanging"] as const;
 export type Orientation = (typeof ORIENTATIONS)[number];
@@ -735,9 +736,12 @@ export function poseClipFromDraft(draft: {
   twoHanded: boolean;
   grip: string | null;
   weights?: number[] | null;
+  labels?: string[] | null;
   meta: Record<string, unknown>;
 }): PoseClipJson {
   const weights = draft.weights && draft.weights.length === draft.poses.length ? draft.weights : null;
+  // The editor's names, one per pose (null clears names an older version of the clip had).
+  const labels = clipLabels(draft.labels, draft.poses.length);
   return {
     kind: "pose-angles",
     version: POSE_CLIP_VERSION,
@@ -745,6 +749,6 @@ export function poseClipFromDraft(draft: {
     duration: draft.durationS,
     loop: draft.mode !== "once",
     keyframes: buildKeyframes(draft.poses, draft.durationS, draft.mode, weights ?? undefined),
-    meta: { ...draft.meta, loop_mode: draft.mode, two_handed: draft.twoHanded, grip: draft.grip, segment_weights: weights, generator: "pose-editor" },
+    meta: { ...draft.meta, labels, loop_mode: draft.mode, two_handed: draft.twoHanded, grip: draft.grip, segment_weights: weights, generator: "pose-editor" },
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Redo2, Sparkles, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Redo2, Trash2, Undo2 } from "lucide-react";
 import {
   ANCHOR_IDS,
   LOOP_MODES,
@@ -21,15 +21,13 @@ import { originLabel } from "@/lib/studio/pose-origin";
 import { POINT_LABEL, isPointId } from "@/lib/studio/pose-points";
 import { MAX_POSES, useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
-import { AiDraftPanel, NoTemplateCallout, type DraftRequest } from "./ai-draft";
 import { BodyChecks } from "./body-checks";
-import { DraftOriginLine } from "./draft-origin";
+import { DraftAiNotes, DraftOriginLine } from "./draft-origin";
 import { ExerciseSettings } from "./exercise-settings";
 import { PoseEditorActions, type SaveMode } from "./pose-editor-actions";
 import { PoseSliders as Sliders } from "./pose-sliders";
 import { Chip, IconButton, M3Button, NumberField, Segmented, Select, TextInput } from "./ui";
 
-export type { DraftRequest } from "./ai-draft";
 export type { SaveMode } from "./pose-editor-actions";
 
 const LOOP_LABEL: Record<LoopMode, { label: string; title: string }> = {
@@ -63,14 +61,10 @@ const RAISED_M = 0.08;
 export function PoseEditor({
   onSave,
   saving,
-  onDraft,
-  drafting,
   onRevert,
 }: {
   onSave: (clip: PoseClipJson, label: string, mode: SaveMode) => Promise<void>;
   saving: boolean;
-  onDraft: (request: DraftRequest) => Promise<void>;
-  drafting: boolean;
   /** Drop the editor's poses: the exercise lands again on its clip or its instant draft. */
   onRevert: () => void;
 }) {
@@ -96,7 +90,6 @@ export function PoseEditor({
   const canUndo = useStudioStore((s) => (s.poseEdit?.history.length ?? 0) > 0);
   const canRedo = useStudioStore((s) => (s.poseEdit?.future.length ?? 0) > 0);
   const [tab, setTab] = useState<Tab>("body");
-  const [aiOpen, setAiOpen] = useState(false);
 
   // Ctrl/Cmd+Z undoes, with Shift (or Ctrl+Y) redoes, unless the keys belong to a text field (Ctrl+S: see PoseEditorActions).
   useEffect(() => {
@@ -195,30 +188,29 @@ export function PoseEditor({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Header: where these poses came from (and whether you changed them), undo, play */}
-      <div className="flex items-center gap-2 border-b border-(--m3-outline-variant) px-3 py-2.5">
-        <DraftOriginLine className="flex-1" />
-        <div className="flex shrink-0 items-center gap-0.5">
-          <IconButton label="Undo (Ctrl+Z)" onClick={undo} disabled={!canUndo} className="h-8 w-8">
-            <Undo2 className="h-4 w-4" />
-          </IconButton>
-          <IconButton label="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={!canRedo} className="h-8 w-8">
-            <Redo2 className="h-4 w-4" />
-          </IconButton>
-          <M3Button size="sm" variant="tonal" onClick={togglePlaying} title={playing ? "Pause and hold the selected pose" : "Play the loop"}>
-            {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-            {/* Icon-only in a narrow pane, so the clip's title keeps its room. */}
-            <span className="sr-only @[22rem]/pane:not-sr-only">{playing ? "Pause" : "Play"}</span>
-          </M3Button>
+      <div className="border-b border-(--m3-outline-variant) px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <DraftOriginLine className="flex-1" />
+          <div className="flex shrink-0 items-center gap-0.5">
+            <IconButton label="Undo (Ctrl+Z)" onClick={undo} disabled={!canUndo} className="h-8 w-8">
+              <Undo2 className="h-4 w-4" />
+            </IconButton>
+            <IconButton label="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={!canRedo} className="h-8 w-8">
+              <Redo2 className="h-4 w-4" />
+            </IconButton>
+            <M3Button size="sm" variant="tonal" onClick={togglePlaying} title={playing ? "Pause and hold the selected pose" : "Play the loop"}>
+              {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              {/* Icon-only in a narrow pane, so the clip's title keeps its room. */}
+              <span className="sr-only @[22rem]/pane:not-sr-only">{playing ? "Pause" : "Play"}</span>
+            </M3Button>
+          </div>
         </div>
+        {/* What the AI said about the draft on the stage: a line that opens to the full width. */}
+        <DraftAiNotes />
       </div>
 
       <div className="studio-scroll min-h-0 flex-1 overflow-y-auto">
-        {noTemplate ? (
-          <div className="border-b border-(--m3-outline-variant) px-4 py-3">
-            <NoTemplateCallout onDraft={onDraft} drafting={drafting} />
-          </div>
-        ) : null}
-        {/* The template's settings: a change rebuilds every pose */}
+        {/* The template's settings and "Draft with AI", which sets them: a change rebuilds every pose */}
         <ExerciseSettings />
         {/* What the validator says about these poses on this avatar, right under what changes them */}
         <BodyChecks />
@@ -257,9 +249,6 @@ export function PoseEditor({
             <span className="mr-auto truncate">
               Pose {i + 1} of {n}
             </span>
-            <M3Button size="sm" variant={aiOpen ? "tonal" : "text"} onClick={() => setAiOpen((v) => !v)} title="Ask the AI for the key poses of this exercise, from the catalog's texts and frames">
-              <Sparkles className="h-3.5 w-3.5" /> AI draft
-            </M3Button>
             <IconButton label="Move this pose earlier" onClick={() => movePose(i, -1)} disabled={i === 0} className="h-7 w-7">
               <ChevronLeft className="h-3.5 w-3.5" />
             </IconButton>
@@ -301,7 +290,6 @@ export function PoseEditor({
               />
             </label>
           </div>
-          {aiOpen ? <AiDraftPanel onDraft={onDraft} drafting={drafting} /> : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Segmented
               value={draft.mode}

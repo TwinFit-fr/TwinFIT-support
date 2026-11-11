@@ -6,15 +6,16 @@ import { useToast } from "@/components/ui/toast";
 import { isPoseClipJson, poseClipFromDraft, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
 import { fetchStudioAsset } from "@/lib/studio/asset-auth";
 import { clipFrom } from "@/lib/studio/pose-origin";
+import { labelsFromClip } from "@/lib/studio/pose-names";
 import { useStudioStore } from "@/lib/studio/store";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
 import type { PoseDraft } from "@/lib/studio/template-draft";
 import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
-import type { DraftRequest, SaveMode } from "../pose-editor";
+import type { SaveMode } from "../pose-editor";
 
 /**
- * The pose editor's lifecycle: open a saved clip or an instant draft, ask the AI for a draft,
- * save in place or as a new row. A save keeps the editor open on the stored clip.
+ * The pose editor's lifecycle: open a saved clip or an instant draft, save in place or as a new
+ * row (the AI draft is use-ai-draft.ts). A save keeps the editor open on the stored clip.
  */
 export function usePoseSave(input: {
   exercise: StudioExercise | null;
@@ -27,10 +28,8 @@ export function usePoseSave(input: {
   const toast = useToast();
   const startPoseEdit = useStudioStore((s) => s.startPoseEdit);
   const markPoseSaved = useStudioStore((s) => s.markPoseSaved);
-  const replacePoses = useStudioStore((s) => s.replacePoses);
   const setVector = useStudioStore((s) => s.setVector);
   const [saving, setSaving] = useState(false);
-  const [drafting, setDrafting] = useState(false);
 
   const onEditPoses = useCallback(
     async (target: MovementVector) => {
@@ -44,10 +43,10 @@ export function usePoseSave(input: {
       const now = useStudioStore.getState();
       if (now.exerciseId !== exercise.id || now.avatarId !== avatar.id) return;
       const { poses, mode, weights } = posesFromClip(json);
-      const labels = Array.isArray(json.meta?.labels) && (json.meta.labels as unknown[]).every((l) => typeof l === "string") ? (json.meta.labels as string[]) : null;
       startPoseEdit({
         weights,
-        labels: labels && labels.length === poses.length ? labels : null,
+        // The names saved with the clip, one per pose (pose-names.ts).
+        labels: labelsFromClip(json.meta, poses.length),
         vectorId: target.id,
         sourceSeq: target.seq,
         exerciseId: exercise.id,
@@ -128,59 +127,7 @@ export function usePoseSave(input: {
     [staffFetch, markPoseSaved, refresh, setVector, toast],
   );
 
-  const onDraftPoses = useCallback(
-    async (request: DraftRequest) => {
-      const draft = useStudioStore.getState().poseEdit;
-      if (!draft) return;
-      setDrafting(true);
-      try {
-        const body = (await staffFetch("/api/studio/poses/draft", {
-          method: "POST",
-          body: JSON.stringify({
-            exercise_id: draft.exerciseId,
-            avatar_id: draft.avatarId,
-            items: draft.items,
-            two_handed: draft.twoHanded,
-            instructions: request.instructions || null,
-            pose_count: request.poseCount,
-          }),
-        })) as {
-          draft: {
-            poses: PoseClipJson["keyframes"][number]["angles"][];
-            labels: string[];
-            weights: number[];
-            mode: "pingpong" | "cycle";
-            notes: string;
-            grip: string | null;
-            template: string | null;
-            params: Record<string, unknown> | null;
-            unilateral: boolean;
-            airborne: boolean;
-            moving: boolean;
-          };
-        };
-        const proposal = body.draft;
-        replacePoses({
-          poses: proposal.poses,
-          mode: proposal.mode,
-          weights: proposal.weights,
-          labels: proposal.labels,
-          grip: proposal.grip,
-          ...(proposal.template ? { twoHanded: false } : {}),
-          meta: { template: proposal.template, template_params: proposal.params, unilateral: proposal.unilateral, airborne: proposal.airborne, moving: proposal.moving },
-          // The editor's origin line shows this for as long as these poses are on the stage.
-          origin: { kind: "ai", template: proposal.template, params: proposal.params, notes: proposal.notes || null },
-        });
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not draft the poses");
-      } finally {
-        setDrafting(false);
-      }
-    },
-    [staffFetch, replacePoses, toast],
-  );
-
-  return { onEditPoses, onOpenDraft, onSavePoses, onDraftPoses, saving, drafting };
+  return { onEditPoses, onOpenDraft, onSavePoses, saving };
 }
 
 /**

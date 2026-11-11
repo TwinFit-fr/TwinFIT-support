@@ -9,6 +9,7 @@ import { AvatarDialog } from "./avatar-dialog";
 import { AvatarManageDialog } from "./avatar-manage-dialog";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { EquipmentDialog } from "./equipment-dialog";
+import { useAiDraftLifecycle } from "./hooks/use-ai-draft";
 import { useExerciseLanding } from "./hooks/use-exercise-landing";
 import { usePoseSave } from "./hooks/use-pose-save";
 import { useTemplateExerciseSync } from "./hooks/use-template-settings";
@@ -68,6 +69,8 @@ export function StudioWorkspace() {
   );
 
   const poses = usePoseSave({ exercise, avatar, settings, refresh });
+  // An AI draft in flight or waiting is dropped when another draft opens, so it never lands on another exercise.
+  useAiDraftLifecycle();
   // The exercise's template, for its settings in the editor and for drags in Exercise mode.
   useTemplateExerciseSync(exercise);
   const actions = useVectorActions({ exercise, avatar, refresh, onEditPoses: poses.onEditPoses });
@@ -147,7 +150,7 @@ export function StudioWorkspace() {
             {exercise && tab === "poses" ? (
               <div role="tabpanel" id={RIGHT_TAB_IDS.poses.panel} aria-labelledby={RIGHT_TAB_IDS.poses.tab} className="flex min-h-0 flex-1 flex-col">
                 {poseEditing ? (
-                  <PoseEditor onSave={poses.onSavePoses} saving={poses.saving} onDraft={poses.onDraftPoses} drafting={poses.drafting} onRevert={stopPoseEdit} />
+                  <PoseEditor onSave={poses.onSavePoses} saving={poses.saving} onRevert={stopPoseEdit} />
                 ) : (
                   <PosesPlaceholder plan={plan} onStartFromTemplate={startFromTemplate} />
                 )}

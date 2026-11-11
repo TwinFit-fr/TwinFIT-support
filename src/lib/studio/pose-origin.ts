@@ -7,11 +7,24 @@
 import { DEFAULT_PARAMS } from "./exercise-templates.ts";
 import { settingsSummary } from "./template-settings.ts";
 
+/**
+ * What the language model said about a draft, kept with its origin so it stays on screen (and
+ * comes back with undo): its own notes, contradictions it found in the exercise texts, what was
+ * clamped or set back after it answered, the server's body check, and the note it was given.
+ */
+export type AiNotes = {
+  notes: string | null;
+  conflicts: string[];
+  adjusted: string[];
+  checks: string[];
+  instructions: string | null;
+};
+
 export type DraftOrigin =
   /** Built on the spot from the exercise's template with these settings (absent: the defaults). */
   | { kind: "template"; template: string; params?: Record<string, unknown> }
   /** Proposed by the language model: a template with the parameters it chose, or raw angles. */
-  | { kind: "ai"; template: string | null; params: Record<string, unknown> | null; notes: string | null }
+  | { kind: "ai"; template: string | null; params: Record<string, unknown> | null; notes: string | null; explain?: AiNotes }
   /** A clip saved earlier (opened from the list, or just saved here); `from` says how it was made, when known. */
   | { kind: "clip"; vectorId: string; seq: number | null; from: string | null }
   /** One neutral standing pose: the exercise has no template, or the user started from scratch. */

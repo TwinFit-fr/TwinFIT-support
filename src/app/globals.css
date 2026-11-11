@@ -507,6 +507,55 @@ body {
       transition: none;
     }
   }
+
+  /* The AI draft on its way: a thin bar that fills towards the usual ten seconds and then waits. */
+  .ai-draft-track {
+    position: relative;
+    height: 3px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--m3-tertiary) 16%, transparent);
+  }
+  .ai-draft-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 92%;
+    border-radius: inherit;
+    background: var(--m3-tertiary);
+    transform-origin: left;
+    animation: ai-draft-fill 12s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  }
+  @keyframes ai-draft-fill {
+    from {
+      transform: scaleX(0.04);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+  /* A setting the AI just set: its row glows once. */
+  .ai-landed {
+    animation: ai-landed 1.6s ease-out 1;
+  }
+  @keyframes ai-landed {
+    0%,
+    30% {
+      background: color-mix(in srgb, var(--m3-tertiary) 18%, transparent);
+    }
+    100% {
+      background: transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ai-draft-fill {
+      animation: none;
+      transform: scaleX(0.5);
+      opacity: 0.6;
+    }
+    .ai-landed {
+      animation: none;
+    }
+  }
 }
 
 /* In the Studio, toasts appear at the top of the stage, under the top bar, so they never cover
