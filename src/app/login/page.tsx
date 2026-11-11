@@ -2,16 +2,47 @@
 
 import { useSignInEmailOTP, useSignInEmailPassword, useSignOut } from "@nhost/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, use, useState } from "react";
 import { mapAuthErrorMessage } from "@/lib/auth-errors";
+import { isStudioPath, safeNextPath } from "@/lib/auth-next";
 import { hasStaffRole } from "@/lib/nhost/jwt";
 import { Button, Input } from "@/components/ui/primitives";
+import { cn } from "@/lib/utils";
 
 type Mode = "code" | "password";
 
 const NOT_STAFF = "This account does not have staff access.";
 
-function LoginForm() {
+/** Class names of the sign-in screen: Support's light look, or the Studio's dark one. */
+const LIGHT = {
+  page: "bg-zinc-50",
+  card: "border-zinc-200 bg-white shadow-sm",
+  title: "",
+  muted: "text-zinc-500",
+  label: "",
+  input: "",
+  button: "",
+  link: "text-zinc-600 hover:text-zinc-900",
+  notice: "text-zinc-600",
+  error: "text-red-600",
+};
+const DARK: typeof LIGHT = {
+  page: "studio-root bg-(--m3-surface-dim) text-(--m3-on-surface)",
+  card: "border-(--m3-outline-variant) bg-(--m3-surface-container-low) shadow-2xl",
+  title: "text-(--m3-on-surface)",
+  muted: "text-(--m3-on-surface-variant)",
+  label: "text-(--m3-on-surface)",
+  input:
+    "border-(--m3-outline) bg-(--m3-surface-container) text-(--m3-on-surface) placeholder:text-(--m3-on-surface-variant) focus:border-(--m3-primary) focus:ring-(--m3-primary)/60 disabled:opacity-70",
+  button: "rounded-full bg-(--m3-primary) text-(--m3-on-primary) hover:bg-(--m3-primary)/90 active:bg-(--m3-primary)/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--m3-primary)",
+  link: "text-(--m3-on-surface-variant) hover:text-(--m3-on-surface)",
+  notice: "text-(--m3-on-surface-variant)",
+  error: "text-(--m3-error)",
+};
+
+function LoginForm({ next }: { next: string }) {
+  const studio = isStudioPath(next);
+  const t = studio ? DARK : LIGHT;
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signInEmailPassword } = useSignInEmailPassword();
@@ -43,7 +74,7 @@ function LoginForm() {
       setError(NOT_STAFF);
       return;
     }
-    router.replace("/");
+    router.replace(next);
   }
 
   async function run(action: () => Promise<void>) {
@@ -104,17 +135,18 @@ function LoginForm() {
   return (
     <form
       onSubmit={onSubmit}
-      className="w-full max-w-md space-y-4 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm"
+      className={cn("w-full max-w-md space-y-4 rounded-xl border p-6", t.card)}
     >
       <div>
-        <h1 className="text-xl font-semibold">TwinFIT Support</h1>
-        <p className="mt-1 text-sm text-zinc-500">Staff sign in</p>
+        <h1 className={cn("text-xl font-semibold", t.title)}>{studio ? "TwinFIT 3D Studio" : "TwinFIT Support"}</h1>
+        <p className={cn("mt-1 text-sm", t.muted)}>{studio ? "Sign in with your staff account to open the Studio" : "Staff sign in"}</p>
       </div>
       <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor="email">
+        <label className={cn("text-sm font-medium", t.label)} htmlFor="email">
           Email
         </label>
         <Input
+          className={t.input}
           id="email"
           type="email"
           autoComplete="email"
@@ -126,10 +158,11 @@ function LoginForm() {
       </div>
       {mode === "password" && (
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="password">
+          <label className={cn("text-sm font-medium", t.label)} htmlFor="password">
             Password
           </label>
           <Input
+            className={t.input}
             id="password"
             type="password"
             autoComplete="current-password"
@@ -141,10 +174,11 @@ function LoginForm() {
       )}
       {mode === "code" && codeSent && (
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="code">
+          <label className={cn("text-sm font-medium", t.label)} htmlFor="code">
             Code
           </label>
           <Input
+            className={t.input}
             id="code"
             inputMode="numeric"
             autoComplete="one-time-code"
@@ -156,7 +190,7 @@ function LoginForm() {
           <div className="flex gap-3 text-xs">
             <button
               type="button"
-              className="text-zinc-600 underline hover:text-zinc-900"
+              className={cn("underline", t.link)}
               disabled={busy}
               onClick={() => void sendCode()}
             >
@@ -164,7 +198,7 @@ function LoginForm() {
             </button>
             <button
               type="button"
-              className="text-zinc-600 underline hover:text-zinc-900"
+              className={cn("underline", t.link)}
               disabled={busy}
               onClick={() => switchMode("code")}
             >
@@ -173,14 +207,18 @@ function LoginForm() {
           </div>
         </div>
       )}
-      {notice && !error && <p className="text-sm text-zinc-600">{notice}</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button type="submit" disabled={busy} className="w-full">
+      {notice && !error && <p className={cn("text-sm", t.notice)}>{notice}</p>}
+      {error && (
+        <p role="alert" className={cn("text-sm", t.error)}>
+          {error}
+        </p>
+      )}
+      <Button type="submit" disabled={busy} className={cn("w-full", t.button)}>
         {submitLabel}
       </Button>
       <button
         type="button"
-        className="w-full text-center text-sm text-zinc-600 underline hover:text-zinc-900"
+        className={cn("w-full text-center text-sm underline", t.link)}
         onClick={() => switchMode(mode === "code" ? "password" : "code")}
       >
         {mode === "code" ? "Use password instead" : "Email me a code instead"}
@@ -189,11 +227,15 @@ function LoginForm() {
   );
 }
 
-export default function LoginPage() {
+export default function LoginPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // Read from the page's own params, so the server already paints the right (light or dark) page.
+  const raw = use(searchParams).next;
+  const next = safeNextPath(typeof raw === "string" ? raw : null);
+  const t = isStudioPath(next) ? DARK : LIGHT;
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
-      <Suspense fallback={<p className="text-sm text-zinc-500">Loading…</p>}>
-        <LoginForm />
+    <div className={cn("flex min-h-screen items-center justify-center px-4", t.page)}>
+      <Suspense fallback={<p className={cn("text-sm", t.muted)}>Loading…</p>}>
+        <LoginForm next={next} />
       </Suspense>
     </div>
   );
