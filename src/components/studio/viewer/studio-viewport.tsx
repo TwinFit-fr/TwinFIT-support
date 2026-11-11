@@ -8,13 +8,12 @@ import {
   Dumbbell,
   Grid3x3,
   MonitorOff,
-  Pause,
-  Play,
   RotateCcw,
   Sparkles,
 } from "lucide-react";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { debugEnabled } from "@/lib/studio/load-state";
+import { togglePlayback } from "@/lib/studio/playback";
 import { editingStatus } from "@/lib/studio/pose-origin";
 import { useStudioStore, type CameraPreset, type SceneSource } from "@/lib/studio/store";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
@@ -23,6 +22,7 @@ import { EmptyState, IconButton, Segmented } from "../ui";
 import { useMovementClip } from "./movement-clip";
 import { AiDraftChip } from "../ai-draft";
 import { StudioLoader } from "../load-states";
+import { InBetweenNote } from "./in-between-note";
 import { PosePointsLayer } from "./pose-points-layer";
 import { useCanvasCommits } from "./render-stats";
 import type { ModelInfo } from "./studio-canvas";
@@ -75,14 +75,8 @@ const PRESETS: { value: CameraPreset; label: string; title: string }[] = [
   { value: "three-quarter", label: "¾", title: "Three-quarter (2)" },
   { value: "side", label: "Side", title: "Side (3)" },
 ];
-const SPEEDS = [0.25, 0.5, 1, 2];
-
-/** Playback and view controls: a floating glass toolbar, state in the store. */
+/** View controls: a floating glass toolbar, state in the store. Playback lives in the timeline dock; Space plays and pauses anywhere. */
 function Toolbar() {
-  const playing = useStudioStore((s) => s.playing);
-  const togglePlaying = useStudioStore((s) => s.togglePlaying);
-  const speed = useStudioStore((s) => s.speed);
-  const setSpeed = useStudioStore((s) => s.setSpeed);
   const preset = useStudioStore((s) => s.cameraPreset);
   const setPreset = useStudioStore((s) => s.setCameraPreset);
   const showGrid = useStudioStore((s) => s.showGrid);
@@ -94,7 +88,7 @@ function Toolbar() {
   const resetView = useStudioStore((s) => s.resetView);
 
   useShortcuts({
-    " ": togglePlaying,
+    " ": togglePlayback,
     "1": () => setPreset("front"),
     "2": () => setPreset("three-quarter"),
     "3": () => setPreset("side"),
@@ -105,18 +99,6 @@ function Toolbar() {
 
   return (
     <div className="studio-glass pointer-events-auto flex items-center gap-1 rounded-full p-1.5 shadow-2xl">
-      <IconButton label={playing ? "Pause (space)" : "Play (space)"} onClick={togglePlaying} active={playing}>
-        {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-      </IconButton>
-      <button
-        type="button"
-        onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])}
-        title="Playback speed"
-        className="studio-state h-9 min-w-[3.25rem] cursor-pointer rounded-full px-2 font-mono text-xs tabular-nums text-(--m3-on-surface-variant) hover:text-(--m3-on-surface)"
-      >
-        {speed}×
-      </button>
-      <span className="mx-1 h-5 w-px bg-(--m3-outline-variant)" />
       <Segmented size="sm" value={preset} options={PRESETS} onChange={setPreset} className="border-transparent" />
       <IconButton label="Reset view (R)" onClick={resetView}>
         <RotateCcw className="h-4 w-4" />
@@ -205,6 +187,8 @@ function Hud({
         />
         {clipText}
       </div>
+      {/* The timeline rests between key poses: the body shown is a blend, a drag edits the nearest key. */}
+      <InBetweenNote />
       {/* The AI draft on its way (Cancel), or waiting for review in the side panel. */}
       <AiDraftChip className="pointer-events-auto shadow-lg" onReview={reviewSuggestion} />
       {issues.length ? (

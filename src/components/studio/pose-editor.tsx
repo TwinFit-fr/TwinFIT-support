@@ -16,6 +16,7 @@ import {
 import { useConfirm } from "@/components/ui/confirm";
 import { useDragMode } from "@/lib/studio/drag-mode";
 import { DEFAULT_PARAMS } from "@/lib/studio/exercise-templates";
+import { togglePlayback } from "@/lib/studio/playback";
 import { applyPoseEdit } from "@/lib/studio/pose-drag";
 import { originLabel } from "@/lib/studio/pose-origin";
 import { POINT_LABEL, isPointId } from "@/lib/studio/pose-points";
@@ -83,7 +84,6 @@ export function PoseEditor({
   const removePose = useStudioStore((s) => s.removePose);
   const movePose = useStudioStore((s) => s.movePose);
   const playing = useStudioStore((s) => s.playing);
-  const togglePlaying = useStudioStore((s) => s.togglePlaying);
   const undo = useStudioStore((s) => s.undoPose);
   const redo = useStudioStore((s) => s.redoPose);
   const copyLimb = useStudioStore((s) => s.copyLimbToOtherSide);
@@ -198,7 +198,7 @@ export function PoseEditor({
             <IconButton label="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={!canRedo} className="h-8 w-8">
               <Redo2 className="h-4 w-4" />
             </IconButton>
-            <M3Button size="sm" variant="tonal" onClick={togglePlaying} title={playing ? "Pause and hold the selected pose" : "Play the loop"}>
+            <M3Button size="sm" variant="tonal" onClick={togglePlayback} title={playing ? "Pause where it is (Space)" : "Play the loop from the playhead (Space)"}>
               {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
               {/* Icon-only in a narrow pane, so the clip's title keeps its room. */}
               <span className="sr-only @[22rem]/pane:not-sr-only">{playing ? "Pause" : "Play"}</span>

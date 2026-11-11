@@ -174,6 +174,12 @@ export type StudioState = {
   /** The generated model per `kind:code` (active rows); items without one are drawn as proxies. */
   equipmentModels: ActiveEquipmentModels;
   playing: boolean;
+  /**
+   * Paused on a moment that is not a key pose (the timeline was scrubbed there, or a clip was
+   * paused mid-loop): the stage shows the clip at this time, in seconds. Null while playing and
+   * while the editor holds a key pose.
+   */
+  scrubTime: number | null;
   speed: number;
   showGrid: boolean;
   showEquipment: boolean;
@@ -204,7 +210,10 @@ export type StudioState = {
   setPreviewItems: (items: EquipmentItem[]) => void;
   setEquipmentModels: (models: ActiveEquipmentModels) => void;
   togglePlaying: () => void;
+  /** Playing on, or stopped holding the selected pose (playback.ts pauses where it is). */
   setPlaying: (playing: boolean) => void;
+  /** One step of the playhead: playing or not, the in-between time shown (or null), the pose held. */
+  setStageTime: (next: { playing: boolean; scrubTime: number | null; keyframe?: number }) => void;
   setSpeed: (speed: number) => void;
   toggleGrid: () => void;
   toggleEquipment: () => void;
@@ -274,6 +283,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   previewItems: [],
   equipmentModels: {},
   playing: true,
+  scrubTime: null,
   speed: 1,
   showGrid: true,
   showEquipment: true,
@@ -290,16 +300,24 @@ export const useStudioStore = create<StudioState>((set) => ({
   draftPlacements: {},
 
   selectExercise: (exerciseId) =>
-    set((s) => (s.exerciseId === exerciseId ? s : { exerciseId, vectorId: null, previewItems: [] })),
+    set((s) => (s.exerciseId === exerciseId ? s : { exerciseId, vectorId: null, previewItems: [], scrubTime: null })),
   // Another avatar: rig drafts belong to the previous one, so they go, and the gizmo closes.
   setAvatar: (avatarId) =>
     set((s) => (s.avatarId === avatarId ? s : { avatarId, draftSockets: null, draftPlacements: {}, edit: NO_EDIT, modelBones: [] })),
-  setVector: (vectorId) => set((s) => (s.vectorId === vectorId ? s : { vectorId })),
+  setVector: (vectorId) => set((s) => (s.vectorId === vectorId ? s : { vectorId, scrubTime: null })),
   setScene: (scene) => set((s) => (sameScene(s.scene, scene) ? s : { scene })),
   setPreviewItems: (previewItems) => set((s) => (sameJson(s.previewItems, previewItems) ? s : { previewItems })),
   setEquipmentModels: (equipmentModels) => set((s) => (sameJson(s.equipmentModels, equipmentModels) ? s : { equipmentModels })),
-  togglePlaying: () => set((s) => ({ playing: !s.playing })),
-  setPlaying: (playing) => set((s) => (s.playing === playing ? s : { playing })),
+  togglePlaying: () => set((s) => ({ playing: !s.playing, scrubTime: null })),
+  setPlaying: (playing) => set((s) => (s.playing === playing && s.scrubTime === null ? s : { playing, scrubTime: null })),
+  setStageTime: ({ playing, scrubTime, keyframe }) =>
+    set((s) => {
+      const edit = s.poseEdit;
+      const hold = keyframe !== undefined && edit ? Math.max(0, Math.min(keyframe, edit.poses.length - 1)) : null;
+      const poseEdit = edit && hold !== null && hold !== edit.keyframe ? { ...edit, keyframe: hold, gestureOpen: false } : edit;
+      if (s.playing === playing && s.scrubTime === scrubTime && poseEdit === edit) return s;
+      return { playing, scrubTime, poseEdit };
+    }),
   setSpeed: (speed) => set({ speed }),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   toggleEquipment: () => set((s) => ({ showEquipment: !s.showEquipment })),
@@ -314,6 +332,7 @@ export const useStudioStore = create<StudioState>((set) => ({
     set({
       poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], gestureOpen: false, weights: null, labels: null, edited: false, ...state, editId: ++editCounter },
       playing: false,
+      scrubTime: null,
     }),
   replacePoses: (next) =>
     set((s) => {
@@ -333,6 +352,7 @@ export const useStudioStore = create<StudioState>((set) => ({
           keyframe: Math.max(0, Math.min(next.keyframe ?? 0, next.poses.length - 1)),
           dirty: true,
         },
+        scrubTime: null,
       };
     }),
   markPoseSaved: (vector) =>
@@ -392,21 +412,23 @@ export const useStudioStore = create<StudioState>((set) => ({
       if (!d) return s;
       const to = from === "left" ? "right" : "left";
       const poses = d.poses.map((p, i) => (i === index ? { ...p, [`${to}_${limb}`]: structuredClone(p[`${from}_${limb}`]) } : p));
-      return { poseEdit: { ...remember(d), poses, dirty: true } };
+      return { poseEdit: { ...remember(d), poses, dirty: true }, scrubTime: null };
     }),
   setPoseDragTarget: (dragTarget) =>
     set((s) => (s.poseEdit && s.poseEdit.dragTarget !== dragTarget ? { poseEdit: { ...s.poseEdit, dragTarget, gestureOpen: false } } : s)),
-  stopPoseEdit: () => set({ poseEdit: null, poseProbe: {}, playing: true }),
+  stopPoseEdit: () => set({ poseEdit: null, poseProbe: {}, playing: true, scrubTime: null }),
   setPoseKeyframe: (index) =>
     set((s) =>
       s.poseEdit
-        ? { poseEdit: { ...s.poseEdit, keyframe: Math.max(0, Math.min(index, s.poseEdit.poses.length - 1)), gestureOpen: false }, playing: false }
+        ? { poseEdit: { ...s.poseEdit, keyframe: Math.max(0, Math.min(index, s.poseEdit.poses.length - 1)), gestureOpen: false }, playing: false, scrubTime: null }
         : s,
     ),
   // An edit pauses playback and holds the pose being edited, so the change is seen where it was made.
   updatePose: (index, pose, gesture = false) =>
     set((s) =>
-      s.poseEdit ? { poseEdit: { ...remember(s.poseEdit, gesture), poses: s.poseEdit.poses.map((p, i) => (i === index ? pose : p)), dirty: true }, playing: false } : s,
+      s.poseEdit
+        ? { poseEdit: { ...remember(s.poseEdit, gesture), poses: s.poseEdit.poses.map((p, i) => (i === index ? pose : p)), dirty: true }, playing: false, scrubTime: null }
+        : s,
     ),
   endPoseGesture: () => set((s) => (s.poseEdit?.gestureOpen ? { poseEdit: { ...s.poseEdit, gestureOpen: false } } : s)),
   setPoseEditOptions: (options) =>
@@ -414,7 +436,9 @@ export const useStudioStore = create<StudioState>((set) => ({
       if (!s.poseEdit) return s;
       // The clip-shaping options are undoable; the mirror toggle is a tool setting.
       const undoable = "mode" in options || "durationS" in options || "twoHanded" in options;
-      return { poseEdit: { ...(undoable ? remember(s.poseEdit) : s.poseEdit), ...options, dirty: true } };
+      // An in-between being looked at stays, inside the new length.
+      const scrubTime = s.scrubTime !== null && options.durationS !== undefined ? Math.min(s.scrubTime, options.durationS) : s.scrubTime;
+      return { poseEdit: { ...(undoable ? remember(s.poseEdit) : s.poseEdit), ...options, dirty: true }, scrubTime };
     }),
   setPoseLabel: (index, label) =>
     set((s) => {
@@ -439,7 +463,7 @@ export const useStudioStore = create<StudioState>((set) => ({
       weights?.splice(index + 1, 0, weights[index]);
       const labels = s.poseEdit.labels ? [...s.poseEdit.labels] : null;
       labels?.splice(index + 1, 0, labels[index] ? `${labels[index]} copy` : "");
-      return { poseEdit: { ...remember(s.poseEdit), poses, weights, labels, keyframe: index + 1, dirty: true } };
+      return { poseEdit: { ...remember(s.poseEdit), poses, weights, labels, keyframe: index + 1, dirty: true }, scrubTime: null };
     }),
   removePose: (index) =>
     set((s) => {
@@ -447,7 +471,7 @@ export const useStudioStore = create<StudioState>((set) => ({
       const poses = s.poseEdit.poses.filter((_, i) => i !== index);
       const weights = s.poseEdit.weights?.filter((_, i) => i !== index) ?? null;
       const labels = s.poseEdit.labels?.filter((_, i) => i !== index) ?? null;
-      return { poseEdit: { ...remember(s.poseEdit), poses, weights, labels, keyframe: Math.min(index, poses.length - 1), dirty: true } };
+      return { poseEdit: { ...remember(s.poseEdit), poses, weights, labels, keyframe: Math.min(index, poses.length - 1), dirty: true }, scrubTime: null };
     }),
   movePose: (index, direction) =>
     set((s) => {
@@ -460,7 +484,7 @@ export const useStudioStore = create<StudioState>((set) => ({
       if (weights) [weights[index], weights[to]] = [weights[to], weights[index]];
       const labels = s.poseEdit.labels ? [...s.poseEdit.labels] : null;
       if (labels) [labels[index], labels[to]] = [labels[to], labels[index]];
-      return { poseEdit: { ...remember(s.poseEdit), poses, weights, labels, keyframe: to, dirty: true } };
+      return { poseEdit: { ...remember(s.poseEdit), poses, weights, labels, keyframe: to, dirty: true }, scrubTime: null };
     }),
   setPoseProbe: (poseProbe) => set((s) => (sameJson(s.poseProbe, poseProbe) ? s : { poseProbe })),
   setDraftSockets: (draftSockets) => set({ draftSockets }),

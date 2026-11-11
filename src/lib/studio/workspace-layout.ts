@@ -28,7 +28,8 @@ export const LAYOUT_TOKENS = {
   panes: {
     left: { initial: 272, min: 240, max: 480, share: 0.18, initialMax: 300 },
     right: { initial: 360, min: 320, max: 640, share: 0.22, initialMax: 420 },
-    dock: { initial: 220, min: 120, max: 480 },
+    // The timeline: transport row, ruler and one key lane at the initial height; taller only gives the lane room.
+    dock: { initial: 148, min: 112, max: 360 },
   } satisfies Record<PaneId, PaneLimits>,
   /** The stage never gets narrower than this while side panes are docked. */
   stageMinWidth: 440,

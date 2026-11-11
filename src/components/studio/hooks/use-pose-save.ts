@@ -5,6 +5,7 @@ import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { useToast } from "@/components/ui/toast";
 import { isPoseClipJson, poseClipFromDraft, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
 import { fetchStudioAsset } from "@/lib/studio/asset-auth";
+import { play } from "@/lib/studio/playback";
 import { clipFrom } from "@/lib/studio/pose-origin";
 import { labelsFromClip } from "@/lib/studio/pose-names";
 import { useStudioStore } from "@/lib/studio/store";
@@ -141,7 +142,7 @@ function playOnce() {
   const edit = state.poseEdit;
   if (!edit || state.playing) return;
   const ms = (poseClipFromDraft(edit).duration / (state.speed || 1)) * 1000;
-  state.setPlaying(true);
+  play(0);
   const poses = edit.poses;
   window.setTimeout(() => {
     const now = useStudioStore.getState();
