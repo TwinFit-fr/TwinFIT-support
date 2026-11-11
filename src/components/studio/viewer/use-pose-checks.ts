@@ -40,6 +40,7 @@ export function usePoseChecks(model: THREE.Object3D, rest: RestPose, sockets: Av
       }
     };
     const schedule = () => {
+      useStudioStore.getState().markPoseChecksPending();
       window.clearTimeout(timer);
       timer = window.setTimeout(check, SETTLE_MS);
     };

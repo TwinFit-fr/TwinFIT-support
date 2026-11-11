@@ -113,9 +113,13 @@ const T: Record<string, (ex: TemplateExercise, prm: TemplateParams) => BuiltTemp
   squat(ex, prm) {
     const sumo = /sumo/i.test(ex.name);
     const st = sumo ? stanceOf({ ...prm, stance: "wide" }) : stanceOf(prm);
-    const [pitch, hip, knee] = sumo ? [22, 100, 100] : ({ partial: [20, 70, 60], full: [35, 118, 105], deep: [38, 125, 125] } as const)[prm.range];
+    const [depthPitch, hip, knee] = sumo ? [22, 100, 100] : ({ partial: [20, 70, 60], full: [35, 118, 105], deep: [38, 125, 125] } as const)[prm.range];
+    // How far the trunk leans at the bottom: the feet stay planted and the legs follow (the solver closes them).
+    const pitch = depthPitch + (sumo ? 0 : ({ upright: -10, moderate: 0, forward: 10 } as const)[prm.lean]);
     const top = build(legs(st), arms(carried(ex, 0)));
-    const bottom = build(lean(pitch), legs({ ...st, hip_flexion: hip, knee_flexion: knee }), arms(carried(ex, pitch)));
+    // An upright trunk sends the knees further forward, short of the knee's own end of range.
+    const bent = Math.min(knee + (prm.lean === "upright" && !sumo ? 22 : 0), 140);
+    const bottom = build(lean(pitch), legs({ ...st, hip_flexion: hip, knee_flexion: bent }), arms(carried(ex, pitch)));
     return rep("squat", top, bottom, ["standing", "bottom"], prm);
   },
   split_squat(ex, prm) {
@@ -132,13 +136,17 @@ const T: Record<string, (ex: TemplateExercise, prm: TemplateParams) => BuiltTemp
     return rep("lunge", build(stepping, legs(stanceOf({ ...prm, stance: "hip" })), arms(carried(ex, 0, false))), bottom, ["standing", "lunge"], prm, { moving: true });
   },
   deadlift(ex, prm) {
-    const sumo = /sumo/i.test(ex.name);
-    const st = sumo ? stanceOf({ ...prm, stance: "wide" }) : stanceOf({ ...prm, stance: "hip" });
+    // A wide stance is the sumo deadlift: a more upright trunk between the knees.
+    const sumo = /sumo/i.test(ex.name) || prm.stance === "wide";
+    const st = sumo ? stanceOf({ ...prm, stance: "wide" }) : stanceOf(prm);
+    const bar = /BARBELL|SMITH_MACHINE/.test(ex.equipment ?? "");
     const pron = /DUMBBELL|KETTLEBELL/.test(ex.equipment ?? "") ? 90 : 170;
+    // On a bar the hands go wider or closer (outside the knees either way); free weights hang by the legs.
+    const width = bar && !sumo ? ({ narrow: -4, shoulder: 0, wide: 16 } as const)[prm.grip] : 0;
     const [pitch, hip, knee] = sumo ? [40, 100, 85] : [58, 115, 75];
-    const floorRef = /BARBELL|SMITH_MACHINE/.test(ex.equipment ?? "") ? "bar_on_floor" : "mid_shin";
-    const bottom = build(lean(pitch), legs({ ...st, hip_flexion: hip, knee_flexion: knee }), arms(hanging(pitch, pron)), goal({ point: "hands", ref: floorRef, by: "pelvis" }));
-    return rep("deadlift", build(legs(st), arms(hanging(0, pron))), bottom, ["lockout", "bar down"], { ...prm, down_s: 1.5, up_s: 1.5 });
+    const floorRef = bar ? "bar_on_floor" : "mid_shin";
+    const bottom = build(lean(pitch), legs({ ...st, hip_flexion: hip, knee_flexion: knee }), arms(hanging(pitch, pron, width)), goal({ point: "hands", ref: floorRef, by: "pelvis" }));
+    return rep("deadlift", build(legs(st), arms(hanging(0, pron, width))), bottom, ["lockout", "bar down"], { ...prm, down_s: 1.5, up_s: 1.5 });
   },
   rack_pull(ex, prm) {
     const st = stanceOf({ ...prm, stance: "hip" });
@@ -245,14 +253,19 @@ const T: Record<string, (ex: TemplateExercise, prm: TemplateParams) => BuiltTemp
     const body = seated ? [support("seated", 0.5), feetDown, legs({ hip_flexion: 88, knee_flexion: 88 })] : [legs(stanceOf({ ...prm, stance: "hip" }))];
     const start = { shoulder_plane: 20, shoulder_elevation: 85, shoulder_rotation: 70, elbow_flexion: 90, forearm_pronation: 90 };
     if (/arnold/i.test(ex.name)) return rep("press_overhead", build(...body, arms({ shoulder_plane: 85, shoulder_elevation: 25, elbow_flexion: 140, forearm_pronation: 0 })), build(...body, arms({ shoulder_plane: 10, shoulder_elevation: 172, elbow_flexion: 5, forearm_pronation: 0, scapula_elevation: 5 })), ["at the chest", "overhead"], prm);
-    return rep("press_overhead", build(...body, arms(start)), build(...body, arms({ shoulder_plane: 10, shoulder_elevation: 172, elbow_flexion: 5, forearm_pronation: 0, scapula_elevation: 5 })), ["at the shoulders", "overhead"], prm);
+    // A wider grip: elbows further out and less bent at the shoulders, arms in a V overhead; a closer one, elbows forward.
+    const [startPlane, startElbow, topPlane, topElevation] = ({ narrow: [40, 100, 25, 175], shoulder: [20, 90, 10, 172], wide: [0, 72, 0, 158] } as const)[prm.grip];
+    const startArms = { ...start, shoulder_plane: startPlane, elbow_flexion: startElbow };
+    return rep("press_overhead", build(...body, arms(startArms)), build(...body, arms({ shoulder_plane: topPlane, shoulder_elevation: topElevation, elbow_flexion: 5, forearm_pronation: 0, scapula_elevation: 5 })), ["at the shoulders", "overhead"], prm);
   },
   bench_press(ex, prm) {
     const angle = ex.position === "INCLINE" ? -50 : ex.position === "DECLINE" ? -105 : -90;
     const body = [support("supine", 0.55), lean(angle), feetDown, legs({ hip_flexion: angle === -50 ? 42 : 12, knee_flexion: 88 })];
     const width = gripPlane(prm);
+    // Arms straight up: a wider grip angles them out, so the hands are wider apart.
+    const topPlane = ({ narrow: 90, shoulder: 85, wide: 70 } as const)[prm.grip];
     const pron = /DUMBBELL/.test(ex.equipment ?? "") ? 170 : 170;
-    return rep("bench_press", build(...body, arms({ shoulder_plane: 85, shoulder_elevation: 90, forearm_pronation: pron, scapula_protraction: 8 })), build(...body, arms({ shoulder_plane: width - 30, shoulder_elevation: 78, shoulder_rotation: 60, elbow_flexion: 95, forearm_pronation: pron, scapula_protraction: -12 })), ["arms up", "at the chest"], prm);
+    return rep("bench_press", build(...body, arms({ shoulder_plane: topPlane, shoulder_elevation: 90, forearm_pronation: pron, scapula_protraction: 8 })), build(...body, arms({ shoulder_plane: width - 30, shoulder_elevation: 78, shoulder_rotation: 60, elbow_flexion: 95, forearm_pronation: pron, scapula_protraction: -12 })), ["arms up", "at the chest"], prm);
   },
   chest_press_machine(_ex, prm) {
     const body = [support("seated", 0.5), feetDown, legs({ hip_flexion: 88, knee_flexion: 88 })];

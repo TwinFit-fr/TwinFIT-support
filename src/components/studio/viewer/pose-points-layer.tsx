@@ -2,12 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Hand, Link2, Unlink2 } from "lucide-react";
+import { useDragMode, useDragModeStore } from "@/lib/studio/drag-mode";
 import { HIT_MAX_PX, dotScale, hitSize, neighbourGaps, pickPoint, type ScreenPoints } from "@/lib/studio/pose-hit";
 import { movesAlone } from "@/lib/studio/pose-legs";
+import { replacesNote } from "@/lib/studio/rebuild-words";
 import { DRAG_SLOP_PX, POINT_HINT, POINT_LABEL, isNudgeKey, isPointId, mirrorPoint, pointRole, type PointId } from "@/lib/studio/pose-points";
 import { useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
-import { poseStage, type StageFrame } from "./pose-stage";
+import { useRebuildNotice } from "../hooks/use-template-settings";
+import { DragModeControl, ExerciseBadge, ExerciseLine } from "./exercise-status";
+import { poseStage, type ExerciseStatus, type StageFrame } from "./pose-stage";
 
 type Press = { id: PointId; pointer: number; x: number; y: number; dragging: boolean };
 type Latest = { points: ScreenPoints; hit: Partial<Record<PointId, number>> };
@@ -53,6 +57,21 @@ export function PosePointsLayer() {
   /** The dragged point is as far as the body lets it go. */
   const [short, setShort] = useState(false);
   const [message, setMessage] = useState("");
+  /** Exercise mode: what the drag is doing, and what the last one applied (shown for a moment). */
+  // Kept with the exercise it was about: a message about another exercise's point is not shown.
+  const [exState, setExState] = useState<{ status: ExerciseStatus | null; exercise: unknown }>({ status: null, exercise: null });
+  const setExStatus = (update: (prev: ExerciseStatus | null) => ExerciseStatus | null) =>
+    setExState((prev) => ({ status: update(prev.status), exercise: useDragModeStore.getState().exercise }));
+  const [done, setDone] = useState<{ text: string; at: number } | null>(null);
+  const dragMode = useDragMode();
+  const exStatus = exState.exercise === dragMode.exercise ? exState.status : null;
+  const notice = useRebuildNotice();
+  const noticeRef = useRef(notice);
+  useEffect(() => {
+    noticeRef.current = notice;
+  });
+  const badge = useRef<HTMLDivElement>(null);
+  const draggingNow = useRef<PointId | null>(null);
   // A standing body moves one leg at a time: Mirror does not copy such a drag.
   const alone = useStudioStore((s) => {
     const pose = s.poseEdit?.poses[s.poseEdit.keyframe];
@@ -99,6 +118,14 @@ export function PosePointsLayer() {
           }
         }
         latest.current = { points: frame.points, hit };
+        // The setting badge rides next to the dragged point.
+        const tag = badge.current;
+        const at = draggingNow.current ? frame.points[draggingNow.current] : undefined;
+        if (tag && at) {
+          const x = Math.min(Math.max(8, at.x + 22), el.clientWidth - tag.offsetWidth - 8);
+          const y = Math.min(Math.max(8, at.y - tag.offsetHeight - 14), el.clientHeight - tag.offsetHeight - 8);
+          tag.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+        }
         const d = frame.chains.map((c) => `M${c.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join("L")}`).join("");
         halo.current?.setAttribute("d", d);
         line.current?.setAttribute("d", d);
@@ -124,9 +151,25 @@ export function PosePointsLayer() {
       setAvailable,
       announce: setMessage,
       setDragging(id, about = null) {
+        draggingNow.current = id;
         setDragging(id);
         setNote(id ? about : null);
         if (id && about) setMessage(`${POINT_LABEL[id]}: ${about.text}.`);
+      },
+      exercise(next) {
+        setExStatus((prev) => {
+          if (next?.kind === "live" && next.value && (prev?.kind !== "live" || prev.value !== next.value || prev.setting !== next.setting)) setMessage(`${next.setting}: ${next.value.toLowerCase()}.`);
+          if (next?.kind === "none") setMessage(`No exercise setting moves the ${next.label.toLowerCase()}. Switch to Limb to move it by hand.`);
+          return next;
+        });
+        if (next) setDone(null);
+      },
+      exerciseDone({ result, setting, value }) {
+        if (!result?.changed) return;
+        const text = result.change ?? `${setting}: ${value?.toLowerCase()}`;
+        setDone({ text, at: Date.now() });
+        setMessage(`${text}. Every pose rebuilt. Undo with Ctrl+Z.`);
+        noticeRef.current(result);
       },
     };
     return () => {
@@ -244,7 +287,20 @@ export function PosePointsLayer() {
     press.current = null;
   };
 
+  // What the last Exercise-mode drag applied stays on the status line for a few seconds.
+  useEffect(() => {
+    if (!done) return;
+    const id = window.setTimeout(() => setDone(null), 5000);
+    return () => window.clearTimeout(id);
+  }, [done]);
+
   if (!shown) return null;
+  const exerciseMode = dragMode.mode === "exercise";
+  const choose = (mode: "exercise" | "limb") => {
+    dragMode.setChoice(mode);
+    setExStatus(() => null);
+    setMessage(mode === "exercise" ? "Exercise mode: a drag changes the exercise settings and every pose follows." : "Limb mode: a drag moves only that limb.");
+  };
   const active = dragging ?? selected;
   const other = active && !alone ? mirrorPoint(active) : null;
   const stuck = note !== null && !note.moves;
@@ -294,37 +350,48 @@ export function PosePointsLayer() {
       </div>
       {/* What is being edited and how Mirror applies, just above the playback bar. */}
       <div className="pose-status pointer-events-none absolute inset-x-(--studio-stage-inset) flex justify-center">
-        <div className={cn("studio-glass pointer-events-auto flex max-w-full items-center gap-2 rounded-full py-1 pr-1 pl-3 text-[11px] text-(--m3-on-surface)", dragging && "pose-status-live")}>
-          <Hand className="h-3.5 w-3.5 shrink-0 text-(--m3-tertiary)" aria-hidden="true" />
-          <span className="truncate">
-            {active ? (
-              <>
-                <span className="font-semibold">{POINT_LABEL[active]}</span>
-                <span className="text-(--m3-on-surface-variant)">{dragging ? ` · ${moving}` : " · drag it, arrows nudge, Esc clears"}</span>
-              </>
-            ) : (
-              <span className="text-(--m3-on-surface-variant)">Drag any point on the body to pose it</span>
-            )}
-          </span>
-          <button
-            type="button"
-            aria-pressed={mirror}
-            title={mirror ? "Mirror on: a change on one side is copied to the other (a standing body still moves one leg at a time). Click to turn off." : "Mirror off: only the side you touch changes. Click to turn on."}
-            onClick={() => {
-              const next = !useStudioStore.getState().poseEdit?.mirror;
-              useStudioStore.getState().setPoseEditOptions({ mirror: next });
-              setMessage(next ? "Mirror on: both sides move together." : "Mirror off: only the side you touch moves.");
-            }}
-            className={cn(
-              "studio-state inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-full px-2.5 font-medium outline-none focus-visible:ring-2 focus-visible:ring-(--m3-primary)/70",
-              mirror ? "bg-(--m3-secondary-container) text-(--m3-on-secondary-container)" : "text-(--m3-on-surface-variant)",
-            )}
-          >
-            {mirror ? <Link2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Unlink2 className="h-3.5 w-3.5" aria-hidden="true" />}
-            Mirror {mirror ? "on" : "off"}
-          </button>
+        <div
+          className={cn("studio-glass pointer-events-auto flex max-w-full items-center gap-2 rounded-full py-1 pr-1 text-[11px] text-(--m3-on-surface)", dragMode.draggable ? "pl-1" : "pl-3", dragging && "pose-status-live")}
+          data-pose-status
+        >
+          {dragMode.draggable ? <DragModeControl mode={dragMode.mode} onChange={choose} /> : null}
+          {exerciseMode ? (
+            <ExerciseLine status={exStatus} done={done?.text ?? null} selected={selected} replaces={replacesNote(dragMode.replaced)} onLimb={() => choose("limb")} />
+          ) : (
+            <>
+              <Hand className="h-3.5 w-3.5 shrink-0 text-(--m3-tertiary)" aria-hidden="true" />
+              <span className="min-w-0 py-0.5 leading-snug text-pretty">
+                {active ? (
+                  <>
+                    <span className="font-semibold">{POINT_LABEL[active]}</span>
+                    <span className="text-(--m3-on-surface-variant)">{dragging ? ` · ${moving}` : " · drag it, arrows nudge, Esc clears"}</span>
+                  </>
+                ) : (
+                  <span className="text-(--m3-on-surface-variant)">Drag any point on the body to pose it</span>
+                )}
+              </span>
+              <button
+                type="button"
+                aria-pressed={mirror}
+                title={mirror ? "Mirror on: a change on one side is copied to the other (a standing body still moves one leg at a time). Click to turn off." : "Mirror off: only the side you touch changes. Click to turn on."}
+                onClick={() => {
+                  const next = !useStudioStore.getState().poseEdit?.mirror;
+                  useStudioStore.getState().setPoseEditOptions({ mirror: next });
+                  setMessage(next ? "Mirror on: both sides move together." : "Mirror off: only the side you touch moves.");
+                }}
+                className={cn(
+                  "studio-state inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-full px-2.5 font-medium outline-none focus-visible:ring-2 focus-visible:ring-(--m3-primary)/70",
+                  mirror ? "bg-(--m3-secondary-container) text-(--m3-on-secondary-container)" : "text-(--m3-on-surface-variant)",
+                )}
+              >
+                {mirror ? <Link2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Unlink2 className="h-3.5 w-3.5" aria-hidden="true" />}
+                Mirror {mirror ? "on" : "off"}
+              </button>
+            </>
+          )}
         </div>
       </div>
+      <ExerciseBadge ref={badge} status={exerciseMode ? exStatus : null} />
       <p id="pose-points-help" className="sr-only">
         Press and drag to move it. Arrow keys move the selected point in the view plane, Page Up and Page Down in depth, Shift for bigger steps. Escape clears the selection.
       </p>

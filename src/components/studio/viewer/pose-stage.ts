@@ -1,6 +1,7 @@
 "use client";
 
 import type { NudgeKey, PointId } from "@/lib/studio/pose-points";
+import type { SettingsApplied } from "../hooks/use-template-settings";
 
 /**
  * The link between the 3D scene and the DOM layer that draws the body points over it. The scene
@@ -32,12 +33,41 @@ export type StageScene = {
   gizmoBusy: () => boolean;
 };
 
+/** What an Exercise-mode drag is doing, for the stage to say while it happens. */
+export type ExerciseStatus =
+  | {
+      kind: "live";
+      id: PointId;
+      /** The setting followed ("Range") and its nearest choice ("Deep"); null until the pointer moves. */
+      setting: string | null;
+      value: string | null;
+      /** Every choice of that setting, in order, and the nearest one's index. */
+      options: string[];
+      index: number;
+      /** The nearest choice is not the one the poses had. */
+      changed: boolean;
+      /** The pointer asks for something no setting does. */
+      off: boolean;
+      /** The pointer is past the last choice: as far as the setting goes. */
+      limit: boolean;
+      /** Set when the drag moved to another pose (no setting moves this point in the one on the stage): "the bottom pose". */
+      pose: string | null;
+      /** What a change replaces besides the template's poses, in words ("replaces your edits"); null: nothing. */
+      replaces: string | null;
+    }
+  /** No setting moves this point in any pose of the exercise. */
+  | { kind: "none"; id: PointId; label: string };
+
 export type StageLayer = {
   frame: (frame: StageFrame | null) => void;
   setAvailable: (ids: PointId[]) => void;
   announce: (message: string) => void;
   /** The point being dragged, with what there is to say about how it moves (see legNote). */
   setDragging: (id: PointId | null, note?: { text: string; moves: boolean } | null) => void;
+  /** An Exercise-mode drag's state (null: none). */
+  exercise: (status: ExerciseStatus | null) => void;
+  /** An Exercise-mode drag was released: what it applied (null result: nothing changed). */
+  exerciseDone: (done: { id: PointId; result: SettingsApplied | null; setting: string | null; value: string | null }) => void;
 };
 
 export const poseStage: { scene: StageScene | null; layer: StageLayer | null; available: PointId[] } = { scene: null, layer: null, available: [] };

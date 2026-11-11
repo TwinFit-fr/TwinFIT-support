@@ -463,6 +463,44 @@ body {
   .pose-status-live {
     box-shadow: 0 0 0 1px rgba(252, 211, 77, 0.45);
   }
+  /* Exercise mode: next to the dragged point, the setting followed and its choices, the nearest lit. */
+  .pose-setting-badge {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 3;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px 7px;
+    border-radius: 14px;
+    font-size: 11px;
+    line-height: 1.2;
+    pointer-events: none;
+    transform: translate3d(-9999px, 0, 0);
+  }
+  .pose-setting-badge[data-show] {
+    display: flex;
+  }
+  .pose-setting-badge-name {
+    padding-left: 2px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--pose-point-active);
+  }
+  .pose-setting-badge-option {
+    padding: 2px 7px;
+    border-radius: 999px;
+    color: var(--m3-on-surface-variant);
+    white-space: nowrap;
+  }
+  .pose-setting-badge-option[data-on] {
+    background: var(--pose-point-active);
+    color: #1c1503;
+    font-weight: 600;
+  }
   @media (prefers-reduced-motion: reduce) {
     .pose-point-dot,
     .pose-point-label {

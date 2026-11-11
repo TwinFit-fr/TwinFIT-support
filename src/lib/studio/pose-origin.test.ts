@@ -44,8 +44,9 @@ describe("origin label", () => {
     assert.equal(originLabel({ kind: "neutral", reason: "scratch" }, false).text, "Neutral pose");
   });
 
-  it("ignores parameters it has no words for", () => {
-    assert.equal(paramSummary({ down_s: 3, up_s: 1 }, DEFAULT_PARAMS), "default settings");
+  it("names the settings that differ from the defaults, tempo included", () => {
+    assert.equal(paramSummary({ down_s: 3, up_s: 1 }, DEFAULT_PARAMS), "3 s down");
+    assert.equal(paramSummary({ down_s: 2, up_s: 1 }, DEFAULT_PARAMS), "default settings");
     assert.equal(paramSummary({ side: "left" }, DEFAULT_PARAMS), "left side");
   });
 });

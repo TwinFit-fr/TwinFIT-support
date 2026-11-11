@@ -4,8 +4,9 @@
  */
 
 import { NEUTRAL_POSE, type LoopMode, type PoseAngles } from "./anatomy.ts";
-import { DEFAULT_PARAMS, buildTemplate, templateFor, type TemplateExercise } from "./exercise-templates.ts";
+import { DEFAULT_PARAMS, buildTemplate, templateFor, type TemplateExercise, type TemplateParams } from "./exercise-templates.ts";
 import type { DraftOrigin } from "./pose-origin.ts";
+import { normalizeParams } from "./template-settings.ts";
 
 /** The catalog fields a template reads, as codes (what the sidebar's exercise carries). */
 export type CatalogTemplateSource = {
@@ -63,7 +64,17 @@ export function defaultDraft(ex: TemplateExercise): PoseDraft {
       origin: { kind: "neutral", reason: "no-template" },
     };
   }
-  const built = buildTemplate(ex, DEFAULT_PARAMS);
+  return templateDraft(ex, DEFAULT_PARAMS);
+}
+
+/**
+ * Every pose of the exercise rebuilt from its template with these settings, in the browser: what
+ * a change of setting (from its control or from a drag on the stage) puts in the editor. Settings
+ * the template ignores are set back to the default, so the origin label names only what matters.
+ */
+export function templateDraft(ex: TemplateExercise, params: TemplateParams): PoseDraft {
+  const settings = normalizeParams(ex, params);
+  const built = buildTemplate(ex, settings);
   return {
     poses: structuredClone(built.poses),
     labels: [...built.labels],
@@ -72,7 +83,7 @@ export function defaultDraft(ex: TemplateExercise): PoseDraft {
     grip: ex.grip,
     // A template drives the arms itself: the bar does not lead them (as in the server's draft).
     twoHanded: false,
-    meta: { template: built.id, template_params: { ...DEFAULT_PARAMS }, unilateral: built.unilateral, airborne: built.airborne, moving: built.moving },
-    origin: { kind: "template", template: built.id },
+    meta: { template: built.id, template_params: { ...settings }, unilateral: built.unilateral, airborne: built.airborne, moving: built.moving },
+    origin: { kind: "template", template: built.id, params: { ...settings } },
   };
 }

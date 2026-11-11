@@ -4,9 +4,12 @@
  * together with the poses it describes.
  */
 
+import { DEFAULT_PARAMS } from "./exercise-templates.ts";
+import { settingsSummary } from "./template-settings.ts";
+
 export type DraftOrigin =
-  /** Built on the spot from the exercise's template with its default parameters. */
-  | { kind: "template"; template: string }
+  /** Built on the spot from the exercise's template with these settings (absent: the defaults). */
+  | { kind: "template"; template: string; params?: Record<string, unknown> }
   /** Proposed by the language model: a template with the parameters it chose, or raw angles. */
   | { kind: "ai"; template: string | null; params: Record<string, unknown> | null; notes: string | null }
   /** A clip saved earlier (opened from the list, or just saved here); `from` says how it was made, when known. */
@@ -19,21 +22,9 @@ export function templateName(id: string): string {
   return id.replace(/_/g, " ");
 }
 
-const PARAM_WORDS: Record<string, (v: string) => string> = {
-  range: (v) => `${v} range`,
-  stance: (v) => `${v} stance`,
-  grip: (v) => `${v} grip`,
-  lean: (v) => `${v} lean`,
-  side: (v) => (v === "both" ? "both sides" : `${v} side`),
-};
-
-/** The template parameters that differ from `defaults`, as short words ("deep range, wide stance"). */
+/** The template parameters that differ from `defaults`, as short words ("deep range, wide stance, 3 s down"). */
 export function paramSummary(params: Record<string, unknown> | null, defaults: Record<string, unknown>): string {
-  if (!params) return "default settings";
-  const words = Object.entries(params)
-    .filter(([key, value]) => key in PARAM_WORDS && typeof value === "string" && value !== defaults[key])
-    .map(([key, value]) => PARAM_WORDS[key](value as string));
-  return words.length ? words.join(", ") : "default settings";
+  return settingsSummary(params, defaults);
 }
 
 export type OriginLabel = {
@@ -47,13 +38,13 @@ export type OriginLabel = {
   text: string;
 };
 
-export function originLabel(origin: DraftOrigin, edited: boolean, defaults: Record<string, unknown> = {}): OriginLabel {
+export function originLabel(origin: DraftOrigin, edited: boolean, defaults: Record<string, unknown> = DEFAULT_PARAMS): OriginLabel {
   let base: string;
   let detail: string | null = null;
   switch (origin.kind) {
     case "template":
       base = `Template: ${templateName(origin.template)}`;
-      detail = "default settings";
+      detail = paramSummary(origin.params ?? null, defaults);
       break;
     case "ai":
       base = "AI draft";
@@ -76,8 +67,10 @@ export function originLabel(origin: DraftOrigin, edited: boolean, defaults: Reco
 export function savedFrom(origin: DraftOrigin, edited: boolean): string | null {
   const touched = edited ? ", edited" : "";
   switch (origin.kind) {
-    case "template":
-      return `${templateName(origin.template)} template${touched}`;
+    case "template": {
+      const settings = paramSummary(origin.params ?? null, DEFAULT_PARAMS);
+      return `${templateName(origin.template)} template${settings === "default settings" ? "" : `, ${settings}`}${touched}`;
+    }
     case "ai":
       return `AI draft${origin.template ? ` of the ${templateName(origin.template)} template` : ""}${touched}`;
     case "clip":
