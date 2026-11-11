@@ -6,7 +6,7 @@
  */
 
 import { POSE_CLIP_VERSION, buildKeyframes, type LoopMode, type PoseClipJson } from "./anatomy";
-import { DEFAULT_PARAMS, buildTemplate, templateFor, type BuiltTemplate, type TemplateExercise, type TemplateParams } from "./exercise-templates";
+import { DEFAULT_PARAMS, buildTemplate, type BuiltTemplate, type TemplateExercise, type TemplateParams } from "./exercise-templates";
 import { imageUrlToDataUri } from "./meshy";
 import { chooseTemplateParams, draftPoses, type PoseDraftResult } from "./pose-llm";
 import { normalizePoseText } from "./pose-text";
@@ -21,6 +21,7 @@ import {
   updateVector,
 } from "./queries";
 import { uploadStudioFile } from "./storage";
+import { hasTemplate } from "./template-draft";
 import type { EquipmentItem, MovementVector } from "./types";
 
 const RETRY_DELAY_MS = 30_000;
@@ -88,7 +89,7 @@ const templateClip = (t: BuiltTemplate): PoseClipJson => ({
 export async function draftExercisePoses(token: string, req: DraftRequest): Promise<ExerciseDraft> {
   const { exercise, poses, images } = await gatherExerciseContext(token, req.exerciseId, req.subject);
   const catalog: TemplateExercise = { name: exercise.display_name, movement: exercise.movement, position: exercise.position, equipment: exercise.equipment, support: exercise.support, grip: exercise.grip };
-  const templated = exercise.movement !== null && (templateFor(catalog) !== "resting" || exercise.display_name === "Resting");
+  const templated = hasTemplate(catalog);
   if (!templated) {
     if (poses.length !== 3) throw new Error(`Exercise #${exercise.exo_id} has ${poses.length} poses instead of 3 (images.exercise_poses)`);
     const result = await draftPoses({

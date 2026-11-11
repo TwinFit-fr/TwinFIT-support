@@ -35,6 +35,8 @@ export const STUDIO_CATALOG = `
       primary_muscle_group { code name }
       target_muscle { code name }
       movement_type { code name }
+      position { code name }
+      grip { code name }
       equipment { code name }
       support_equipment { code name }
       localizations(where: { locale: { _eq: "en" } }, limit: 1) { description }

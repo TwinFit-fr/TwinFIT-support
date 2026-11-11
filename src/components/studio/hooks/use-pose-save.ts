@@ -3,14 +3,19 @@
 import { useCallback, useState } from "react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { useToast } from "@/components/ui/toast";
-import { NEUTRAL_POSE, isPoseClipJson, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
+import { isPoseClipJson, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
 import { fetchStudioAsset } from "@/lib/studio/asset-auth";
+import { clipFrom } from "@/lib/studio/pose-origin";
 import { useStudioStore } from "@/lib/studio/store";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
+import type { PoseDraft } from "@/lib/studio/template-draft";
 import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
 import type { DraftRequest, SaveMode } from "../pose-editor";
 
-/** The pose editor's lifecycle: open from a clip or from scratch, ask the AI for a draft, save in place or as a new row. */
+/**
+ * The pose editor's lifecycle: open a saved clip or an instant draft, ask the AI for a draft,
+ * save in place or as a new row. A save keeps the editor open on the stored clip.
+ */
 export function usePoseSave(input: {
   exercise: StudioExercise | null;
   avatar: BaseAvatar | null;
@@ -21,7 +26,7 @@ export function usePoseSave(input: {
   const staffFetch = useStaffFetch();
   const toast = useToast();
   const startPoseEdit = useStudioStore((s) => s.startPoseEdit);
-  const stopPoseEdit = useStudioStore((s) => s.stopPoseEdit);
+  const markPoseSaved = useStudioStore((s) => s.markPoseSaved);
   const replacePoses = useStudioStore((s) => s.replacePoses);
   const setVector = useStudioStore((s) => s.setVector);
   const [saving, setSaving] = useState(false);
@@ -35,6 +40,9 @@ export function usePoseSave(input: {
       if (!res.ok) throw new Error(`Clip download failed (${res.status})`);
       const json = (await res.json()) as unknown;
       if (!isPoseClipJson(json)) throw new Error("Only pose clips (generated or made in the editor) can be edited");
+      // Another exercise or avatar was picked while the clip was downloading: it no longer belongs on the stage.
+      const now = useStudioStore.getState();
+      if (now.exerciseId !== exercise.id || now.avatarId !== avatar.id) return;
       const { poses, mode, weights } = posesFromClip(json);
       const labels = Array.isArray(json.meta?.labels) && (json.meta.labels as unknown[]).every((l) => typeof l === "string") ? (json.meta.labels as string[]) : null;
       startPoseEdit({
@@ -53,14 +61,16 @@ export function usePoseSave(input: {
         grip: typeof json.meta?.grip === "string" ? json.meta.grip : null,
         mirror: true,
         meta: { ...(json.meta ?? {}), source_vector: target.id },
+        origin: { kind: "clip", vectorId: target.id, seq: target.seq, from: clipFrom(json.meta) },
       });
       setVector(target.id);
     },
     [exercise, avatar, startPoseEdit, setVector],
   );
 
-  const onNewPoses = useCallback(
-    (items: EquipmentItem[]) => {
+  /** Open the editor on an unsaved draft (the exercise's template, or a neutral pose): untouched, so it is dropped silently. */
+  const onOpenDraft = useCallback(
+    (draft: PoseDraft, items: EquipmentItem[]) => {
       if (!exercise || !avatar) return;
       startPoseEdit({
         vectorId: null,
@@ -68,14 +78,17 @@ export function usePoseSave(input: {
         exerciseId: exercise.id,
         avatarId: avatar.id,
         items,
-        poses: [structuredClone(NEUTRAL_POSE)],
-        mode: "pingpong",
+        poses: draft.poses,
+        labels: draft.labels,
+        weights: draft.weights,
+        mode: draft.mode,
         durationS: Number(settings?.pipeline.duration_s ?? 4),
         fps: Number(settings?.pipeline.fps ?? 30),
-        twoHanded: items.some((it) => it.kind === "load" && it.socket && it.socket_b),
-        grip: null,
+        twoHanded: draft.twoHanded,
+        grip: draft.grip,
         mirror: true,
-        meta: { exo_id: exercise.exo_id, avatar_code: avatar.code, rig: avatar.rig },
+        meta: { exo_id: exercise.exo_id, avatar_code: avatar.code, rig: avatar.rig, ...draft.meta },
+        origin: draft.origin,
       });
     },
     [exercise, avatar, settings, startPoseEdit],
@@ -101,17 +114,17 @@ export function usePoseSave(input: {
           );
           body = (await staffFetch("/api/studio/vectors/upload", { method: "POST", body: form })) as { vector: MovementVector };
         }
-        stopPoseEdit();
+        // The stored clip becomes the one on the stage and in the editor; its label says so (no toast over the buttons).
+        markPoseSaved({ id: body.vector.id, seq: body.vector.seq });
         await refresh();
         setVector(body.vector.id);
-        toast.success(mode === "replace" ? `#${body.vector.seq} updated` : `Saved as #${body.vector.seq}`, "Poses saved");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Could not save the poses");
       } finally {
         setSaving(false);
       }
     },
-    [staffFetch, stopPoseEdit, refresh, setVector, toast],
+    [staffFetch, markPoseSaved, refresh, setVector, toast],
   );
 
   const onDraftPoses = useCallback(
@@ -154,8 +167,9 @@ export function usePoseSave(input: {
           grip: proposal.grip,
           ...(proposal.template ? { twoHanded: false } : {}),
           meta: { template: proposal.template, template_params: proposal.params, unilateral: proposal.unilateral, airborne: proposal.airborne, moving: proposal.moving },
+          // The editor's origin line shows this for as long as these poses are on the stage.
+          origin: { kind: "ai", template: proposal.template, params: proposal.params, notes: proposal.notes || null },
         });
-        toast.success(proposal.notes || `${proposal.poses.length} poses from ${proposal.template ?? "the model"}`, "AI draft");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Could not draft the poses");
       } finally {
@@ -165,5 +179,5 @@ export function usePoseSave(input: {
     [staffFetch, replacePoses, toast],
   );
 
-  return { onEditPoses, onNewPoses, onSavePoses, onDraftPoses, saving, drafting };
+  return { onEditPoses, onOpenDraft, onSavePoses, onDraftPoses, saving, drafting };
 }

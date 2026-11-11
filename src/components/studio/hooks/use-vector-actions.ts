@@ -86,6 +86,8 @@ export function useVectorActions(input: {
           });
           if (!ok) return;
           await staffFetch(`/api/studio/vectors/${target.id}`, { method: "DELETE" });
+          // The editor must not keep saving over a clip that is gone: it lands again on what is left.
+          if (useStudioStore.getState().poseEdit?.vectorId === target.id) useStudioStore.getState().stopPoseEdit();
           if (useStudioStore.getState().vectorId === target.id) setVector(null);
           toast.success(`Movement #${target.seq} deleted`);
         } else if (action === "upload") {

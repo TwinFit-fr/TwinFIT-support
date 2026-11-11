@@ -470,3 +470,13 @@ body {
     }
   }
 }
+
+/* In the Studio, toasts appear at the top of the stage, under the top bar, so they never cover
+   the right pane's Save button (bottom right). Unlayered, so it wins over the region's utilities. */
+body:has(.studio-shell) [data-toast-region] {
+  top: 56px;
+  bottom: auto;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
