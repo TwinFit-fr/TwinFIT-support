@@ -2,12 +2,17 @@
 
 import { create } from "zustand";
 import type { LoopMode, PoseAngles } from "./anatomy.ts";
+import { savedFrom, type DraftOrigin } from "./pose-origin.ts";
 import type { PoseIssue } from "./pose-validate";
 import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, EquipmentPlacement, VectorFormat, VectorStatus } from "./types";
 
 export type CameraPreset = "front" | "three-quarter" | "side";
 
-/** What one undo step restores: everything the clip is made of, not just the angles. */
+/**
+ * What one undo step restores: everything the clip is made of, not just the angles, plus where
+ * it came from. The meta holds the draft's flags (template, one side working, airborne) that
+ * the body checks read, so undoing a draft also undoes them.
+ */
 export type PoseSnapshot = {
   poses: PoseAngles[];
   weights: number[] | null;
@@ -16,6 +21,10 @@ export type PoseSnapshot = {
   grip: string | null;
   durationS: number;
   twoHanded: boolean;
+  meta: Record<string, unknown>;
+  origin: DraftOrigin;
+  /** The user changed something since the origin (a manual edit, not a draft or a save). */
+  edited: boolean;
 };
 
 /**
@@ -37,8 +46,8 @@ export type PoseEditState = PoseSnapshot & {
   mirror: boolean;
   /** Body point selected on the stage (left_hand, chest, hips, … see pose-points.ts), or null. */
   dragTarget: string | null;
+  /** Unsaved work worth a question before it is dropped: a manual edit or a requested AI draft. */
   dirty: boolean;
-  meta: Record<string, unknown>;
   /** Undo stack (newest last) and redo stack (newest first). */
   history: PoseSnapshot[];
   future: PoseSnapshot[];
@@ -50,18 +59,29 @@ const HISTORY_LIMIT = 60;
 export const MAX_POSES = 8;
 
 function snapshotOf(d: PoseEditState): PoseSnapshot {
-  return { poses: d.poses, weights: d.weights, labels: d.labels, mode: d.mode, grip: d.grip, durationS: d.durationS, twoHanded: d.twoHanded };
+  return {
+    poses: d.poses,
+    weights: d.weights,
+    labels: d.labels,
+    mode: d.mode,
+    grip: d.grip,
+    durationS: d.durationS,
+    twoHanded: d.twoHanded,
+    meta: d.meta,
+    origin: d.origin,
+    edited: d.edited,
+  };
 }
 
 /**
  * The draft with its current state pushed onto the undo stack. An edit inside an open gesture
  * (a drag that already pushed) does not push again; `gesture` says whether this edit opens or
- * continues one. Any edit clears the redo stack.
+ * continues one. Any edit clears the redo stack and marks the poses as edited by the user.
  */
 function remember(draft: PoseEditState, gesture = false): PoseEditState {
-  if (gesture && draft.gestureOpen) return { ...draft, future: [] };
+  if (gesture && draft.gestureOpen) return { ...draft, future: [], edited: true };
   const history = [...draft.history, snapshotOf(draft)].slice(-HISTORY_LIMIT);
-  return { ...draft, history, future: [], gestureOpen: gesture };
+  return { ...draft, history, future: [], gestureOpen: gesture, edited: true };
 }
 
 /** Rig editor: move the avatar's sockets, or a generated model relative to its socket, with a gizmo. */
@@ -190,11 +210,22 @@ export type StudioState = {
   setModelBones: (bones: string[]) => void;
   setPoseIssues: (issues: PoseIssue[]) => void;
   startPoseEdit: (
-    state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "history" | "future" | "gestureOpen" | "weights" | "labels"> &
-      Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "weights" | "labels">>,
+    state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "history" | "future" | "gestureOpen" | "weights" | "labels" | "edited"> &
+      Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "weights" | "labels" | "edited">>,
   ) => void;
-  /** Replace every pose (an AI draft): one undo step. */
-  replacePoses: (next: { poses: PoseAngles[]; mode?: LoopMode; weights?: number[] | null; labels?: string[] | null; grip?: string | null; twoHanded?: boolean; meta?: Record<string, unknown> }) => void;
+  /** Replace every pose (an AI draft): one undo step, which also brings back the previous origin and meta. */
+  replacePoses: (next: {
+    poses: PoseAngles[];
+    origin: DraftOrigin;
+    mode?: LoopMode;
+    weights?: number[] | null;
+    labels?: string[] | null;
+    grip?: string | null;
+    twoHanded?: boolean;
+    meta?: Record<string, unknown>;
+  }) => void;
+  /** The poses were stored as `vector`: it becomes the clip being edited, nothing left unsaved. */
+  markPoseSaved: (vector: { id: string; seq: number }) => void;
   undoPose: () => void;
   redoPose: () => void;
   /** Copy a limb's angles onto the other side (same anatomical posture, mirrored). */
@@ -269,7 +300,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   setPoseIssues: (poseIssues) => set((s) => (sameJson(s.poseIssues, poseIssues) ? s : { poseIssues })),
   startPoseEdit: (state) =>
     set({
-      poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], gestureOpen: false, weights: null, labels: null, ...state },
+      poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], gestureOpen: false, weights: null, labels: null, edited: false, ...state },
       playing: false,
     }),
   replacePoses: (next) =>
@@ -285,11 +316,30 @@ export const useStudioStore = create<StudioState>((set) => ({
           grip: next.grip === undefined ? s.poseEdit.grip : next.grip,
           twoHanded: next.twoHanded ?? s.poseEdit.twoHanded,
           meta: { ...s.poseEdit.meta, ...next.meta },
+          origin: next.origin,
+          edited: false,
           keyframe: 0,
           dirty: true,
         },
       };
     }),
+  markPoseSaved: (vector) =>
+    set((s) =>
+      s.poseEdit
+        ? {
+            poseEdit: {
+              ...s.poseEdit,
+              vectorId: vector.id,
+              sourceSeq: vector.seq,
+              origin: { kind: "clip", vectorId: vector.id, seq: vector.seq, from: savedFrom(s.poseEdit.origin, s.poseEdit.edited) },
+              edited: false,
+              dirty: false,
+              gestureOpen: false,
+            },
+            vectorId: vector.id,
+          }
+        : s,
+    ),
   undoPose: () =>
     set((s) => {
       const d = s.poseEdit;

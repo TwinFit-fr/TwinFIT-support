@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Redo2, Save, ShieldAlert, Sparkles, Trash2, Undo2, Wand2, X } from "lucide-react";
+import { ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Redo2, ShieldAlert, Sparkles, Trash2, Undo2 } from "lucide-react";
 import {
   ANCHOR_IDS,
   LOOP_MODES,
@@ -14,12 +14,20 @@ import {
   type PoseClipJson,
 } from "@/lib/studio/anatomy";
 import { useConfirm } from "@/components/ui/confirm";
+import { DEFAULT_PARAMS } from "@/lib/studio/exercise-templates";
 import { applyPoseEdit } from "@/lib/studio/pose-drag";
+import { originLabel } from "@/lib/studio/pose-origin";
 import { POINT_LABEL, isPointId } from "@/lib/studio/pose-points";
 import { MAX_POSES, useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
+import { AiDraftPanel, NoTemplateCallout, type DraftRequest } from "./ai-draft";
+import { DraftOriginLine } from "./draft-origin";
+import { PoseEditorActions, type SaveMode } from "./pose-editor-actions";
 import { PoseSliders as Sliders } from "./pose-sliders";
-import { Chip, IconButton, M3Button, NumberField, Segmented, Select, TextArea, TextInput } from "./ui";
+import { Chip, IconButton, M3Button, NumberField, Segmented, Select, TextInput } from "./ui";
+
+export type { DraftRequest } from "./ai-draft";
+export type { SaveMode } from "./pose-editor-actions";
 
 const LOOP_LABEL: Record<LoopMode, { label: string; title: string }> = {
   pingpong: { label: "Boomerang", title: "There and back through the poses: one repetition" },
@@ -43,30 +51,30 @@ const group = (id: string) => POSE_GROUPS.find((g) => g.id === id)!;
 const RAISED_M = 0.08;
 
 /**
- * Keyframe editor of a pose clip. Poses are added one by one and played as a boomerang (or a
- * cycle); each pose is set with sliders per joint, sides mirrored by default; feet, hands and
- * knees can be pinned where they are so the rest of the pose moves around them. Save overwrites
- * the clip being edited; "Save as copy" keeps the original.
+ * Keyframe editor of a pose clip. It always holds something: the exercise's saved clip or an
+ * instant draft, with its origin on top. Poses are played as a boomerang (or a cycle); each pose
+ * is set on the stage or with sliders per joint, sides mirrored by default; feet, hands and
+ * knees can be pinned where they are so the rest of the pose moves around them. Save stores a
+ * draft as a new clip and overwrites an opened clip; "Save as copy" keeps the original.
  */
-export type SaveMode = "replace" | "copy";
-export type DraftRequest = { instructions: string; poseCount: number | null };
-
 export function PoseEditor({
   onSave,
   saving,
   onDraft,
   drafting,
+  onRevert,
 }: {
   onSave: (clip: PoseClipJson, label: string, mode: SaveMode) => Promise<void>;
   saving: boolean;
   onDraft: (request: DraftRequest) => Promise<void>;
   drafting: boolean;
+  /** Drop the editor's poses: the exercise lands again on its clip or its instant draft. */
+  onRevert: () => void;
 }) {
   const confirm = useConfirm();
   const draft = useStudioStore((s) => s.poseEdit);
   const probe = useStudioStore((s) => s.poseProbe);
   const issues = useStudioStore((s) => s.poseIssues);
-  const stop = useStudioStore((s) => s.stopPoseEdit);
   const setKeyframe = useStudioStore((s) => s.setPoseKeyframe);
   const updatePose = useStudioStore((s) => s.updatePose);
   const endGesture = useStudioStore((s) => s.endPoseGesture);
@@ -85,9 +93,8 @@ export function PoseEditor({
   const canRedo = useStudioStore((s) => (s.poseEdit?.future.length ?? 0) > 0);
   const [tab, setTab] = useState<Tab>("body");
   const [aiOpen, setAiOpen] = useState(false);
-  const [instructions, setInstructions] = useState("");
 
-  // Ctrl/Cmd+Z undoes, with Shift (or Ctrl+Y) redoes, unless the keys belong to a text field.
+  // Ctrl/Cmd+Z undoes, with Shift (or Ctrl+Y) redoes, unless the keys belong to a text field (Ctrl+S: see PoseEditorActions).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -155,14 +162,21 @@ export function PoseEditor({
     else return;
     updatePose(i, { ...pose, anchors });
   };
-  const close = async () => {
+  const revert = async () => {
     if (draft.dirty) {
-      const ok = await confirm({ title: "Discard the pose changes?", description: "The poses you edited are not saved.", confirmLabel: "Discard", variant: "danger" });
+      const ok = await confirm({
+        title: draft.vectorId ? `Revert to clip #${draft.sourceSeq}?` : "Revert to the starting draft?",
+        description: "The changes you made since are dropped (undo cannot bring them back).",
+        confirmLabel: "Revert",
+        variant: "danger",
+      });
       if (!ok) return;
     }
-    stop();
+    onRevert();
   };
-  const label = draft.sourceSeq ? `Edited from #${draft.sourceSeq}` : "Pose editor";
+  /** Stored as the new row's prompt, so the list says where the clip came from. */
+  const label = originLabel(draft.origin, draft.edited, DEFAULT_PARAMS).text;
+  const noTemplate = draft.origin.kind === "neutral" && draft.origin.reason === "no-template" && !draft.edited;
   const pinned = (id: AnchorId) => Boolean(pose.anchors?.[id]);
   const standing = pose.orientation === "standing";
   const feetFlat = pose.feet_flat !== false;
@@ -176,34 +190,30 @@ export function PoseEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Header: title, play, close */}
-      <div className="flex items-center justify-between border-b border-(--m3-outline-variant) px-4 py-3">
-        <div className="min-w-0">
-          {/* The pane header already says "Pose editor": the title names the clip being edited. */}
-          <h2 className="truncate text-sm font-semibold tracking-tight">
-            {draft.sourceSeq ? label : "New movement"}
-            {draft.dirty ? <span className="ml-1.5 text-(--m3-warning)" title="Unsaved changes">•</span> : null}
-          </h2>
-        </div>
-        <div className="flex items-center gap-1">
+      {/* Header: where these poses came from (and whether you changed them), undo, play */}
+      <div className="flex items-center gap-2 border-b border-(--m3-outline-variant) px-3 py-2.5">
+        <DraftOriginLine className="flex-1" />
+        <div className="flex shrink-0 items-center gap-0.5">
           <IconButton label="Undo (Ctrl+Z)" onClick={undo} disabled={!canUndo} className="h-8 w-8">
             <Undo2 className="h-4 w-4" />
           </IconButton>
           <IconButton label="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={!canRedo} className="h-8 w-8">
             <Redo2 className="h-4 w-4" />
           </IconButton>
-          <M3Button size="sm" variant={playing ? "tonal" : "filled"} onClick={togglePlaying} title={playing ? "Pause and hold the selected pose" : "Play the loop"}>
+          <M3Button size="sm" variant="tonal" onClick={togglePlaying} title={playing ? "Pause and hold the selected pose" : "Play the loop"}>
             {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             {/* Icon-only in a narrow pane, so the clip's title keeps its room. */}
             <span className="sr-only @[22rem]/pane:not-sr-only">{playing ? "Pause" : "Play"}</span>
           </M3Button>
-          <IconButton label="Close the editor" onClick={() => void close()} disabled={saving} className="h-8 w-8">
-            <X className="h-4 w-4" />
-          </IconButton>
         </div>
       </div>
 
       <div className="studio-scroll min-h-0 flex-1 overflow-y-auto">
+        {noTemplate ? (
+          <div className="border-b border-(--m3-outline-variant) px-4 py-3">
+            <NoTemplateCallout onDraft={onDraft} drafting={drafting} />
+          </div>
+        ) : null}
         {/* Pose strip */}
         <div className="border-b border-(--m3-outline-variant) px-4 py-3">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
@@ -283,29 +293,7 @@ export function PoseEditor({
               />
             </label>
           </div>
-          {aiOpen ? (
-            <div className="mt-2 space-y-2 rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-low) p-3">
-              <TextArea
-                rows={2}
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-                placeholder="Optional instructions: “deeper squat”, “wide stance”, “wide grip”, “slower on the way down”…"
-                aria-label="Instructions for the AI draft"
-                className="text-[11px]"
-              />
-              <div className="flex items-center gap-2">
-                <span className="flex-1 text-[10px] text-(--m3-on-surface-variant)">Builds the exercise&apos;s template; the AI reads the catalog&apos;s texts and frames for depth, stance, grip and tempo. Replaces the poses here (undo brings yours back).</span>
-                <M3Button
-                  size="sm"
-                  variant="filled"
-                  busy={drafting}
-                  onClick={() => void onDraft({ instructions, poseCount: null })}
-                >
-                  <Wand2 className="h-3.5 w-3.5" /> Draft
-                </M3Button>
-              </div>
-            </div>
-          ) : null}
+          {aiOpen ? <AiDraftPanel onDraft={onDraft} drafting={drafting} /> : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Segmented
               value={draft.mode}
@@ -476,26 +464,7 @@ export function PoseEditor({
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center justify-end gap-2 border-t border-(--m3-outline-variant) px-4 py-3">
-        <M3Button variant="text" onClick={() => void close()} disabled={saving}>
-          Discard
-        </M3Button>
-        {draft.vectorId ? (
-          <M3Button variant="text" onClick={() => void save("copy")} disabled={saving} title="Keep the original and save these poses as another row">
-            Save as copy
-          </M3Button>
-        ) : null}
-        <M3Button
-          variant="filled"
-          onClick={() => void save(draft.vectorId ? "replace" : "copy")}
-          busy={saving}
-          disabled={!draft.dirty && draft.vectorId !== null}
-          title={draft.vectorId ? `Overwrite the clip of #${draft.sourceSeq}` : "Save as a new ready movement"}
-        >
-          <Save className="h-4 w-4" /> {draft.vectorId ? "Save" : "Save as new"}
-        </M3Button>
-      </div>
+      <PoseEditorActions quiet={noTemplate} vectorId={draft.vectorId} sourceSeq={draft.sourceSeq} dirty={draft.dirty} saving={saving} onSave={(mode) => void save(mode)} onRevert={() => void revert()} />
     </div>
   );
 }

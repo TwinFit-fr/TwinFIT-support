@@ -178,6 +178,9 @@ export type StudioExercise = {
   group: TaxonomyRef | null;
   target_muscle: TaxonomyRef | null;
   movement_type: TaxonomyRef | null;
+  /** Body position and grip: with the movement they pick the exercise's template. */
+  position: TaxonomyRef | null;
+  grip: TaxonomyRef | null;
   equipment: TaxonomyRef | null;
   support_equipment: TaxonomyRef | null;
   /** Start frame of the default style (man), when the Images tool has one. */

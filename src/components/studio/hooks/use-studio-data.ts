@@ -86,7 +86,8 @@ export function useStudioData() {
   } = useStaffSWR<{ vectors: MovementVector[] }>(exerciseId ? `/api/studio/vectors?exercise=${exerciseId}` : null, {
     refreshInterval: (latest) => (latest?.vectors.some((v) => isQueued(v.status)) ? QUEUE_POLL_MS : 0),
   });
-  const vectors = useMemo(() => vectorData?.vectors ?? [], [vectorData]);
+  // The fetcher keeps the previous key's data while the next loads: rows of another exercise are not this one's.
+  const vectors = useMemo(() => (vectorData?.vectors ?? []).filter((v) => v.exercise_id === exerciseId), [vectorData, exerciseId]);
 
   // The clip the viewer plays: the chosen one, else the active ready clip of this avatar, else the latest ready.
   const vector = useMemo(() => {
@@ -165,6 +166,8 @@ export function useStudioData() {
     settings,
     equipment: equipmentData?.equipment ?? [],
     vectors,
+    /** The selected exercise's clips have arrived (an empty list is an answer too). */
+    vectorsLoaded: vectorData !== undefined && !vectorsLoading,
     exercise,
     avatar,
     vector,

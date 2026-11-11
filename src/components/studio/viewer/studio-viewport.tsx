@@ -14,6 +14,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useShortcuts } from "@/hooks/use-shortcuts";
+import { editingStatus } from "@/lib/studio/pose-origin";
 import { useStudioStore, type CameraPreset, type SceneSource } from "@/lib/studio/store";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
@@ -132,15 +133,23 @@ function Hud({
   const commits = useCanvasCommits();
   const issues = useStudioStore((s) => s.poseIssues);
   const errors = issues.filter((i) => i.severity === "error");
-  const clipText = !scene.vectorId
-    ? "No clip selected"
-    : scene.vectorStatus !== "ready"
-      ? `${VECTOR_STATUS_LABEL[scene.vectorStatus ?? "pending"]} · #${scene.vectorSeq}`
-      : clipState.loading
-        ? "Loading clip…"
-        : clipState.error
-          ? `Clip error: ${clipState.error}`
-          : `Playing #${scene.vectorSeq}${scene.vectorFps ? ` · ${scene.vectorFps} fps` : ""}`;
+  // While the editor holds poses the stage shows them, not the selected clip: say so (a string, so slider ticks do not re-render this).
+  const editing = useStudioStore((s) => (s.poseEdit ? editingStatus(s.poseEdit) : null));
+  const editingSaved = useStudioStore((s) => Boolean(s.poseEdit?.vectorId && !s.poseEdit.dirty));
+  const noExercise = useStudioStore((s) => s.exerciseId === null);
+  const clipText = editing
+    ? editing
+    : !scene.vectorId
+      ? noExercise
+        ? "Pick an exercise in the catalog"
+        : "No clip selected"
+      : scene.vectorStatus !== "ready"
+        ? `${VECTOR_STATUS_LABEL[scene.vectorStatus ?? "pending"]} · #${scene.vectorSeq}`
+        : clipState.loading
+          ? "Loading clip…"
+          : clipState.error
+            ? `Clip error: ${clipState.error}`
+            : `Playing #${scene.vectorSeq}${scene.vectorFps ? ` · ${scene.vectorFps} fps` : ""}`;
   return (
     // Leaves room on the right for the axis gizmo and the rig editor button under it.
     <div className="pointer-events-none absolute left-(--studio-stage-inset) top-(--studio-stage-inset) flex max-w-[calc(100%-var(--studio-gizmo-reserve)-2*var(--studio-stage-inset))] flex-col items-start gap-2">
@@ -158,13 +167,18 @@ function Hud({
       <div
         className={cn(
           "studio-glass flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px]",
-          clipState.error ? "text-(--m3-error)" : "text-(--m3-on-surface-variant)",
+          clipState.error && !editing ? "text-(--m3-error)" : "text-(--m3-on-surface-variant)",
         )}
+        data-stage-status
       >
         <span
           className={cn(
             "h-1.5 w-1.5 rounded-full",
-            scene.vectorStatus === "ready"
+            editing
+              ? editingSaved
+                ? "bg-(--m3-success)"
+                : "bg-(--m3-warning)"
+              : scene.vectorStatus === "ready"
               ? "bg-(--m3-success)"
               : scene.vectorId
                 ? "bg-(--m3-warning) studio-pulse"

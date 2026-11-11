@@ -16,7 +16,8 @@ const base = () => ({
   twoHanded: false,
   grip: null,
   mirror: true,
-  meta: {},
+  meta: { exo_id: 4 },
+  origin: { kind: "template" as const, template: "curl" },
 });
 
 describe("pose editor undo", () => {
@@ -24,7 +25,7 @@ describe("pose editor undo", () => {
 
   it("restores weights, labels and mode together with the poses", () => {
     const s = useStudioStore.getState();
-    s.replacePoses({ poses: [NEUTRAL_POSE, NEUTRAL_POSE, NEUTRAL_POSE], weights: [1, 2, 3], labels: ["a", "b", "c"], mode: "cycle" });
+    s.replacePoses({ poses: [NEUTRAL_POSE, NEUTRAL_POSE, NEUTRAL_POSE], weights: [1, 2, 3], labels: ["a", "b", "c"], mode: "cycle", origin: { kind: "ai", template: null, params: null, notes: null } });
     assert.equal(useStudioStore.getState().poseEdit?.poses.length, 3);
     useStudioStore.getState().undoPose();
     const d = useStudioStore.getState().poseEdit!;
@@ -61,6 +62,79 @@ describe("pose editor undo", () => {
     useStudioStore.getState().undoPose();
     useStudioStore.getState().undoPose();
     assert.equal(useStudioStore.getState().poseEdit?.poses[0].left_leg.knee_flexion, NEUTRAL_POSE.left_leg.knee_flexion);
+  });
+});
+
+describe("pose document origin", () => {
+  beforeEach(() => useStudioStore.getState().startPoseEdit(base()));
+
+  it("undoing an AI draft brings back the previous meta and origin, so the draft's body-check flags go with it", () => {
+    useStudioStore.getState().replacePoses({
+      poses: [NEUTRAL_POSE, NEUTRAL_POSE],
+      origin: { kind: "ai", template: "lunge", params: { range: "deep" }, notes: null },
+      meta: { template: "lunge", unilateral: true, airborne: true },
+    });
+    let d = useStudioStore.getState().poseEdit!;
+    assert.equal(d.meta.unilateral, true);
+    assert.equal(d.origin.kind, "ai");
+    useStudioStore.getState().undoPose();
+    d = useStudioStore.getState().poseEdit!;
+    assert.deepEqual(d.meta, { exo_id: 4 });
+    assert.deepEqual(d.origin, { kind: "template", template: "curl" });
+    useStudioStore.getState().redoPose();
+    d = useStudioStore.getState().poseEdit!;
+    assert.equal(d.meta.unilateral, true);
+    assert.equal(d.origin.kind, "ai");
+  });
+
+  it("opens untouched and not dirty: an automatic draft can be dropped without asking", () => {
+    const d = useStudioStore.getState().poseEdit!;
+    assert.equal(d.edited, false);
+    assert.equal(d.dirty, false);
+  });
+
+  it("marks the first manual change as edited by the user, keeping the origin, and undo clears the mark", () => {
+    useStudioStore.getState().updatePose(0, setPoseValue(NEUTRAL_POSE, "left_arm.elbow_flexion", 90));
+    let d = useStudioStore.getState().poseEdit!;
+    assert.equal(d.edited, true);
+    assert.equal(d.dirty, true);
+    assert.equal(d.origin.kind, "template");
+    useStudioStore.getState().undoPose();
+    d = useStudioStore.getState().poseEdit!;
+    assert.equal(d.edited, false);
+  });
+
+  it("a drag is one edit: every tick of the gesture keeps the mark", () => {
+    const s = useStudioStore.getState();
+    for (let v = 10; v <= 40; v += 10) s.updatePose(0, setPoseValue(NEUTRAL_POSE, "left_arm.elbow_flexion", v), true);
+    s.endPoseGesture();
+    assert.equal(useStudioStore.getState().poseEdit?.edited, true);
+  });
+
+  it("the mirror toggle is a tool setting, not an edit", () => {
+    useStudioStore.getState().setPoseEditOptions({ mirror: false });
+    assert.equal(useStudioStore.getState().poseEdit?.edited, false);
+  });
+
+  it("an AI draft after a manual edit starts a fresh, unedited origin", () => {
+    useStudioStore.getState().updatePose(0, setPoseValue(NEUTRAL_POSE, "left_arm.elbow_flexion", 90));
+    useStudioStore.getState().replacePoses({ poses: [NEUTRAL_POSE], origin: { kind: "ai", template: null, params: null, notes: null } });
+    assert.equal(useStudioStore.getState().poseEdit?.edited, false);
+    useStudioStore.getState().undoPose();
+    assert.equal(useStudioStore.getState().poseEdit?.edited, true);
+  });
+
+  it("saving makes the stored clip the one being edited, selected, with nothing unsaved", () => {
+    useStudioStore.getState().updatePose(0, setPoseValue(NEUTRAL_POSE, "left_arm.elbow_flexion", 90));
+    useStudioStore.getState().markPoseSaved({ id: "v9", seq: 48 });
+    const s = useStudioStore.getState();
+    assert.equal(s.vectorId, "v9");
+    assert.equal(s.poseEdit?.vectorId, "v9");
+    assert.equal(s.poseEdit?.sourceSeq, 48);
+    assert.equal(s.poseEdit?.dirty, false);
+    assert.equal(s.poseEdit?.edited, false);
+    assert.deepEqual(s.poseEdit?.origin, { kind: "clip", vectorId: "v9", seq: 48, from: "curl template, edited" });
+    assert.equal(s.poseEdit?.meta.exo_id, 4);
   });
 });
 

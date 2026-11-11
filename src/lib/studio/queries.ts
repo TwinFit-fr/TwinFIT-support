@@ -57,6 +57,8 @@ type RawExercise = {
   primary_muscle_group: TaxonomyRef | null;
   target_muscle: TaxonomyRef | null;
   movement_type: TaxonomyRef | null;
+  position: TaxonomyRef | null;
+  grip: TaxonomyRef | null;
   equipment: TaxonomyRef | null;
   support_equipment: TaxonomyRef | null;
   localizations: { description: string | null }[];
@@ -94,6 +96,8 @@ export async function listStudioExercises(token: string): Promise<StudioExercise
     group: e.primary_muscle_group,
     target_muscle: e.target_muscle,
     movement_type: e.movement_type,
+    position: e.position,
+    grip: e.grip,
     equipment: e.equipment,
     support_equipment: e.support_equipment,
     thumbnail_url: thumbs.get(e.exo_id) ?? null,

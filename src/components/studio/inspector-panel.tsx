@@ -10,7 +10,6 @@ import {
   PenLine,
   Plus,
   RotateCw,
-  Sparkles,
   Trash2,
   Upload,
   Wand2,
@@ -21,7 +20,8 @@ import { defaultEquipmentItems, equipmentSentence, fillPromptTemplate } from "@/
 import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
-import { Chip, EmptyState, Field, IconButton, M3Button, NumberField, Section, Select, StatusDot, TextArea } from "./ui";
+import { PickExerciseGuide } from "./pick-exercise-guide";
+import { Chip, Field, IconButton, M3Button, NumberField, Section, Select, StatusDot, TextArea } from "./ui";
 
 export type GenerateInput = {
   prompt: string;
@@ -147,7 +147,12 @@ function VectorRow({
         selected ? "bg-(--m3-secondary-container) text-(--m3-on-secondary-container)" : "bg-(--m3-surface-container)",
       )}
     >
-      <button type="button" onClick={onSelect} aria-pressed={selected} className="studio-state flex w-full cursor-pointer items-start gap-3 rounded-xl px-3 pt-2.5 pb-1.5 text-left">
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        title={ready ? (vector.format === "json" ? `Open #${vector.seq} on the stage to adjust its poses` : `Play #${vector.seq} on the stage`) : undefined}
+        className="studio-state flex w-full cursor-pointer items-start gap-3 rounded-xl px-3 pt-2.5 pb-1.5 text-left">
         <StatusDot status={vector.status} className="mt-1.5" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-xs">
@@ -211,11 +216,6 @@ function VectorRow({
             className="h-7 w-7"
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
-          </IconButton>
-        ) : null}
-        {ready && vector.format === "json" ? (
-          <IconButton label="Edit the poses of this clip (Save overwrites it; Save as copy keeps it)" onClick={() => onAction("edit")} disabled={busy} className="h-7 w-7">
-            <PenLine className="h-3.5 w-3.5" />
           </IconButton>
         ) : null}
         {queued ? (
@@ -287,7 +287,7 @@ export function InspectorPanel({
   onGenerate,
   onVectorAction,
   onUploadClip,
-  onNewPoses,
+  onOpenVector,
 }: {
   exercise: StudioExercise | null;
   avatar: BaseAvatar | null;
@@ -302,8 +302,8 @@ export function InspectorPanel({
   onVectorAction: (vector: MovementVector, action: VectorAction, payload?: File | string) => Promise<void>;
   /** A clip file as a new ready row (a DeepMotion / SayMotion / Mixamo export). */
   onUploadClip: (file: File, items: EquipmentItem[]) => Promise<void>;
-  /** Open the pose editor on a clip started from one neutral pose, for this exercise. */
-  onNewPoses: (items: EquipmentItem[]) => void;
+  /** A row was picked: a ready pose clip opens in the editor, another ready clip plays, a queued row is selected. */
+  onOpenVector: (vector: MovementVector) => void;
 }) {
   const sockets = useMemo(() => avatar?.sockets ?? [], [avatar]);
   const socketIds = useMemo(() => sockets.map((s) => s.id), [sockets]);
@@ -323,7 +323,6 @@ export function InspectorPanel({
 
   const setPreviewItems = useStudioStore((s) => s.setPreviewItems);
   const vectorId = useStudioStore((s) => s.vectorId);
-  const setVector = useStudioStore((s) => s.setVector);
 
   useEffect(() => {
     setPreviewItems(items);
@@ -341,13 +340,7 @@ export function InspectorPanel({
   }, [exercise, settings, avatar, items, userPrompt]);
 
   if (!exercise) {
-    return (
-      <EmptyState
-        icon={<Sparkles className="h-5 w-5" />}
-        title="Pick an exercise"
-        body="Choose a catalog exercise on the left to describe its movement and generate a clip for the avatar."
-      />
-    );
+    return <PickExerciseGuide />;
   }
 
   const canGenerate = Boolean(avatar) && finalPrompt.length > 0 && !generating;
@@ -521,9 +514,6 @@ export function InspectorPanel({
           }
           action={
             <>
-              <M3Button size="sm" variant="text" disabled={!avatar} onClick={() => onNewPoses(items)} title="Build the movement by hand: start from one pose, add the next ones, play them as a loop">
-                <PenLine className="h-3.5 w-3.5" /> New poses
-              </M3Button>
               <M3Button
                 size="sm"
                 variant="text"
@@ -564,7 +554,7 @@ export function InspectorPanel({
                   vector={vector}
                   selected={vector.id === vectorId}
                   busy={busyVectorId === vector.id}
-                  onSelect={() => setVector(vector.id === vectorId ? null : vector.id)}
+                  onSelect={() => onOpenVector(vector)}
                   onAction={(action, payload) => void onVectorAction(vector, action, payload)}
                 />
               ))}
