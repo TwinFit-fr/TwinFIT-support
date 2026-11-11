@@ -169,7 +169,7 @@ function VectorRow({
               <Clock3 className="h-3 w-3" /> {relativeTime(vector.inserted_at)}
             </span>
           </div>
-          <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-(--m3-on-surface-variant)">
+          <p className="mt-1 text-[11px] leading-snug text-(--m3-on-surface-variant)">
             {vector.error ? vector.error : vector.prompt}
           </p>
           <div className="mt-1.5 flex flex-wrap gap-1 text-[10px] text-(--m3-on-surface-variant)">
@@ -384,7 +384,7 @@ export function InspectorPanel({
           {exercise.support_equipment ? <Chip tone="primary">{exercise.support_equipment.name}</Chip> : null}
         </div>
         {exercise.description ? (
-          <p className="mt-3 line-clamp-4 text-xs leading-relaxed text-(--m3-on-surface-variant)">{exercise.description}</p>
+          <p className="mt-3 text-xs leading-relaxed text-(--m3-on-surface-variant)">{exercise.description}</p>
         ) : null}
       </div>
 

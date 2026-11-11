@@ -16,7 +16,7 @@ export function BodyChecks() {
   const errors = issues.filter((issue) => issue.severity === "error");
   const ok = issues.length === 0;
   return (
-    <section aria-label="Body checks" className="border-b border-(--m3-outline-variant) px-4 py-2.5" data-body-checks={pending ? "pending" : ok ? "pass" : errors.length ? "fail" : "warn"}>
+    <section aria-label="Body checks" className="border-t border-(--m3-outline-variant) px-4 py-2.5" data-body-checks={pending ? "pending" : ok ? "pass" : errors.length ? "fail" : "warn"}>
       <div
         role="status"
         className={cn(
