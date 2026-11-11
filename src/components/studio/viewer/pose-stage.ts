@@ -16,6 +16,8 @@ export type StageFrame = {
   points: Partial<Record<PointId, ScreenXY>>;
   /** Stick-figure polylines, CSS pixels. */
   chains: ScreenXY[][];
+  /** The same joints by logical name ("LeftForeArm"), for marking the one a panel control turns. */
+  joints: Record<string, ScreenXY>;
   /** While a dragged point cannot follow the pointer: from the point to where the pointer asks it to be. */
   short?: { from: ScreenXY; to: ScreenXY };
 };
@@ -70,4 +72,12 @@ export type StageLayer = {
   exerciseDone: (done: { id: PointId; result: SettingsApplied | null; setting: string | null; value: string | null }) => void;
 };
 
-export const poseStage: { scene: StageScene | null; layer: StageLayer | null; available: PointId[] } = { scene: null, layer: null, available: [] };
+/** The joint a properties control turns, marked on the stage while the control is hovered or focused. */
+export type StageLink = { bones: string[]; label: string };
+
+export const poseStage: { scene: StageScene | null; layer: StageLayer | null; available: PointId[]; link: StageLink | null } = { scene: null, layer: null, available: [], link: null };
+
+/** Mark (or, with null, unmark) the joint a control turns; the layer draws it on its next frame. */
+export function linkJoint(link: StageLink | null): void {
+  poseStage.link = link;
+}

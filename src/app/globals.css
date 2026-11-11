@@ -434,6 +434,151 @@ body {
       0 0 0 4px var(--pose-point-edge);
     pointer-events: none;
   }
+  /* A joint's track in the pose properties (joint-control.tsx): a native range input whose ends
+     are the hard limits, with the usual training range as a lighter band and zero as a tick. The
+     marks are placed on the thumb's travel (half a thumb in from each end), so a value on the
+     band's edge puts the thumb exactly there. --from / --to / --zero are fractions of the range. */
+  .joint-range,
+  .joint-key-band,
+  .joint-key-out {
+    --track: color-mix(in srgb, var(--m3-warning) 40%, var(--m3-surface-container-high));
+    --band: color-mix(in srgb, var(--m3-primary) 38%, var(--m3-outline));
+  }
+  .joint-key-band {
+    background: var(--band);
+  }
+  .joint-key-out {
+    background: var(--track);
+  }
+  /* No anatomy behind it (the body's position, the bar): one neutral track. */
+  .joint-range[data-band="none"] {
+    --track: var(--m3-outline);
+  }
+  .joint-range {
+    --thumb: 14px;
+    --tick: var(--m3-on-surface-variant);
+    --at-from: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--from, 0));
+    --at-to: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--to, 0));
+    --at-zero: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--zero, -1));
+    display: block;
+    width: 100%;
+    height: 16px;
+    margin-left: 0;
+    margin-right: 0;
+    background: transparent;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .joint-range:disabled {
+    cursor: not-allowed;
+  }
+  .joint-range::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 999px;
+    background:
+      linear-gradient(to right, transparent calc(var(--at-zero) - 1px), var(--tick) calc(var(--at-zero) - 1px), var(--tick) calc(var(--at-zero) + 1px), transparent calc(var(--at-zero) + 1px)),
+      linear-gradient(to right, var(--track) var(--at-from), var(--band) var(--at-from), var(--band) var(--at-to), var(--track) var(--at-to));
+  }
+  .joint-range::-moz-range-track {
+    height: 6px;
+    border-radius: 999px;
+    background:
+      linear-gradient(to right, transparent calc(var(--at-zero) - 1px), var(--tick) calc(var(--at-zero) - 1px), var(--tick) calc(var(--at-zero) + 1px), transparent calc(var(--at-zero) + 1px)),
+      linear-gradient(to right, var(--track) var(--at-from), var(--band) var(--at-from), var(--band) var(--at-to), var(--track) var(--at-to));
+  }
+  .joint-range::-webkit-slider-thumb {
+    width: var(--thumb);
+    height: var(--thumb);
+    margin-top: -4px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--m3-primary);
+    box-shadow:
+      0 0 0 2px var(--m3-surface-container-low),
+      0 1px 4px rgba(0, 0, 0, 0.6);
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .joint-range::-moz-range-thumb {
+    width: var(--thumb);
+    height: var(--thumb);
+    border: 0;
+    border-radius: 999px;
+    background: var(--m3-primary);
+    box-shadow:
+      0 0 0 2px var(--m3-surface-container-low),
+      0 1px 4px rgba(0, 0, 0, 0.6);
+  }
+  .joint-range[data-unusual="true"]::-webkit-slider-thumb {
+    background: var(--m3-warning);
+  }
+  .joint-range[data-unusual="true"]::-moz-range-thumb {
+    background: var(--m3-warning);
+  }
+  .joint-range:disabled::-webkit-slider-thumb {
+    background: var(--m3-on-surface-variant);
+  }
+  .joint-range:disabled::-moz-range-thumb {
+    background: var(--m3-on-surface-variant);
+  }
+  .joint-range:focus-visible {
+    outline: none;
+  }
+  .joint-range:focus-visible::-webkit-slider-thumb {
+    box-shadow:
+      0 0 0 2px var(--m3-surface-container-low),
+      0 0 0 4px var(--m3-primary);
+  }
+  .joint-range:focus-visible::-moz-range-thumb {
+    box-shadow:
+      0 0 0 2px var(--m3-surface-container-low),
+      0 0 0 4px var(--m3-primary);
+  }
+  /* The joint a properties control turns (viewer/pose-points-layer.tsx), while the control is
+     hovered or focused: a blue ring with the control's name, so the panel and the body are linked. */
+  .pose-link {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    z-index: 3;
+    will-change: transform;
+  }
+  .pose-link-ring {
+    position: absolute;
+    left: -15px;
+    top: -15px;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    border: 2.5px solid var(--m3-primary);
+    background: color-mix(in srgb, var(--m3-primary) 22%, transparent);
+    box-shadow:
+      0 0 0 1.5px var(--pose-point-edge),
+      inset 0 0 0 1.5px var(--pose-point-edge),
+      0 0 18px 4px color-mix(in srgb, var(--m3-primary) 45%, transparent);
+  }
+  .pose-link-label {
+    position: absolute;
+    left: 22px;
+    top: -11px;
+    white-space: nowrap;
+    border-radius: 6px;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 18px;
+    color: var(--m3-on-primary);
+    background: var(--m3-primary);
+    box-shadow: 0 0 0 1.5px var(--pose-point-edge);
+  }
+  .pose-link[data-flip="true"] .pose-link-label {
+    left: auto;
+    right: 22px;
+  }
   .pose-point-label {
     position: absolute;
     left: calc(100% + 4px);

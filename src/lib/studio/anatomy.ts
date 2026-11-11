@@ -717,11 +717,14 @@ export function getPoseValue(pose: PoseAngles, path: string): number | null {
   return typeof value === "number" ? value : null;
 }
 
+/** Where a bar starts when a pose without one gets its first bar field. */
+export const DEFAULT_IMPLEMENT: ImplementPose = { height_m: 0.9, forward_m: 0.2, grip_width_m: 0.45 };
+
 /** A copy of the pose with one field changed (creates the implement when one of its fields is set). */
 export function setPoseValue(pose: PoseAngles, path: string, value: number | null): PoseAngles {
   const [a, b] = path.split(".");
   const next = { ...pose } as unknown as Record<string, Record<string, unknown> | null>;
-  if (a === "implement" && !next.implement) next.implement = { height_m: 0.9, forward_m: 0.2, grip_width_m: 0.45 };
+  if (a === "implement" && !next.implement) next.implement = { ...DEFAULT_IMPLEMENT };
   next[a] = { ...(next[a] ?? {}), [b]: value };
   return next as unknown as PoseAngles;
 }

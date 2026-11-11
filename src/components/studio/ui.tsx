@@ -3,6 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
+import { parseEntry } from "@/lib/studio/joint-props";
 import type { VectorStatus } from "@/lib/studio/types";
 
 /* Material 3 pieces for the dark Studio: filled / tonal / outlined / text buttons, filled text
@@ -144,13 +145,11 @@ export function NumberField({
   const shown = text ?? (Number.isFinite(value) ? value.toFixed(digits) : "");
   const commit = () => {
     if (text === null) return;
-    const parsed = Number(text.replace(",", "."));
     setText(null);
-    if (text.trim() !== "" && Number.isFinite(parsed) && parsed !== value) {
-      const min = props.min !== undefined ? Number(props.min) : -Infinity;
-      const max = props.max !== undefined ? Number(props.max) : Infinity;
-      onCommit(Math.min(max, Math.max(min, parsed)));
-    }
+    const min = props.min !== undefined ? Number(props.min) : -Infinity;
+    const max = props.max !== undefined ? Number(props.max) : Infinity;
+    const entry = parseEntry(text, { min, max });
+    if (entry.kind === "ok" && entry.value !== value) onCommit(entry.value);
   };
   return (
     <input

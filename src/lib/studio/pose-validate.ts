@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { upgradePoseClip, type PoseAngles, type PoseClipJson } from "./anatomy.ts";
+import { jointName } from "./joint-props.ts";
 import { sampleClip, type ClipSample, type RestPose } from "./pose-clip.ts";
 import { ROM } from "./rom.ts";
 import type { AvatarSocket } from "./types";
@@ -67,8 +68,8 @@ function checkRanges(pose: PoseAngles, label: string, add: (issue: PoseIssue) =>
       const range = ROM[`${group}.${key}`];
       if (!range || typeof value !== "number") continue;
       const path = `${name}.${key}`;
-      if (value < range.hard[0] - 0.5 || value > range.hard[1] + 0.5) once({ severity: "error", code: `range:${path}`, message: `${label}: ${path} ${round(value, 1)}° is past its range (${range.hard.join(" to ")}°)` });
-      else if (value < range.training[0] - 0.5 || value > range.training[1] + 0.5) once({ severity: "warning", code: `training:${path}`, message: `${label}: ${path} ${round(value, 1)}° is outside normal training (${range.training.join(" to ")}°)` });
+      if (value < range.hard[0] - 0.5 || value > range.hard[1] + 0.5) once({ severity: "error", code: `range:${path}`, message: `${label}: ${jointName(path)} ${round(value, 1)}° is past its range (${range.hard.join(" to ")}°)` });
+      else if (value < range.training[0] - 0.5 || value > range.training[1] + 0.5) once({ severity: "warning", code: `training:${path}`, message: `${label}: ${jointName(path)} ${round(value, 1)}° is outside normal training (${range.training.join(" to ")}°)` });
     }
   }
   for (const [name, arm] of [["left", pose.left_arm], ["right", pose.right_arm]] as const) {

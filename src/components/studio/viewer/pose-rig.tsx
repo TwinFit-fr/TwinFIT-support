@@ -299,7 +299,7 @@ export function PoseRig({
       if (sel && points[sel] && drag.current?.by !== "gizmo") helper.position.copy(points[sel]!);
       const { width, height } = live.current.size;
       const cam = live.current.camera;
-      const frame: StageFrame = { points: {}, chains: [] };
+      const frame: StageFrame = { points: {}, chains: [], joints: {} };
       for (const id of session.available) {
         const p = points[id];
         const xy = p ? toScreen(cam, p, width, height, project) : null;
@@ -310,7 +310,10 @@ export function PoseRig({
         for (const joint of chain) {
           const p = session.joint(joint, scratch);
           const xy = p ? toScreen(cam, p, width, height, project) : null;
-          if (xy) line.push(xy);
+          if (xy) {
+            line.push(xy);
+            frame.joints[joint] = xy;
+          }
         }
         if (line.length > 1) frame.chains.push(line);
       }

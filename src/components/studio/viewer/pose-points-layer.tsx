@@ -92,6 +92,7 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
   /** Latest screen positions and hit diameters, for picking the point under the pointer. */
   const latest = useRef<Latest>({ points: {}, hit: {} });
   const hovered = useRef<PointId | null>(null);
+  const linkRing = useRef<HTMLDivElement>(null);
 
   // The scene draws through these: positions every frame, the rest on change.
   useEffect(() => {
@@ -122,6 +123,23 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
           }
         }
         latest.current = { points: frame.points, hit };
+        // The joint a properties control turns, while that control is hovered or focused.
+        const ring = linkRing.current;
+        if (ring) {
+          const link = poseStage.link;
+          const at = link ? link.bones.map((bone) => frame.joints[bone]).filter((p): p is { x: number; y: number } => Boolean(p)) : [];
+          if (link && at.length) {
+            const x = at.reduce((sum, p) => sum + p.x, 0) / at.length;
+            const y = at.reduce((sum, p) => sum + p.y, 0) / at.length;
+            ring.style.display = "";
+            ring.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+            // The name goes on the side of the joint with room for it.
+            const flip = x > el.clientWidth - 200 ? "true" : "false";
+            if (ring.dataset.flip !== flip) ring.dataset.flip = flip;
+            const tag = ring.lastElementChild as HTMLElement | null;
+            if (tag && tag.textContent !== link.label) tag.textContent = link.label;
+          } else if (ring.style.display !== "none") ring.style.display = "none";
+        }
         // The setting badge rides next to the dragged point.
         const tag = badge.current;
         const at = draggingNow.current ? frame.points[draggingNow.current] : undefined;
@@ -414,6 +432,10 @@ export function PosePointsLayer({ statusHost = null }: { statusHost?: HTMLElemen
         </div>
       </div>
       , statusHost) : null}
+      <div ref={linkRing} className="pose-link" style={{ display: "none" }} aria-hidden="true" data-pose-link>
+        <span className="pose-link-ring" />
+        <span className="pose-link-label" />
+      </div>
       <ExerciseBadge ref={badge} status={exerciseMode ? exStatus : null} />
       <p id="pose-points-help" className="sr-only">
         Press and drag to move it. Arrow keys move the selected point in the view plane, Page Up and Page Down in depth, Shift for bigger steps. Escape clears the selection.
