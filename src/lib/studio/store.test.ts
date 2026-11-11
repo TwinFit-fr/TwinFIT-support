@@ -171,3 +171,43 @@ describe("rig drafts", () => {
     assert.deepEqual(useStudioStore.getState().draftSockets?.sockets.map((x) => x.id), ["hand_r"]);
   });
 });
+
+describe("AI draft apply", () => {
+  beforeEach(() => useStudioStore.getState().startPoseEdit(base()));
+
+  it("is one undo step that restores poses, settings, origin and meta together", () => {
+    const before = useStudioStore.getState().poseEdit!;
+    useStudioStore.getState().setPoseKeyframe(1);
+    useStudioStore.getState().replacePoses({
+      poses: [NEUTRAL_POSE, setPoseValue(NEUTRAL_POSE, "left_leg.knee_flexion", 120)],
+      labels: ["standing", "bottom"],
+      weights: [1, 3],
+      mode: "cycle",
+      grip: null,
+      twoHanded: false,
+      meta: { template: "squat", template_params: { range: "deep" } },
+      origin: { kind: "ai", template: "squat", params: { range: "deep" }, notes: null, explain: { notes: null, conflicts: ["x"], adjusted: [], checks: [], instructions: "deeper" } },
+      keyframe: 1,
+    });
+    const after = useStudioStore.getState().poseEdit!;
+    assert.equal(after.keyframe, 1);
+    assert.equal(after.edited, false);
+    assert.deepEqual(after.meta.template_params, { range: "deep" });
+    useStudioStore.getState().undoPose();
+    const d = useStudioStore.getState().poseEdit!;
+    assert.deepEqual(d.origin, before.origin);
+    assert.deepEqual(d.meta, before.meta);
+    assert.equal(d.poses, before.poses);
+    assert.equal(d.labels, null);
+    assert.equal(d.mode, "pingpong");
+  });
+
+  it("gives every opened draft its own identity, kept through edits and saves", () => {
+    const first = useStudioStore.getState().poseEdit!.editId;
+    useStudioStore.getState().updatePose(0, setPoseValue(NEUTRAL_POSE, "left_arm.elbow_flexion", 30));
+    useStudioStore.getState().markPoseSaved({ id: "v9", seq: 9 });
+    assert.equal(useStudioStore.getState().poseEdit!.editId, first);
+    useStudioStore.getState().startPoseEdit(base());
+    assert.notEqual(useStudioStore.getState().poseEdit!.editId, first);
+  });
+});

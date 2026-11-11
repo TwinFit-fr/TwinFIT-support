@@ -33,6 +33,8 @@ export type PoseSnapshot = {
  * holds the selected pose.
  */
 export type PoseEditState = PoseSnapshot & {
+  /** Identity of this opened draft (a new one per startPoseEdit): an AI request started on it lands only on it. */
+  editId: number;
   /** The vector the draft started from (null for a clip started from scratch). */
   vectorId: string | null;
   sourceSeq: number | null;
@@ -56,6 +58,7 @@ export type PoseEditState = PoseSnapshot & {
 };
 
 const HISTORY_LIMIT = 60;
+let editCounter = 0;
 export const MAX_POSES = 8;
 
 function snapshotOf(d: PoseEditState): PoseSnapshot {
@@ -215,7 +218,7 @@ export type StudioState = {
   /** The poses changed: the body checks will run again once the edits settle. */
   markPoseChecksPending: () => void;
   startPoseEdit: (
-    state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "history" | "future" | "gestureOpen" | "weights" | "labels" | "edited"> &
+    state: Omit<PoseEditState, "editId" | "keyframe" | "dirty" | "dragTarget" | "history" | "future" | "gestureOpen" | "weights" | "labels" | "edited"> &
       Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "weights" | "labels" | "edited">>,
   ) => void;
   /** Replace every pose (an AI draft): one undo step, which also brings back the previous origin and meta. */
@@ -309,7 +312,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   markPoseChecksPending: () => set((s) => (s.poseChecksPending ? s : { poseChecksPending: true })),
   startPoseEdit: (state) =>
     set({
-      poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], gestureOpen: false, weights: null, labels: null, edited: false, ...state },
+      poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], gestureOpen: false, weights: null, labels: null, edited: false, ...state, editId: ++editCounter },
       playing: false,
     }),
   replacePoses: (next) =>

@@ -10,6 +10,7 @@ import { DRAG_SLOP_PX, POINT_HINT, POINT_LABEL, isNudgeKey, isPointId, mirrorPoi
 import { useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
 import { useRebuildNotice } from "../hooks/use-template-settings";
+import { StageGuardConfirm } from "../rebuild-guard";
 import { DragModeControl, ExerciseBadge, ExerciseLine } from "./exercise-status";
 import { poseStage, type ExerciseStatus, type StageFrame } from "./pose-stage";
 
@@ -63,6 +64,8 @@ export function PosePointsLayer() {
   const setExStatus = (update: (prev: ExerciseStatus | null) => ExerciseStatus | null) =>
     setExState((prev) => ({ status: update(prev.status), exercise: useDragModeStore.getState().exercise }));
   const [done, setDone] = useState<{ text: string; at: number } | null>(null);
+  /** Exercise mode was picked on a locked saved clip: the clip it asks about, until the user answers. */
+  const [asking, setAsking] = useState<string | null>(null);
   const dragMode = useDragMode();
   const exStatus = exState.exercise === dragMode.exercise ? exState.status : null;
   const notice = useRebuildNotice();
@@ -296,7 +299,13 @@ export function PosePointsLayer() {
 
   if (!shown) return null;
   const exerciseMode = dragMode.mode === "exercise";
+  const guard = dragMode.guard;
   const choose = (mode: "exercise" | "limb") => {
+    if (mode === "exercise" && guard.locked) {
+      setAsking(guard.vectorId);
+      return;
+    }
+    setAsking(null);
     dragMode.setChoice(mode);
     setExStatus(() => null);
     setMessage(mode === "exercise" ? "Exercise mode: a drag changes the exercise settings and every pose follows." : "Limb mode: a drag moves only that limb.");
@@ -355,7 +364,18 @@ export function PosePointsLayer() {
           data-pose-status
         >
           {dragMode.draggable ? <DragModeControl mode={dragMode.mode} onChange={choose} /> : null}
-          {exerciseMode ? (
+          {guard.locked && asking === guard.vectorId ? (
+            <StageGuardConfirm
+              guard={guard}
+              onCancel={() => setAsking(null)}
+              onAllow={() => {
+                dragMode.agree(guard.vectorId);
+                setAsking(null);
+                dragMode.setChoice("exercise");
+                setMessage("Exercise mode: a drag changes the exercise settings and rebuilds every pose of this clip.");
+              }}
+            />
+          ) : exerciseMode ? (
             <ExerciseLine status={exStatus} done={done?.text ?? null} selected={selected} replaces={replacesNote(dragMode.replaced)} onLimb={() => choose("limb")} />
           ) : (
             <>

@@ -20,6 +20,7 @@ import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
 import { EmptyState, IconButton, Segmented } from "../ui";
 import { useMovementClip } from "./movement-clip";
+import { AiDraftChip } from "../ai-draft";
 import { PosePointsLayer } from "./pose-points-layer";
 import { useCanvasCommits } from "./render-stats";
 import type { ModelInfo } from "./studio-canvas";
@@ -187,6 +188,8 @@ function Hud({
         />
         {clipText}
       </div>
+      {/* The AI draft on its way (Cancel), or waiting for review in the side panel. */}
+      <AiDraftChip className="pointer-events-auto shadow-lg" onReview={reviewSuggestion} />
       {issues.length ? (
         <div
           className={cn("studio-glass max-w-[38ch] rounded-2xl px-3 py-1.5 text-[11px]", errors.length ? "text-(--m3-error)" : "text-(--m3-warning)")}
@@ -211,6 +214,15 @@ function Hud({
       ) : null}
     </div>
   );
+}
+
+/** Brings the waiting AI suggestion in the side panel into view and puts the focus on Apply. */
+function reviewSuggestion() {
+  const card = document.querySelector<HTMLElement>("[data-ai-suggestion]");
+  if (!card) return;
+  const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  card.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
+  card.querySelector<HTMLButtonElement>("[data-ai-apply]")?.focus({ preventScroll: true });
 }
 
 /**

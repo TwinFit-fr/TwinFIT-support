@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { hasManualEdits } from "./draft-params.ts";
 import type { TemplateExercise } from "./exercise-templates.ts";
+import { clipGuard, type ClipGuard } from "./rebuild-guard.ts";
 import { effectiveDragMode, replacedBy, type DragMode, type Replaced } from "./rebuild-words.ts";
 import { hasTemplate } from "./template-draft.ts";
 import { settingsFor } from "./template-settings.ts";
@@ -14,6 +15,8 @@ import { useStudioStore, type PoseEditState } from "./store.ts";
  * pointer and every pose is rebuilt (pose-drag for the limb is not used). "limb": the dragged limb
  * moves on its own (pose-drag.ts). The user's choice holds for the exercise it was made on; until
  * then it is Exercise when the exercise has settings to drag and the poses hold no edits made by hand.
+ * A saved clip that a rebuild would change is locked to Limb until the user agrees once for that
+ * clip (rebuild-guard.ts).
  */
 export type { DragMode } from "./rebuild-words.ts";
 
@@ -23,17 +26,22 @@ type DragModeState = {
   exercise: TemplateExercise | null;
   /** What the user picked for this exercise; null until they pick. */
   choice: DragMode | null;
+  /** Saved clips the user agreed may be rebuilt from the template (this visit). */
+  agreed: string[];
   setExercise: (exerciseId: string | null, exercise: TemplateExercise | null) => void;
   setChoice: (choice: DragMode) => void;
+  agree: (vectorId: string) => void;
 };
 
 export const useDragModeStore = create<DragModeState>((set) => ({
   exerciseId: null,
   exercise: null,
   choice: null,
+  agreed: [],
   setExercise: (exerciseId, exercise) =>
     set((s) => (s.exerciseId === exerciseId && s.exercise?.name === exercise?.name ? s : { exerciseId, exercise, choice: s.exerciseId === exerciseId ? s.choice : null })),
   setChoice: (choice) => set({ choice }),
+  agree: (vectorId) => set((s) => (s.agreed.includes(vectorId) ? s : { agreed: [...s.agreed, vectorId] })),
 }));
 
 /** The exercise's settings can be dragged: it has a template with at least one setting that moves the body. */
@@ -50,6 +58,8 @@ export type DragModeNow = {
   manualEdits: boolean;
   /** What a rebuild would replace, in the words the editor uses (null: nothing). */
   replaced: Replaced;
+  /** A saved clip that rebuilds may not touch until the user agrees. */
+  guard: ClipGuard;
   exercise: TemplateExercise | null;
 };
 
@@ -70,20 +80,37 @@ export function replacedOf(edit: EditLike | null, exercise: TemplateExercise | n
   return edit ? replacedBy(edit.origin, edit.edited, manualEditsOf(edit, exercise)) : null;
 }
 
+/** The rebuild guard of the editor's poses (see rebuild-guard.ts). */
+export function guardOf(edit: EditLike | null, exercise: TemplateExercise | null, agreed: readonly string[]): ClipGuard {
+  return edit ? clipGuard(edit.origin, replacedOf(edit, exercise), edit.poses.length, agreed) : { locked: false };
+}
+
+const guardKey = (g: ClipGuard) => (g.locked ? JSON.stringify([g.vectorId, g.seq, g.poses]) : "");
+const guardFromKey = (key: string): ClipGuard => {
+  if (!key) return { locked: false };
+  const [vectorId, seq, poses] = JSON.parse(key) as [string, number | null, number];
+  return { locked: true, vectorId, seq, poses };
+};
+
 /** The drag mode for the editor's poses now (read once: the stage calls it when a drag starts). */
 export function dragModeNow(edit: EditLike | null = useStudioStore.getState().poseEdit): DragModeNow {
-  const { exercise, choice } = useDragModeStore.getState();
+  const { exercise, choice, agreed } = useDragModeStore.getState();
   const draggable = canDragSettings(exercise);
   const replaced = replacedOf(edit, exercise);
-  return { mode: effectiveDragMode(choice, draggable, replaced), draggable, manualEdits: replaced !== null, replaced, exercise };
+  const guard = guardOf(edit, exercise, agreed);
+  return { mode: guard.locked ? "limb" : effectiveDragMode(choice, draggable, replaced), draggable, manualEdits: replaced !== null, replaced, guard, exercise };
 }
 
 /** The same, kept current for a component: it re-renders only when the mode, or what a rebuild replaces, changes. */
-export function useDragMode(): DragModeNow & { setChoice: (choice: DragMode) => void } {
+export function useDragMode(): DragModeNow & { setChoice: (choice: DragMode) => void; agree: (vectorId: string) => void } {
   const exercise = useDragModeStore((s) => s.exercise);
   const choice = useDragModeStore((s) => s.choice);
+  const agreed = useDragModeStore((s) => s.agreed);
   const setChoice = useDragModeStore((s) => s.setChoice);
+  const agree = useDragModeStore((s) => s.agree);
   const replaced = useStudioStore((s) => replacedOf(s.poseEdit, exercise));
+  const key = useStudioStore((s) => guardKey(guardOf(s.poseEdit, exercise, agreed)));
+  const guard = useMemo(() => guardFromKey(key), [key]);
   const draggable = useMemo(() => canDragSettings(exercise), [exercise]);
-  return { mode: effectiveDragMode(choice, draggable, replaced), draggable, manualEdits: replaced !== null, replaced, exercise, setChoice };
+  return { mode: guard.locked ? "limb" : effectiveDragMode(choice, draggable, replaced), draggable, manualEdits: replaced !== null, replaced, guard, exercise, setChoice, agree };
 }

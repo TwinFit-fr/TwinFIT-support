@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { useToast } from "@/components/ui/toast";
 import { draftParams } from "@/lib/studio/draft-params";
-import { replacedOf, useDragModeStore } from "@/lib/studio/drag-mode";
+import { guardOf, replacedOf, useDragModeStore } from "@/lib/studio/drag-mode";
 import type { TemplateExercise, TemplateParams } from "@/lib/studio/exercise-templates";
 import { rebuildToast, type Replaced } from "@/lib/studio/rebuild-words";
 import { useStudioStore } from "@/lib/studio/store";
@@ -18,6 +18,8 @@ export type SettingsApplied = {
   replaced: Replaced;
   /** What changed, in words for the stage ("Range: deep"). */
   change: string | null;
+  /** Nothing was rebuilt: the poses are a saved clip the user has not agreed to rebuild (rebuild-guard.ts). */
+  blocked?: boolean;
 };
 
 /**
@@ -30,6 +32,7 @@ export function applyTemplateSettings(exercise: TemplateExercise, params: Templa
   const state = useStudioStore.getState();
   const edit = state.poseEdit;
   if (!edit) return { changed: false, replaced: null, change: null };
+  if (guardOf(edit, exercise, useDragModeStore.getState().agreed).locked) return { changed: false, replaced: null, change: null, blocked: true };
   const from = normalizeParams(exercise, draftParams(exercise, edit));
   const next = normalizeParams(exercise, params);
   const replaced = replacedOf(edit, exercise);
