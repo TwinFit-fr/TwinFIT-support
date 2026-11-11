@@ -2,11 +2,15 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { CircleHelp, X } from "lucide-react";
+import { useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
 import type { PointMarks } from "../hooks/use-point-marks";
+import { IssueGlyph } from "../issue-glyph";
 import { MARK_WORDS, PointMark, noAutoWords, type MarkKind } from "../point-mark";
 
 type Item = { kind: Exclude<MarkKind, "plain">; count: number | null };
+
+const CHECK_MEANING = "A body check fails (filled) or warns (hollow) on this part at the playhead; the count is for the whole clip and the timeline shows when. Hover a mark for what is wrong, choose it to select the part to fix.";
 
 /**
  * What the marks on the body points mean, always on the stage under the status cards: each mark
@@ -22,6 +26,8 @@ export function PointLegend({ marks, limit }: { marks: PointMarks; limit: boolea
   const root = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const setCount = marks.states ? Object.values(marks.states).filter((s) => s === "set").length : null;
+  // Body checks that fail anywhere in the clip: their marks share the stage with the point marks.
+  const problems = useStudioStore((s) => s.bodyReport?.issues.length ?? 0);
   const items: Item[] = [
     ...(marks.states ? ([{ kind: "automatic", count: null }, { kind: "set", count: setCount }] as Item[]) : []),
     { kind: "pinned", count: marks.pinned.length },
@@ -75,6 +81,12 @@ export function PointLegend({ marks, limit }: { marks: PointMarks; limit: boolea
                 </span>
               </li>
             ))}
+            <li className="flex items-start gap-2">
+              <IssueGlyph severity="error" size={16} className="mt-px" />
+              <span className="leading-snug text-(--m3-on-surface-variant)">
+                <span className="font-semibold text-(--m3-on-surface)">Body check.</span> {CHECK_MEANING}
+              </span>
+            </li>
           </ul>
           <p className="mt-2 border-t border-(--m3-outline-variant) pt-2 leading-snug text-(--m3-on-surface-variant)">
             {marks.states ? (
@@ -121,6 +133,14 @@ export function PointLegend({ marks, limit }: { marks: PointMarks; limit: boolea
               <span className="sr-only">{`: ${MARK_WORDS[kind].meaning}`}</span>
             </li>
           ))}
+          {problems ? (
+            <li className="point-legend-item flex items-center gap-2 rounded-lg px-1.5 py-[3px]" data-legend="check" title={CHECK_MEANING}>
+              <IssueGlyph severity="error" size={15} />
+              <span className="whitespace-nowrap text-(--m3-on-surface)">Body check</span>
+              <span className="ml-auto pl-2 font-semibold tabular-nums text-(--m3-on-surface)">{problems}</span>
+              <span className="sr-only">{`: ${CHECK_MEANING}`}</span>
+            </li>
+          ) : null}
         </ul>
         {!marks.states ? (
           <p className="mt-0.5 max-w-[11rem] px-1.5 leading-snug">

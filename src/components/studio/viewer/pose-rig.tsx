@@ -120,6 +120,7 @@ export function PoseRig({
     const points: Partial<Record<PointId, THREE.Vector3>> = {};
     const scratch = new THREE.Vector3();
     const project = new THREE.Vector3();
+    const anyPoint = new THREE.Vector3();
     let probed: unknown = null;
     /** Where the last arrow-key nudge aimed (see nudgeFrom). */
     const aimed: { id: PointId | null; at: THREE.Vector3 | null } = { id: null, at: null };
@@ -266,6 +267,7 @@ export function PoseRig({
       const edit = state.poseEdit;
       if (!edit || state.edit.mode !== "off") {
         poseStage.layer?.frame(null);
+        poseStage.marks?.frame(null);
         return;
       }
       const d = drag.current;
@@ -322,7 +324,9 @@ export function PoseRig({
       const from = pulled?.by === "pointer" && pulled.moved ? frame.points[pulled.id] : undefined;
       const to = from && pulled?.aim ? toScreen(cam, pulled.aim, width, height, project) : null;
       if (from && to && Math.hypot(to.x - from.x, to.y - from.y) > OUT_OF_REACH_PX) frame.short = { from, to };
+      frame.project = (x, y, z) => toScreen(cam, anyPoint.set(x, y, z), width, height, project);
       poseStage.layer?.frame(frame);
+      poseStage.marks?.frame(frame);
     };
 
     return () => {
@@ -331,6 +335,7 @@ export function PoseRig({
       frameRef.current = null;
       poseStage.scene = null;
       poseStage.layer?.frame(null);
+      poseStage.marks?.frame(null);
     };
   }, [session, frameRef, helper]);
 

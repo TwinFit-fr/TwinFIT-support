@@ -41,7 +41,7 @@ export function PoseEditor({
 }) {
   const confirm = useConfirm();
   const draft = useStudioStore((s) => s.poseEdit);
-  const issues = useStudioStore((s) => s.poseIssues);
+  const report = useStudioStore((s) => s.bodyReport);
   const playing = useStudioStore((s) => s.playing);
   const undo = useStudioStore((s) => s.undoPose);
   const redo = useStudioStore((s) => s.redoPose);
@@ -87,13 +87,13 @@ export function PoseEditor({
 
   if (!draft) return null;
 
-  const errors = issues.filter((issue) => issue.severity === "error");
-  /** Saving what fails as a body takes a decision: the animator may mean it. */
+  const errors = report?.issues.filter((issue) => issue.severity === "error") ?? [];
+  /** Saving what fails as a body takes a decision: the animator may mean it. The same items as the body checks list. */
   const save = async (mode: SaveMode) => {
     if (errors.length) {
       const ok = await confirm({
-        title: `Save with ${errors.length} failed body check${errors.length === 1 ? "" : "s"}?`,
-        description: errors.map((e) => e.message).join(" · "),
+        title: `Save with ${errors.length} body problem${errors.length === 1 ? "" : "s"}?`,
+        description: errors.map((e) => `• ${e.title} (${e.where}): ${e.detail}`).join("\n"),
         confirmLabel: "Save anyway",
         variant: "danger",
       });

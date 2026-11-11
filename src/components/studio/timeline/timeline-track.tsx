@@ -1,10 +1,12 @@
 "use client";
 
 import { memo, useId, useMemo, useRef } from "react";
+import { failingStretches, keySeverities, spanWords, type Severity } from "@/lib/studio/body-issues";
 import { seek, selectKey, stepFrames, stepKey } from "@/lib/studio/playback";
 import { useStudioStore } from "@/lib/studio/store";
 import { clampTime, describeTime, formatSeconds, keyAt, poseName, rulerTicks, snapToKey, spanAt, type TimelineKey } from "@/lib/studio/timeline";
 import { cn } from "@/lib/utils";
+import { IssueGlyph } from "../issue-glyph";
 import { useElementSize } from "../shell/use-element-size";
 import { LoopCap } from "./loop-cap";
 import { useStageTime, type TimelineModel } from "./use-timeline";
@@ -58,7 +60,7 @@ const LaneGrid = memo(function LaneGrid({ scale }: { scale: Scale }) {
  * as the next key leaves room). A pose reached again (a boomerang's way back, a cycle's return
  * to the start) is drawn hollow. Each is a button that selects the pose and puts the playhead there.
  */
-const KeyMarkers = memo(function KeyMarkers({ keys, labels, keyframe, scale }: { keys: TimelineKey[]; labels: string[] | null; keyframe: number | null; scale: Scale }) {
+const KeyMarkers = memo(function KeyMarkers({ keys, labels, keyframe, scale, checks }: { keys: TimelineKey[]; labels: string[] | null; keyframe: number | null; scale: Scale; checks: (Severity | null)[] }) {
   const nameOf = (key: TimelineKey) => (key.repeat ? "" : (labels?.[key.pose]?.trim() ?? ""));
   // A name goes right of its block; only the last key's goes left (nothing is right of the clip's end),
   // and then it shares the gap with the key before it.
@@ -76,15 +78,18 @@ const KeyMarkers = memo(function KeyMarkers({ keys, labels, keyframe, scale }: {
         // Room for the name: from this block's edge to the next block's, less a small gap (blocks are 22 px).
         const room = Math.floor(flip ? (at - prev) / 2 - 26 : shared ? (next - at) / 2 - 26 : next - at - 40);
         const selected = key.pose === keyframe;
+        const check = checks[i] ?? null;
+        const checkWords = check === "error" ? ", a body check fails here" : check === "warning" ? ", a body check warns here" : "";
         return (
           <button
             key={`${i}-${key.pose}`}
             type="button"
             data-timeline-key={key.pose}
             data-repeat={key.repeat || undefined}
+            data-check={check ?? undefined}
             aria-current={selected && !key.repeat ? "true" : undefined}
-            aria-label={`${poseName(key.pose, labels)} at ${formatSeconds(key.t, 2)}${key.repeat ? ", reached again" : ""}`}
-            title={`${poseName(key.pose, labels)} · ${formatSeconds(key.t, 2)}`}
+            aria-label={`${poseName(key.pose, labels)} at ${formatSeconds(key.t, 2)}${key.repeat ? ", reached again" : ""}${checkWords}`}
+            title={`${poseName(key.pose, labels)} · ${formatSeconds(key.t, 2)}${checkWords ? ` · ${checkWords.slice(2)}` : ""}`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={() => selectKey(keys, i)}
             className={cn("group absolute top-1/2 z-10 flex h-7 -translate-y-1/2 cursor-pointer items-center gap-1.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-(--m3-primary)", flip && "flex-row-reverse")}
@@ -105,6 +110,8 @@ const KeyMarkers = memo(function KeyMarkers({ keys, labels, keyframe, scale }: {
             >
               {key.pose + 1}
             </span>
+            {/* A failing body check on this key: the warning triangle on the block's corner. */}
+            {check ? <IssueGlyph severity={check} size={13} className={cn("pointer-events-none absolute -top-2", flip ? "-left-1.5" : "left-3.5")} /> : null}
             {name && room >= 28 ? (
               <span
                 aria-hidden="true"
@@ -118,6 +125,39 @@ const KeyMarkers = memo(function KeyMarkers({ keys, labels, keyframe, scale }: {
         );
       })}
     </>
+  );
+});
+
+/**
+ * Where in the movement the body checks fail: a strip along the ruler's foot for each failing
+ * stretch (solid for a failure, dashed for a warning) and a
+ * faint band down the lane, so the user sees when the problem happens. Pressing it scrubs there.
+ */
+const FailingStretches = memo(function FailingStretches({ stretches, scale, pending }: { stretches: ReturnType<typeof failingStretches>; scale: Scale; pending: boolean }) {
+  if (!stretches.length) return null;
+  return (
+    <div className={cn("pointer-events-none absolute inset-0", pending && "opacity-50")} data-failing-stretches>
+      {stretches.map(({ span, severity, titles }) => {
+        const left = scale.x(span.from);
+        const width = Math.max(4, scale.x(span.to) - left);
+        const words = `${severity === "error" ? "Body problem" : "Body warning"} ${spanWords(span)}: ${titles.join(", ")}`;
+        return (
+          <div key={`${severity}-${span.from}`} className="absolute inset-y-0" style={{ left, width }}>
+            <div aria-hidden="true" className={cn("absolute inset-x-0 bottom-0 top-6", severity === "error" ? "bg-(--check-fail)/10" : "bg-(--check-warn)/8")} />
+            <div
+              role="img"
+              aria-label={words}
+              title={words}
+              data-stretch={severity}
+              className={cn(
+                "pointer-events-auto absolute inset-x-0 top-[19px] h-[5px] rounded-full",
+                severity === "error" ? "bg-(--check-fail) shadow-[0_0_0_1px_var(--check-edge)]" : "border-t-[3px] border-dashed border-(--check-warn)",
+              )}
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 });
 
@@ -148,6 +188,10 @@ export function TimelineTrack({ model }: { model: TimelineModel }) {
   const scale = useMemo<Scale>(() => ({ width, duration, x: (t: number) => PAD + (duration > 0 ? clampTime(t, duration) / duration : 0) * inner }), [width, duration, inner]);
   const time = useStageTime(model);
   const inBetween = useStudioStore((s) => !s.playing && s.scrubTime !== null) && model.kind === "draft";
+  const report = useStudioStore((s) => s.bodyReport);
+  const checksPending = useStudioStore((s) => s.poseChecksPending);
+  const checks = useMemo(() => keySeverities(report, model.keys, model.tolerance), [report, model.keys, model.tolerance]);
+  const stretches = useMemo(() => failingStretches(report), [report]);
 
   const timeAt = (clientX: number, free: boolean) => {
     const box = area.current!.getBoundingClientRect();
@@ -214,11 +258,12 @@ export function TimelineTrack({ model }: { model: TimelineModel }) {
               <>
                 <LaneGrid scale={scale} />
                 {inBetween ? <BlendSpan model={model} time={time} scale={scale} /> : null}
-                <KeyMarkers keys={model.keys} labels={model.labels} keyframe={model.keyframe} scale={scale} />
+                <KeyMarkers keys={model.keys} labels={model.labels} keyframe={model.keyframe} scale={scale} checks={checks} />
               </>
             ) : null}
           </div>
         </div>
+        {width > 0 ? <FailingStretches stretches={stretches} scale={scale} pending={checksPending} /> : null}
         {width > 0 ? (
           <>
             {/* The playhead: a line through the lane and, on the ruler, the handle that is the slider. */}

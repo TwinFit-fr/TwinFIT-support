@@ -57,6 +57,12 @@ body {
     --pose-set: #8fb8ff;
     --pose-pin: #ff9a7a;
     --pose-limit: #ff7a7a;
+    /* Failing body checks (body-check-marks.tsx, issue-glyph.tsx): a triangle with "!", filled for
+       a failure, hollow for a warning; the floor area the feet support for balance. */
+    --check-fail: #ff6f61;
+    --check-warn: #fcd34d;
+    --check-edge: #1a0603;
+    --check-base: #7fe0c4;
     --studio-glass: rgba(18, 22, 31, 0.72);
     --studio-glass-border: rgba(255, 255, 255, 0.07);
     --studio-glow: 0 0 0 1px rgba(163, 196, 255, 0.18), 0 12px 40px -12px rgba(40, 87, 168, 0.55);
@@ -812,6 +818,152 @@ body {
     }
     .ai-landed {
       animation: none;
+    }
+  }
+
+  /* Where the body checks fail, on the stage (viewer/body-check-marks.tsx). Each mark is anchored on
+     a joint: a ring around it (wider than the point's own rings, so the point stays readable) and a
+     triangle badge up and to the right that names the problem on hover or focus. */
+  .body-marks[data-ready="false"] {
+    visibility: hidden;
+  }
+  .body-marks[data-pending] .body-mark,
+  .body-marks[data-pending] svg {
+    opacity: 0.45;
+  }
+  .body-mark {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    will-change: transform;
+  }
+  .body-mark:hover,
+  .body-mark:focus-within {
+    z-index: 2;
+  }
+  .body-mark-ring {
+    position: absolute;
+    left: -19px;
+    top: -19px;
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    border: 2px solid var(--check-fail);
+    box-shadow:
+      0 0 0 1.5px var(--check-edge),
+      inset 0 0 0 1.5px var(--check-edge),
+      0 0 16px 2px rgba(255, 111, 97, 0.35);
+    pointer-events: none;
+  }
+  .body-mark[data-covered="true"] .body-mark-ring {
+    display: none;
+  }
+  .body-mark[data-severity="warning"] .body-mark-ring {
+    border-color: var(--check-warn);
+    border-style: dashed;
+    box-shadow:
+      0 0 0 1.5px var(--check-edge),
+      inset 0 0 0 1.5px var(--check-edge);
+  }
+  .body-mark-badge {
+    position: absolute;
+    left: calc(var(--badge-dx) + var(--shift-x, 0px));
+    top: calc(var(--badge-dy) + var(--shift-y, 0px));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    background: rgba(9, 11, 16, 0.86);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 4px 10px -4px rgba(0, 0, 0, 0.8);
+    cursor: pointer;
+    outline: none;
+  }
+  .body-mark[data-severity="error"] .body-mark-badge {
+    box-shadow: 0 0 0 1.5px var(--check-fail), 0 4px 10px -4px rgba(0, 0, 0, 0.8);
+  }
+  .body-mark-badge:hover {
+    background: rgba(30, 36, 49, 0.96);
+  }
+  .body-mark[data-severity] .body-mark-badge:focus-visible {
+    box-shadow:
+      0 0 0 2px var(--m3-primary),
+      0 0 0 4px #03100c;
+  }
+  .body-mark-label {
+    position: absolute;
+    left: calc(100% + 6px);
+    top: 50%;
+    transform: translateY(-50%);
+    width: max-content;
+    max-width: 240px;
+    padding: 4px 9px;
+    border-radius: 8px;
+    font-size: 11px;
+    line-height: 1.35;
+    text-align: left;
+    background: rgba(9, 11, 16, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+  .body-mark[data-flip="true"] .body-mark-label {
+    left: auto;
+    right: calc(100% + 6px);
+  }
+  .body-mark-badge:hover .body-mark-label,
+  .body-mark-badge:focus-visible .body-mark-label {
+    opacity: 1;
+  }
+  /* Balance: the floor area the feet support, the centre of mass dropped onto the floor. */
+  .balance-area {
+    fill: rgba(127, 224, 196, 0.12);
+    stroke: var(--check-base);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 4;
+    stroke-linejoin: round;
+  }
+  .balance-plumb {
+    stroke: var(--check-fail);
+    stroke-width: 1.5;
+    stroke-dasharray: 3 3;
+  }
+  /* The centre of mass itself, in the body: where the plumb line starts. */
+  .balance-com-top {
+    fill: var(--check-edge);
+    stroke: var(--check-fail);
+    stroke-width: 2;
+  }
+  .balance-com circle {
+    fill: var(--check-fail);
+    stroke: var(--check-edge);
+    stroke-width: 1.5;
+  }
+  .balance-com circle.balance-com-halo {
+    fill: none;
+    stroke: var(--check-fail);
+    stroke-width: 1.5;
+    opacity: 0.6;
+  }
+  .balance-com path {
+    stroke: var(--check-edge);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+  }
+  .issue-glyph {
+    flex: none;
+    display: inline-block;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .body-mark-label {
+      transition: none;
     }
   }
 }

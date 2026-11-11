@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type { LoopMode, PoseAngles } from "./anatomy.ts";
 import { savedFrom, type DraftOrigin } from "./pose-origin.ts";
+import type { BodyReport } from "./body-issues";
 import type { PoseIssue } from "./pose-validate";
 import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, EquipmentPlacement, VectorFormat, VectorStatus } from "./types";
 
@@ -196,6 +197,8 @@ export type StudioState = {
   modelBones: string[];
   /** What the validator says about the clip on screen, on the avatar's own rig. */
   poseIssues: PoseIssue[];
+  /** The same checks located: which part, which pose or stretch, which checks did not run (body-issues.ts). */
+  bodyReport: BodyReport | null;
   /** The poses changed and the body checks have not run on them yet (poseIssues is the previous result). */
   poseChecksPending: boolean;
   /** Sockets being edited (the avatar's with the gizmo moves applied); null when untouched. */
@@ -222,8 +225,8 @@ export type StudioState = {
   resetView: () => void;
   setEdit: (edit: Partial<EditState>) => void;
   setModelBones: (bones: string[]) => void;
-  /** The result of the body checks on the poses as they are now (clears poseChecksPending). */
-  setPoseIssues: (issues: PoseIssue[]) => void;
+  /** The result of the body checks on the poses as they are now, with where they fail (clears poseChecksPending). */
+  setPoseChecks: (issues: PoseIssue[], report: BodyReport | null) => void;
   /** The poses changed: the body checks will run again once the edits settle. */
   markPoseChecksPending: () => void;
   startPoseEdit: (
@@ -297,6 +300,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   poseProbe: {},
   modelBones: [],
   poseIssues: [],
+  bodyReport: null,
   poseChecksPending: false,
   draftSockets: null,
   draftPlacements: {},
@@ -328,7 +332,11 @@ export const useStudioStore = create<StudioState>((set) => ({
   resetView: () => set((s) => ({ viewNonce: s.viewNonce + 1 })),
   setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
   setModelBones: (modelBones) => set((s) => (sameJson(s.modelBones, modelBones) ? s : { modelBones })),
-  setPoseIssues: (poseIssues) => set((s) => (sameJson(s.poseIssues, poseIssues) ? (s.poseChecksPending ? { poseChecksPending: false } : s) : { poseIssues, poseChecksPending: false })),
+  setPoseChecks: (poseIssues, bodyReport) =>
+    set((s) => {
+      const same = sameJson(s.poseIssues, poseIssues) && sameJson(s.bodyReport, bodyReport);
+      return same ? (s.poseChecksPending ? { poseChecksPending: false } : s) : { poseIssues, bodyReport, poseChecksPending: false };
+    }),
   markPoseChecksPending: () => set((s) => (s.poseChecksPending ? s : { poseChecksPending: true })),
   startPoseEdit: (state) =>
     set({

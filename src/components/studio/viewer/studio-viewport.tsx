@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useShortcuts } from "@/hooks/use-shortcuts";
+import type { BodyIssue } from "@/lib/studio/body-issues";
 import { debugEnabled } from "@/lib/studio/load-state";
 import { togglePlayback } from "@/lib/studio/playback";
 import { editingStatus } from "@/lib/studio/pose-origin";
@@ -21,8 +22,10 @@ import { cn } from "@/lib/utils";
 import { EmptyState, IconButton, Segmented } from "../ui";
 import { useMovementClip } from "./movement-clip";
 import { AiDraftChip } from "../ai-draft";
+import { IssueGlyph } from "../issue-glyph";
 import { StudioLoader } from "../load-states";
 import { InBetweenNote } from "./in-between-note";
+import { BodyCheckMarks } from "./body-check-marks";
 import { PosePointsLayer } from "./pose-points-layer";
 import { useCanvasCommits } from "./render-stats";
 import type { ModelInfo } from "./studio-canvas";
@@ -121,6 +124,8 @@ function Toolbar() {
   );
 }
 
+const NO_ISSUES: BodyIssue[] = [];
+
 function Hud({
   scene,
   clipState,
@@ -134,8 +139,9 @@ function Hud({
   legendRef?: (el: HTMLDivElement | null) => void;
 }) {
   const debug = useDebugReadouts();
-  const issues = useStudioStore((s) => s.poseIssues);
+  const issues = useStudioStore((s) => s.bodyReport?.issues ?? NO_ISSUES);
   const errors = issues.filter((i) => i.severity === "error");
+  const warnings = issues.length - errors.length;
   // While the editor holds poses the stage shows them, not the selected clip: say so (a string, so slider ticks do not re-render this).
   const editing = useStudioStore((s) => (s.poseEdit ? editingStatus(s.poseEdit) : null));
   const editingSaved = useStudioStore((s) => Boolean(s.poseEdit?.vectorId && !s.poseEdit.dirty));
@@ -194,14 +200,15 @@ function Hud({
       <InBetweenNote />
       {/* The AI draft on its way (Cancel), or waiting for review in the side panel. */}
       <AiDraftChip className="pointer-events-auto shadow-lg" onReview={reviewSuggestion} />
+      {/* Where the body checks fail is marked on the body and the timeline; this only counts them. */}
       {issues.length ? (
         <div
-          className={cn("studio-glass max-w-[38ch] rounded-2xl px-3 py-1.5 text-[11px]", errors.length ? "text-(--m3-error)" : "text-(--m3-warning)")}
-          title={issues.map((i) => i.message).join("\n")}
+          className={cn("studio-glass flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium", errors.length ? "text-(--m3-error)" : "text-(--m3-warning)")}
+          title={issues.map((i) => `${i.title} · ${i.where}`).join("\n")}
+          data-stage-checks
         >
-          {errors.length ? `${errors.length} body check${errors.length === 1 ? "" : "s"} failed` : `${issues.length} warning${issues.length === 1 ? "" : "s"}`}
-          {/* On a short stage only the count shows here: the right panel's body checks give the full text. */}
-          <span className="stage-short-hide">{`: ${(errors[0] ?? issues[0]).message}`}</span>
+          <IssueGlyph severity={errors.length ? "error" : "warning"} size={13} />
+          {[errors.length ? `${errors.length} body problem${errors.length === 1 ? "" : "s"}` : "", warnings ? `${warnings} warning${warnings === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")}
         </div>
       ) : null}
       {info?.missingSockets.length ? (
@@ -284,6 +291,7 @@ export const StudioViewport = memo(function StudioViewport() {
         onClipError={onClipError}
       />
       <PosePointsLayer statusHost={barsHost} legendHost={legendHost} />
+      <BodyCheckMarks />
       {modelError ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="studio-glass flex max-w-[36ch] items-center gap-2 rounded-full px-3 py-1.5 text-center text-xs text-(--m3-error)">
