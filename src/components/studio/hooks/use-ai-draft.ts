@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { aiFate, sameDraft, type AiRequest, type DraftIdentity } from "@/lib/studio/ai-draft-request";
-import { aiReplacement, handMadeWork, replacementSummary, type AiDraftResponse } from "@/lib/studio/ai-draft-result";
+import { aiReplacement, handMadeWork, keepHandWork, replacementSummary, type AiDraftResponse } from "@/lib/studio/ai-draft-result";
 import { useAiDraftStore } from "@/lib/studio/ai-draft-store";
 import { useDragModeStore } from "@/lib/studio/drag-mode";
 import { useStudioStore, type PoseEditState } from "@/lib/studio/store";
@@ -32,9 +32,12 @@ function land(request: AiRequest, draft: AiDraftResponse) {
   const studio = useStudioStore.getState();
   const edit = studio.poseEdit;
   const ex = templateFor(request.exerciseId);
-  const fate = aiFate(request, useAiDraftStore.getState().latestId, identityOf(edit), Boolean(edit && handMadeWork(edit, ex)));
-  if (fate === "discard" || !edit) return;
-  const next = aiReplacement(draft, ex, edit.keyframe, request.instructions);
+  const built = edit ? aiReplacement(draft, ex, edit.keyframe, request.instructions) : null;
+  // What was set by hand is kept when the answer is built on the template and the poses match: nothing is lost then.
+  const keep = edit && built ? keepHandWork(edit, ex, built) : null;
+  const fate = aiFate(request, useAiDraftStore.getState().latestId, identityOf(edit), Boolean(edit && !keep && handMadeWork(edit, ex)));
+  if (fate === "discard" || !edit || !built) return;
+  const next = keep?.next ?? built;
   if (fate === "apply") {
     studio.replacePoses(next);
     useAiDraftStore.setState({ landed: { requestId: request.id, at: Date.now() }, suggestion: null });

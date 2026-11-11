@@ -242,6 +242,8 @@ export type StudioState = {
     meta?: Record<string, unknown>;
     /** The pose to hold afterwards (default the first): a rebuild from a drag stays on the dragged pose. */
     keyframe?: number;
+    /** The new poses still hold something set by hand (carried across a rebuild): default false. */
+    edited?: boolean;
   }) => void;
   /** The poses were stored as `vector`: it becomes the clip being edited, nothing left unsaved. */
   markPoseSaved: (vector: { id: string; seq: number }) => void;
@@ -348,7 +350,7 @@ export const useStudioStore = create<StudioState>((set) => ({
           twoHanded: next.twoHanded ?? s.poseEdit.twoHanded,
           meta: { ...s.poseEdit.meta, ...next.meta },
           origin: next.origin,
-          edited: false,
+          edited: next.edited ?? false,
           keyframe: Math.max(0, Math.min(next.keyframe ?? 0, next.poses.length - 1)),
           dirty: true,
         },

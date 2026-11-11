@@ -10,6 +10,7 @@ import type { LoopMode, PoseAngles } from "./anatomy.ts";
 import { draftParams, hasManualEdits } from "./draft-params.ts";
 import { buildTemplate, type TemplateExercise } from "./exercise-templates.ts";
 import type { AiNotes, DraftOrigin } from "./pose-origin.ts";
+import { automaticDraft, keepSetByYou, keptSummary } from "./point-state.ts";
 import { hasTemplate, templateDraft } from "./template-draft.ts";
 import { CHOICE_KEYS, SETTING_LABEL, normalizeParams, paramsFromMeta, settingChange, valueLabel } from "./template-settings.ts";
 
@@ -43,6 +44,8 @@ export type AiReplacement = {
   meta: Record<string, unknown>;
   origin: Extract<DraftOrigin, { kind: "ai" }>;
   keyframe: number;
+  /** What was set by hand was kept on these poses (keepHandWork): they still count as edited. */
+  edited?: boolean;
 };
 
 type EditLike = { poses: PoseAngles[]; labels: string[] | null; weights: number[] | null; meta: Record<string, unknown>; origin: DraftOrigin; edited: boolean };
@@ -123,6 +126,20 @@ export function aiReplacement(draft: AiDraftResponse, ex: TemplateExercise | nul
     origin: { kind: "ai", template: null, params: null, notes: explain.notes, explain },
     keyframe: Math.min(keyframe, draft.poses.length - 1),
   };
+}
+
+/**
+ * The answer with what was set by hand kept on it, when it is built on the template and each pose
+ * matches its automatic pose (point-state.ts): joints, pins and typed names stay, the rest is the
+ * AI's. Null when nothing can be matched; the answer then replaces the poses (or waits as a
+ * suggestion, see handMadeWork).
+ */
+export function keepHandWork(edit: EditLike & { twoHanded?: boolean }, ex: TemplateExercise | null, next: AiReplacement): { next: AiReplacement; kept: string | null } | null {
+  if (!next.origin.template || !templated(ex)) return null;
+  const keep = keepSetByYou(edit, automaticDraft(ex, edit), next);
+  if (!keep) return null;
+  const twoHanded = keep.edited && edit.twoHanded !== undefined ? { twoHanded: edit.twoHanded } : {};
+  return { next: { ...keep.next, ...twoHanded, edited: keep.edited }, kept: keptSummary(keep.kept) };
 }
 
 /** Names the user typed that the template would not give these poses. */

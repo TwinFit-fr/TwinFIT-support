@@ -36,11 +36,12 @@ function RowLabel({ label, ai }: { label: string; ai: boolean }) {
  * The exercise's template settings, in the pose editor: only those that change something for this
  * exercise (range, stance, grip, lean, side, tempo), and "Draft with AI", which sets the same
  * settings for you. A change rebuilds every pose in the browser at once, as one undo step, and the
- * origin label names the settings. A saved clip the template would change is locked until the user
- * confirms a rebuild once (rebuild-guard.ts); other manual edits get a warning before anything is touched.
+ * origin label names the settings. What was set by hand is kept when each pose has its automatic
+ * pose (point-state.ts); otherwise a saved clip is locked until the user confirms a rebuild once
+ * (rebuild-guard.ts) and other edits get a warning that says what cannot be kept.
  */
 export function ExerciseSettings() {
-  const { exercise, manualEdits, replaced, mode, draggable, guard, agree } = useDragMode();
+  const { exercise, manualEdits, replaced, match, mode, draggable, guard, agree } = useDragMode();
   const edit = useStudioStore((s) => s.poseEdit);
   const exerciseId = useStudioStore((s) => s.exerciseId);
   const notice = useRebuildNotice();
@@ -77,7 +78,7 @@ export function ExerciseSettings() {
     // Agreed in the confirm just now: no toast after the fact, the origin label says what happened.
     applyTemplateSettings(exercise, question.params);
   };
-  const warning = guard.locked ? null : rebuildWarning(replaced);
+  const warning = guard.locked ? null : rebuildWarning(replaced, match);
 
   return (
     <section aria-labelledby="exercise-settings-title" className="border-b border-(--m3-outline-variant) px-4 py-3" data-exercise-settings>

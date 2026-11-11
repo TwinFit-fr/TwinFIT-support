@@ -5,6 +5,7 @@
  * unless the user has edited the poses by hand. Pure.
  */
 
+import type { RebuildMatch } from "./point-state.ts";
 import type { DraftOrigin } from "./pose-origin.ts";
 
 export type DragMode = "exercise" | "limb";
@@ -38,12 +39,37 @@ const WHAT: Record<Exclude<Replaced, null>, string> = {
   draft: "the draft's poses",
 };
 
-/** Before anything is touched, in the settings group. */
-export function rebuildWarning(replaced: Replaced): string | null {
+const posesWord = (n: number) => `${n} pose${n === 1 ? "" : "s"}`;
+const CHANGING = "Changing a setting, here or by dragging the body,";
+
+/**
+ * Before anything is touched, in the settings group: what a setting change cannot keep, and why.
+ * Nothing when the poses match the template one to one, since what was set by hand is then kept
+ * (point-state.ts); only a pose added or removed, or poses not built from the template, lose work.
+ */
+export function rebuildWarning(replaced: Replaced, match: RebuildMatch | null = null): string | null {
+  if (!replaced || match?.kind === "match") return null;
+  const back = replaced === "clip" ? "Ctrl+Z brings the clip back." : "Ctrl+Z brings them back.";
+  if (match?.kind === "count") {
+    const { poses, built } = match;
+    const diff = Math.abs(poses - built);
+    const why = replaced === "clip" ? `This saved clip has ${posesWord(poses)} and the template builds ${built}` : `You ${poses > built ? "added" : "removed"} ${posesWord(diff)}: there are ${poses} and the template builds ${built}`;
+    const lost =
+      replaced === "clip"
+        ? "the clip's own poses are replaced"
+        : poses > built
+          ? `the ${diff === 1 ? "added pose" : `${diff} added poses`} and every change made by hand are replaced`
+          : "every change made by hand is replaced";
+    return `${why}, so the poses cannot be matched. ${CHANGING} rebuilds the template's ${posesWord(built)}: ${lost}. ${back}`;
+  }
+  if (match?.kind === "no-base") {
+    const why = replaced === "clip" ? "This saved clip does not say which settings built it" : replaced === "edits" ? "These poses were not built from the template, so your manual edits" : "These poses were not built from the template";
+    const tail = replaced === "edits" ? " cannot be matched to it." : ", so nothing in them can be matched to it.";
+    return `${why}${tail} ${CHANGING} replaces all ${posesWord(match.poses)} with the template's. ${back}`;
+  }
   if (replaced === "edits") return "These poses have manual edits. Changing a setting, here or by dragging the body, rebuilds every pose from the template and replaces them; Ctrl+Z brings them back.";
   if (replaced === "clip") return "This saved clip is not exactly the template. Changing a setting, here or by dragging the body, rebuilds every pose from the template; Ctrl+Z brings the clip back.";
-  if (replaced === "draft") return "These poses are not the template's. Changing a setting, here or by dragging the body, rebuilds every pose from the template; Ctrl+Z brings them back.";
-  return null;
+  return "These poses are not the template's. Changing a setting, here or by dragging the body, rebuilds every pose from the template; Ctrl+Z brings them back.";
 }
 
 /** Short, for the stage status while a drag changes a setting (the stage is narrow): "replaces the saved clip". */
@@ -53,8 +79,11 @@ export function replacesNote(replaced: Replaced): string | null {
   return replaced ? `replaces ${SHORT[replaced]}` : null;
 }
 
-/** After the rebuild, in the toast next to Undo. */
-export function rebuildToast(replaced: Replaced, change: string | null): string | null {
-  if (!replaced) return null;
+/**
+ * After the rebuild, in the toast next to Undo: what it replaced, or what it kept of what was set
+ * by hand (`kept`, from keptSummary); nothing to say for a plain change of the template's poses.
+ */
+export function rebuildToast(replaced: Replaced, change: string | null, kept: string | null = null): string | null {
+  if (!replaced) return kept ? `${change ? `${change}. ` : ""}${kept}` : null;
   return `${change ? `${change}. ` : ""}Every pose was rebuilt from the template and ${WHAT[replaced]} were replaced.`;
 }

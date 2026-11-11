@@ -3,9 +3,10 @@
 import type * as THREE from "three";
 import type { PoseAngles } from "@/lib/studio/anatomy";
 import { draftParams } from "@/lib/studio/draft-params";
-import { dragModeNow } from "@/lib/studio/drag-mode";
+import { automaticOf, dragModeNow } from "@/lib/studio/drag-mode";
 import { buildTemplate, type TemplateExercise, type TemplateParams } from "@/lib/studio/exercise-templates";
 import type { SolveContext } from "@/lib/studio/pose-clip";
+import { carrySetByYou } from "@/lib/studio/point-state";
 import { POINT_LABEL, toScreen, type PointId } from "@/lib/studio/pose-points";
 import type { PoseSession } from "@/lib/studio/pose-session";
 import { replacesNote } from "@/lib/studio/rebuild-words";
@@ -35,6 +36,8 @@ type Active = {
   choice: DragChoice | null;
   replaces: string | null;
   said: string;
+  /** The poses as they were and their automatic poses, when what was set by hand is kept across a rebuild. */
+  keep: { current: PoseAngles[]; before: PoseAngles[] } | null;
 };
 
 /** What the last release past the end of a setting left over, for the next drag of the same point. */
@@ -89,6 +92,14 @@ export function createExerciseDrag(session: PoseSession, view: () => View) {
     return { candidates, tracks: tracks.filter((t) => t.screen.every((p) => Number.isFinite(p.x))) };
   };
 
+  /** The drawn pose with what was set by hand kept on it, as the rebuild on release will keep it. */
+  const keepOn = (a: Active, k: number, d: Drawn): Drawn => {
+    if (!a.keep) return d;
+    const { current, before } = a.keep;
+    const one = (pose: PoseAngles, i: number) => (current[i] && before[i] ? (carrySetByYou([current[i]], [before[i]], [pose])?.poses[0] ?? pose) : pose);
+    return { pose: one(d.pose, k), stance: one(d.stance, 0) };
+  };
+
   const candidateOf = (a: Active, c: DragChoice | null) => (c ? a.candidates.find((x) => x.key === c.key && x.keyframe === c.keyframe) : undefined);
 
   const describe = (a: Active): ExerciseStatus => {
@@ -135,11 +146,13 @@ export function createExerciseDrag(session: PoseSession, view: () => View) {
       const track = c && c.id === id && c.poses === edit.poses && performance.now() - c.at < CARRY_MS ? tracks.find((t) => t.key === c.key && t.keyframe === c.keyframe) : undefined;
       const sameSpot = track && Math.hypot(track.screen[track.current].x - c!.end.x, track.screen[track.current].y - c!.end.y) < CARRY_SPOT_PX;
       const start = carriedStart(at, sameSpot ? c!.over : null);
-      active = { id, exercise: now.exercise, from, here, labels: built.labels, candidates, tracks, start, last: at, choice: null, replaces: replacesNote(now.replaced), said: "" };
+      const before = now.match.kind === "match" ? automaticOf(edit, now.exercise) : null;
+      const keep = before ? { current: edit.poses, before } : null;
+      active = { id, exercise: now.exercise, from, here, labels: built.labels, candidates, tracks, start, last: at, choice: null, replaces: replacesNote(now.replaced), said: "", keep };
       // The drawn pose starts as the one on the stage and glides to the template's (the same unless the poses were edited by hand).
       const first = candidates.find((c) => c.keyframe === here)!;
       shown = { pose: edit.poses[Math.min(edit.keyframe, edit.poses.length - 1)], stance: edit.poses[0] };
-      goal = poseAlong(first, first.current);
+      goal = keepOn(active, here, poseAlong(first, first.current));
       settleLeft = 0;
       last = performance.now();
       status(describe(active));
@@ -153,7 +166,7 @@ export function createExerciseDrag(session: PoseSession, view: () => View) {
       const c = a.choice;
       const candidate = candidateOf(a, c);
       if (c && candidate) {
-        goal = poseAlong(candidate, c.off ? candidate.current : c.t);
+        goal = keepOn(a, c.keyframe, poseAlong(candidate, c.off ? candidate.current : c.t));
         // The pose the setting shows on is the one held (the strip in the side panel follows).
         const state = useStudioStore.getState();
         if (state.poseEdit && state.poseEdit.keyframe !== c.keyframe && c.keyframe < state.poseEdit.poses.length) state.setPoseKeyframe(c.keyframe);

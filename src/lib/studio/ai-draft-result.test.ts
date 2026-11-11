@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { NEUTRAL_POSE, setPoseValue } from "./anatomy.ts";
-import { aiNotesOf, aiReplacement, handMadeWork, posesPhrase, replacementSummary, type AiDraftResponse } from "./ai-draft-result.ts";
+import { aiNotesOf, aiReplacement, handMadeWork, keepHandWork, posesPhrase, replacementSummary, type AiDraftResponse } from "./ai-draft-result.ts";
 import { draftParams, hasManualEdits } from "./draft-params.ts";
 import { DEFAULT_PARAMS, type TemplateExercise } from "./exercise-templates.ts";
 import { templateDraft } from "./template-draft.ts";
@@ -139,5 +139,29 @@ describe("suggestion or direct apply", () => {
     assert.equal(posesPhrase([1]), "pose 2");
     assert.equal(posesPhrase([0, 2]), "poses 1 and 3");
     assert.equal(posesPhrase([0, 1, 3]), "poses 1, 2 and 4");
+  });
+});
+
+describe("an AI answer on poses set by hand", () => {
+  it("keeps the joints, pins and names set by hand when each pose matches its automatic pose", () => {
+    const start = templateDraft(AIR_SQUAT, DEFAULT_PARAMS);
+    const poses = start.poses.map((p, i) => (i === 1 ? setPoseValue(p, "left_arm.wrist_flexion", 25) : p));
+    const edit = editOf(start, { poses, labels: ["ready", start.labels![1]], edited: true });
+    const kept = keepHandWork(edit, AIR_SQUAT, aiReplacement(answer(), AIR_SQUAT, 1))!;
+    const ai = aiReplacement(answer(), AIR_SQUAT, 1);
+    assert.equal(kept.next.poses[1].left_arm.wrist_flexion, 25);
+    // The knees are the AI's deep squat.
+    assert.equal(kept.next.poses[1].left_leg.knee_flexion, ai.poses[1].left_leg.knee_flexion);
+    assert.deepEqual(kept.next.labels, ["ready", ai.labels![1]]);
+    assert.equal(kept.next.edited, true);
+    assert.equal(kept.next.origin.kind, "ai");
+    assert.equal(kept.kept, "Kept what you set: left hand in pose 2.");
+  });
+
+  it("cannot keep anything from raw angles, or when a pose was added", () => {
+    const start = templateDraft(AIR_SQUAT, DEFAULT_PARAMS);
+    assert.equal(keepHandWork(editOf(start), AIR_SQUAT, aiReplacement(answer({ template: null, params: null }), AIR_SQUAT, 0)), null);
+    const added = editOf(start, { poses: [...start.poses, start.poses[0]], edited: true });
+    assert.equal(keepHandWork(added, AIR_SQUAT, aiReplacement(answer(), AIR_SQUAT, 0)), null);
   });
 });
