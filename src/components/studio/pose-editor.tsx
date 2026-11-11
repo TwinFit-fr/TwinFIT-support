@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Redo2, ShieldAlert, Sparkles, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, Copy, Link2, Pause, Pin, PinOff, Play, Plus, Redo2, Sparkles, Trash2, Undo2 } from "lucide-react";
 import {
   ANCHOR_IDS,
   LOOP_MODES,
@@ -14,6 +14,7 @@ import {
   type PoseClipJson,
 } from "@/lib/studio/anatomy";
 import { useConfirm } from "@/components/ui/confirm";
+import { useDragMode } from "@/lib/studio/drag-mode";
 import { DEFAULT_PARAMS } from "@/lib/studio/exercise-templates";
 import { applyPoseEdit } from "@/lib/studio/pose-drag";
 import { originLabel } from "@/lib/studio/pose-origin";
@@ -21,7 +22,9 @@ import { POINT_LABEL, isPointId } from "@/lib/studio/pose-points";
 import { MAX_POSES, useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
 import { AiDraftPanel, NoTemplateCallout, type DraftRequest } from "./ai-draft";
+import { BodyChecks } from "./body-checks";
 import { DraftOriginLine } from "./draft-origin";
+import { ExerciseSettings } from "./exercise-settings";
 import { PoseEditorActions, type SaveMode } from "./pose-editor-actions";
 import { PoseSliders as Sliders } from "./pose-sliders";
 import { Chip, IconButton, M3Button, NumberField, Segmented, Select, TextInput } from "./ui";
@@ -75,6 +78,7 @@ export function PoseEditor({
   const draft = useStudioStore((s) => s.poseEdit);
   const probe = useStudioStore((s) => s.poseProbe);
   const issues = useStudioStore((s) => s.poseIssues);
+  const { draggable } = useDragMode();
   const setKeyframe = useStudioStore((s) => s.setPoseKeyframe);
   const updatePose = useStudioStore((s) => s.updatePose);
   const endGesture = useStudioStore((s) => s.endPoseGesture);
@@ -214,6 +218,10 @@ export function PoseEditor({
             <NoTemplateCallout onDraft={onDraft} drafting={drafting} />
           </div>
         ) : null}
+        {/* The template's settings: a change rebuilds every pose */}
+        <ExerciseSettings />
+        {/* What the validator says about these poses on this avatar, right under what changes them */}
+        <BodyChecks />
         {/* Pose strip */}
         <div className="border-b border-(--m3-outline-variant) px-4 py-3">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
@@ -317,23 +325,6 @@ export function PoseEditor({
           </div>
         </div>
 
-        {/* What the validator says about these poses on this avatar */}
-        {issues.length ? (
-          <div className="border-b border-(--m3-outline-variant) px-4 py-2.5">
-            <div className={cn("mb-1 flex items-center gap-1.5 text-[11px] font-medium", errors.length ? "text-(--m3-error)" : "text-(--m3-warning)")}>
-              <ShieldAlert className="h-3.5 w-3.5" /> Body checks
-            </div>
-            <ul className="space-y-0.5 text-[11px] leading-snug text-(--m3-on-surface-variant)">
-              {issues.slice(0, 6).map((issue) => (
-                <li key={issue.code} className={issue.severity === "error" ? "text-(--m3-error)" : undefined}>
-                  {issue.message}
-                </li>
-              ))}
-              {issues.length > 6 ? <li>and {issues.length - 6} more</li> : null}
-            </ul>
-          </div>
-        ) : null}
-
         {/* Pins */}
         <div className="border-b border-(--m3-outline-variant) px-4 py-3">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-(--m3-on-surface-variant)">
@@ -354,8 +345,10 @@ export function PoseEditor({
               </Chip>
             ))}
           </div>
-          <p className="mt-2 text-[11px] leading-snug text-(--m3-on-surface-variant)">
-            On the stage, press any point of the body and drag it: the limb follows inside its range of motion and the sliders update. Arrow keys nudge the selected point.
+          <p className="mt-2 text-[11px] leading-snug text-(--m3-on-surface-variant)" data-pose-editor-help>
+            {draggable
+              ? "On the stage, press any point of the body and drag it. In Exercise mode the settings above follow and every pose is rebuilt; in Limb mode that limb moves inside its range of motion. Arrow keys nudge the selected point."
+              : "On the stage, press any point of the body and drag it: that limb moves inside its range of motion. Arrow keys nudge the selected point."}
             {isPointId(draft.dragTarget) ? ` Selected: ${POINT_LABEL[draft.dragTarget]}.` : ""}
           </p>
         </div>

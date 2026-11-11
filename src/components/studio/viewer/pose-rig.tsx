@@ -6,6 +6,7 @@ import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { TransformControls as TransformControlsImpl } from "three-stdlib";
 import { poseClipFromDraft } from "@/lib/studio/anatomy";
+import { useDragMode } from "@/lib/studio/drag-mode";
 import type { RestPose, SolveContext } from "@/lib/studio/pose-clip";
 import { dragPoint, mirrorApplies, settleDrag } from "@/lib/studio/pose-drag";
 import { OUT_OF_REACH_PX, nudgeKeepsAim, nudgeMetres } from "@/lib/studio/pose-hit";
@@ -14,6 +15,7 @@ import { POINT_LABEL, SKELETON_CHAINS, isPointId, metresPerPixel, mirrorPoint, n
 import { createPoseSession, median, type PoseSession } from "@/lib/studio/pose-session";
 import { useStudioStore, type PoseEditState } from "@/lib/studio/store";
 import type { AvatarSocket } from "@/lib/studio/types";
+import { createExerciseDrag } from "./exercise-drag";
 import { poseStage, type ScreenXY, type StageFrame } from "./pose-stage";
 
 declare global {
@@ -82,6 +84,7 @@ export function PoseRig({
   const editorOpen = useStudioStore((s) => Boolean(s.poseEdit) && s.edit.mode === "off");
   const selected = useStudioStore((s) => (s.poseEdit && isPointId(s.poseEdit.dragTarget) ? s.poseEdit.dragTarget : null));
   const playing = useStudioStore((s) => s.playing);
+  const limbMode = useDragMode().mode === "limb";
   const helper = useMemo(() => new THREE.Object3D(), []);
   const gizmo = useRef<TransformControlsImpl>(null);
   const drag = useRef<Drag | null>(null);
@@ -119,6 +122,9 @@ export function PoseRig({
     let probed: unknown = null;
     /** Where the last arrow-key nudge aimed (see nudgeFrom). */
     const aimed: { id: PointId | null; at: THREE.Vector3 | null } = { id: null, at: null };
+    /** Exercise mode: a drag drives the template's settings (exercise-drag.ts); `byExercise` while one is held. */
+    const exercise = createExerciseDrag(session, () => live.current);
+    let byExercise = false;
 
     const toNdc = (at: ScreenXY) => ({ x: (at.x / live.current.size.width) * 2 - 1, y: 1 - (at.y / live.current.size.height) * 2 });
 
@@ -159,6 +165,13 @@ export function PoseRig({
     };
 
     const finish = () => {
+      if (byExercise) {
+        byExercise = false;
+        exercise.end();
+        poseStage.layer?.setDragging(null);
+        setPointerDragging(false);
+        return;
+      }
       const d = drag.current;
       if (!d) return;
       if (d.pending) {
@@ -188,6 +201,12 @@ export function PoseRig({
       beginDrag(id, at) {
         const wasPlaying = useStudioStore.getState().playing;
         hold(id);
+        if (exercise.begin(id, at)) {
+          byExercise = true;
+          poseStage.layer?.setDragging(id, null);
+          setPointerDragging(true);
+          return;
+        }
         let through = pointNow(id);
         if (wasPlaying) {
           // The held pose replaces the playing frame: grab the point where that pose puts it.
@@ -202,6 +221,10 @@ export function PoseRig({
         setPointerDragging(true);
       },
       dragTo(at) {
+        if (byExercise) {
+          exercise.move(at);
+          return;
+        }
         const d = drag.current;
         if (!d || d.by !== "pointer") return;
         const hit = pointerOnCameraPlane(live.current.camera, toNdc(at), d.through);
@@ -254,13 +277,19 @@ export function PoseRig({
       const now = useStudioStore.getState();
       const held = !now.playing;
       let solved = null;
+      let preview = false;
       if (held && now.poseEdit) {
-        solved = session.solve(now.poseEdit.poses[now.poseEdit.keyframe], contextOf(now.poseEdit, live.current.sockets));
+        const ctx = contextOf(now.poseEdit, live.current.sockets);
+        const pose = now.poseEdit.poses[now.poseEdit.keyframe];
+        // An Exercise-mode drag draws the body gliding between template poses until it settles on the store's.
+        const drawn = exercise.frame({ pose, stance: now.poseEdit.poses[0] });
+        preview = drawn !== null;
+        solved = drawn ? session.solve(drawn.pose, { ...ctx, twoHanded: false, stance: drawn.stance }) : session.solve(pose, ctx);
         session.writeBones(solved);
       }
       session.readPoints(points);
       // The pins and the floor checks of the side panel read these: after a gesture, not on every frame of it.
-      if (solved && !drag.current && probed !== solved) {
+      if (solved && !drag.current && !preview && probed !== solved) {
         probed = solved;
         const probe: Record<string, [number, number, number]> = {};
         for (const [id, p] of Object.entries(points)) probe[id] = [r3(p.x), r3(p.y), r3(p.z)];
@@ -295,6 +324,7 @@ export function PoseRig({
 
     return () => {
       finish();
+      exercise.cancel();
       frameRef.current = null;
       poseStage.scene = null;
       poseStage.layer?.frame(null);
@@ -302,7 +332,8 @@ export function PoseRig({
   }, [session, frameRef, timeRef, helper]);
 
   // The axis gizmo is for constrained moves of the selected point; it steps aside while the point itself is dragged.
-  const showGizmo = editorOpen && selected !== null && !pointerDragging && (!playing || gizmoDragging);
+  // In Exercise mode a drag drives the settings: the gizmo (exact moves of one limb) is for Limb mode.
+  const showGizmo = editorOpen && selected !== null && limbMode && !pointerDragging && (!playing || gizmoDragging);
   return (
     <>
       <primitive object={helper} />

@@ -37,6 +37,18 @@ describe("pose editor undo", () => {
     assert.deepEqual(useStudioStore.getState().poseEdit?.weights, [1, 2, 3]);
   });
 
+  it("a rebuild from settings can stay on the pose being edited, and one undo brings the old poses and origin back", () => {
+    const s = useStudioStore.getState();
+    s.setPoseKeyframe(1);
+    const deep = { kind: "template" as const, template: "squat", params: { range: "deep" } };
+    s.replacePoses({ poses: [NEUTRAL_POSE, setPoseValue(NEUTRAL_POSE, "left_leg.knee_flexion", 120)], origin: deep, meta: { template_params: { range: "deep" } }, keyframe: 1 });
+    assert.equal(useStudioStore.getState().poseEdit?.keyframe, 1);
+    assert.deepEqual(useStudioStore.getState().poseEdit?.origin, deep);
+    useStudioStore.getState().undoPose();
+    assert.deepEqual(useStudioStore.getState().poseEdit?.origin, { kind: "template", template: "curl" });
+    assert.equal(useStudioStore.getState().poseEdit?.poses[1], NEUTRAL_POSE);
+  });
+
   it("keeps weights aligned with poses after undoing a duplicate", () => {
     const s = useStudioStore.getState();
     s.setPoseWeight(1, 2);

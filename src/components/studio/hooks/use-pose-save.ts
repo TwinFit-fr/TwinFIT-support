@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { useToast } from "@/components/ui/toast";
-import { isPoseClipJson, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
+import { isPoseClipJson, poseClipFromDraft, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
 import { fetchStudioAsset } from "@/lib/studio/asset-auth";
 import { clipFrom } from "@/lib/studio/pose-origin";
 import { useStudioStore } from "@/lib/studio/store";
@@ -116,6 +116,7 @@ export function usePoseSave(input: {
         }
         // The stored clip becomes the one on the stage and in the editor; its label says so (no toast over the buttons).
         markPoseSaved({ id: body.vector.id, seq: body.vector.seq });
+        playOnce();
         await refresh();
         setVector(body.vector.id);
       } catch (err) {
@@ -180,4 +181,23 @@ export function usePoseSave(input: {
   );
 
   return { onEditPoses, onOpenDraft, onSavePoses, onDraftPoses, saving, drafting };
+}
+
+/**
+ * The clip just saved plays once on the stage, from its start, so the result is seen without
+ * pressing Play; then the pose being edited is held again. Not with reduced motion, and not if the
+ * user has meanwhile paused, played on or changed the poses.
+ */
+function playOnce() {
+  if (typeof window === "undefined" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const state = useStudioStore.getState();
+  const edit = state.poseEdit;
+  if (!edit || state.playing) return;
+  const ms = (poseClipFromDraft(edit).duration / (state.speed || 1)) * 1000;
+  state.setPlaying(true);
+  const poses = edit.poses;
+  window.setTimeout(() => {
+    const now = useStudioStore.getState();
+    if (now.playing && now.poseEdit?.poses === poses) now.setPlaying(false);
+  }, ms + 150);
 }

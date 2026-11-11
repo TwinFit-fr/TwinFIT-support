@@ -187,6 +187,8 @@ export type StudioState = {
   modelBones: string[];
   /** What the validator says about the clip on screen, on the avatar's own rig. */
   poseIssues: PoseIssue[];
+  /** The poses changed and the body checks have not run on them yet (poseIssues is the previous result). */
+  poseChecksPending: boolean;
   /** Sockets being edited (the avatar's with the gizmo moves applied); null when untouched. */
   draftSockets: SocketDraft | null;
   /** Placement being edited per equipment key; empty when untouched. */
@@ -208,7 +210,10 @@ export type StudioState = {
   resetView: () => void;
   setEdit: (edit: Partial<EditState>) => void;
   setModelBones: (bones: string[]) => void;
+  /** The result of the body checks on the poses as they are now (clears poseChecksPending). */
   setPoseIssues: (issues: PoseIssue[]) => void;
+  /** The poses changed: the body checks will run again once the edits settle. */
+  markPoseChecksPending: () => void;
   startPoseEdit: (
     state: Omit<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "history" | "future" | "gestureOpen" | "weights" | "labels" | "edited"> &
       Partial<Pick<PoseEditState, "keyframe" | "dirty" | "dragTarget" | "weights" | "labels" | "edited">>,
@@ -223,6 +228,8 @@ export type StudioState = {
     grip?: string | null;
     twoHanded?: boolean;
     meta?: Record<string, unknown>;
+    /** The pose to hold afterwards (default the first): a rebuild from a drag stays on the dragged pose. */
+    keyframe?: number;
   }) => void;
   /** The poses were stored as `vector`: it becomes the clip being edited, nothing left unsaved. */
   markPoseSaved: (vector: { id: string; seq: number }) => void;
@@ -275,6 +282,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   poseProbe: {},
   modelBones: [],
   poseIssues: [],
+  poseChecksPending: false,
   draftSockets: null,
   draftPlacements: {},
 
@@ -297,7 +305,8 @@ export const useStudioStore = create<StudioState>((set) => ({
   resetView: () => set((s) => ({ viewNonce: s.viewNonce + 1 })),
   setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
   setModelBones: (modelBones) => set((s) => (sameJson(s.modelBones, modelBones) ? s : { modelBones })),
-  setPoseIssues: (poseIssues) => set((s) => (sameJson(s.poseIssues, poseIssues) ? s : { poseIssues })),
+  setPoseIssues: (poseIssues) => set((s) => (sameJson(s.poseIssues, poseIssues) ? (s.poseChecksPending ? { poseChecksPending: false } : s) : { poseIssues, poseChecksPending: false })),
+  markPoseChecksPending: () => set((s) => (s.poseChecksPending ? s : { poseChecksPending: true })),
   startPoseEdit: (state) =>
     set({
       poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], gestureOpen: false, weights: null, labels: null, edited: false, ...state },
@@ -318,7 +327,7 @@ export const useStudioStore = create<StudioState>((set) => ({
           meta: { ...s.poseEdit.meta, ...next.meta },
           origin: next.origin,
           edited: false,
-          keyframe: 0,
+          keyframe: Math.max(0, Math.min(next.keyframe ?? 0, next.poses.length - 1)),
           dirty: true,
         },
       };

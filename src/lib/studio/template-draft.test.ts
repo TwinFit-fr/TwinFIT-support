@@ -27,7 +27,7 @@ describe("default template draft", () => {
     const built = buildTemplate(ex, DEFAULT_PARAMS);
     assert.deepEqual(a.poses, built.poses);
     assert.deepEqual(a, b);
-    assert.deepEqual(a.origin, { kind: "template", template: built.id });
+    assert.deepEqual(a.origin, { kind: "template", template: built.id, params: DEFAULT_PARAMS });
     assert.deepEqual(a.labels, built.labels);
     assert.equal(a.mode, built.mode);
     assert.equal(a.twoHanded, false);

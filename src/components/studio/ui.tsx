@@ -229,16 +229,20 @@ export function Segmented<T extends string>({
   onChange,
   size = "md",
   className,
+  label,
 }: {
   value: T;
   options: { value: T; label: React.ReactNode; title?: string }[];
   onChange: (value: T) => void;
   size?: "sm" | "md";
   className?: string;
+  /** What the choice is about, for screen readers ("Range"). */
+  label?: string;
 }) {
   return (
     <div
       role="group"
+      aria-label={label}
       className={cn(
         "inline-flex overflow-hidden rounded-full border border-(--m3-outline) p-0.5",
         className,

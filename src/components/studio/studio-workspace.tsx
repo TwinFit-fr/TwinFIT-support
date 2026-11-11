@@ -11,6 +11,7 @@ import { CatalogSidebar } from "./catalog-sidebar";
 import { EquipmentDialog } from "./equipment-dialog";
 import { useExerciseLanding } from "./hooks/use-exercise-landing";
 import { usePoseSave } from "./hooks/use-pose-save";
+import { useTemplateExerciseSync } from "./hooks/use-template-settings";
 import { useSelectionGuard } from "./hooks/use-selection-guard";
 import { useStudioData } from "./hooks/use-studio-data";
 import { useVectorActions } from "./hooks/use-vector-actions";
@@ -67,6 +68,8 @@ export function StudioWorkspace() {
   );
 
   const poses = usePoseSave({ exercise, avatar, settings, refresh });
+  // The exercise's template, for its settings in the editor and for drags in Exercise mode.
+  useTemplateExerciseSync(exercise);
   const actions = useVectorActions({ exercise, avatar, refresh, onEditPoses: poses.onEditPoses });
   // Picking an exercise lands on editable poses (its clip, or the instant template draft).
   const plan = useExerciseLanding({ exercise, avatar, vectors, vectorsLoaded, active: tab === "poses", onEditPoses: poses.onEditPoses, onOpenDraft: poses.onOpenDraft });
