@@ -30,6 +30,7 @@ import { recordCanvasCommit } from "./render-stats";
 import { PoseRig } from "./pose-rig";
 import { poseStage } from "./pose-stage";
 import { usePoseChecks } from "./use-pose-checks";
+import { bakeDraftClip, useClipPlayback } from "./use-clip-playback";
 
 export type SceneProps = {
   avatarId: string | null;
@@ -145,15 +146,17 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   const showEquipment = useStudioStore((s) => s.showEquipment);
   const cleanMocap = useStudioStore((s) => s.cleanMocap);
 
-  // The pose editor's draft replaces the selected clip while it is open. Paused, the held pose is
-  // written straight onto the bones by PoseRig (no clip at all); playing, the draft is baked once.
-  // Only what shapes the clip is read, and only while playing, so a drag or a slider tick while
-  // paused never re-renders this component.
+  // The pose editor's draft replaces the selected clip while it is open. Holding a key pose, the
+  // pose is written straight onto the bones by PoseRig (no clip at all); playing or showing an
+  // in-between, the draft is baked once and sampled. Only what shapes the clip is read, and only
+  // then, so a drag or a slider tick on a held pose never re-renders this component, and moving
+  // the playhead never does either (the time is read in the frame loop).
   const editorOpen = useStudioStore((s) => Boolean(s.poseEdit));
   const editorPlaying = useStudioStore((s) => Boolean(s.poseEdit) && s.playing);
+  const scrubbing = useStudioStore((s) => s.scrubTime !== null);
   const draftSource = useStudioStore(
     useShallow((s) =>
-      s.poseEdit && s.playing
+      s.poseEdit && (s.playing || s.scrubTime !== null)
         ? {
             poses: s.poseEdit.poses,
             weights: s.poseEdit.weights,
@@ -222,10 +225,10 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
 
   // Anatomical keyframes become a three.js clip for this very rig; a ready clip is used as it is.
   const [resolvedClip, clipError] = useMemo<[THREE.AnimationClip | null, string | null]>(() => {
-    if (editorOpen && !draft) return [null, null]; // paused editor: PoseRig holds the pose
+    if (editorOpen && !draft) return [null, null]; // a held key pose: PoseRig holds it
     if (draft) {
       try {
-        return [buildPoseClip(model, draft, rest, liveSockets, draftSource?.poses[0]), null];
+        return [bakeDraftClip(model, draft, rest, liveSockets, draftSource?.poses[0]), null];
       } catch (error) {
         return [null, error instanceof Error ? error.message : String(error)];
       }
@@ -321,40 +324,10 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   const mixer = useMemo(() => new THREE.AnimationMixer(model), [model]);
   useEffect(() => () => mixer.uncacheRoot(model), [mixer, model]);
   const editing = edit.mode !== "off";
-  const holding = editorOpen && !editorPlaying;
-  useEffect(() => {
-    if (editing) {
-      mixer.stopAllAction();
-      restoreRestPose(model, rest);
-      return;
-    }
-    if (holding) {
-      mixer.stopAllAction(); // PoseRig writes the held pose onto the bones
-      return;
-    }
-    const active = resolvedClip ?? animations[0] ?? null;
-    if (!active) return;
-    const action = mixer.clipAction(active);
-    action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
-    return () => {
-      action.stop();
-      mixer.uncacheAction(active);
-      mixer.uncacheClip(active);
-    };
-  }, [mixer, model, rest, resolvedClip, animations, editing, holding]);
+  const holding = editorOpen && !editorPlaying && !scrubbing;
   // The pose editor's frame (held pose, drag, points) runs after the mixer, so its points sit on the bones as drawn.
   const poseFrame = useRef<(() => void) | null>(null);
-  const playhead = useRef(0);
-  // Playback controls are read straight from the store every frame: toggling them never re-renders the scene.
-  useFrame((_, delta) => {
-    const { playing, speed, edit } = useStudioStore.getState();
-    if (edit.mode !== "off") return;
-    if (playing) {
-      mixer.update(delta * speed);
-      playhead.current = mixer.time;
-    }
-    poseFrame.current?.();
-  });
+  useClipPlayback({ mixer, model, rest, clip: resolvedClip, fallback: animations[0] ?? null, editing, holding, poseFrame });
 
   // The gizmo moved the target: write its transform (metres, degrees) into the draft.
   const commitEdit = () => {
@@ -441,7 +414,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
             />
           ))
         : null}
-      <PoseRig model={model} rest={rest} sockets={liveSockets} frameRef={poseFrame} timeRef={playhead} />
+      <PoseRig model={model} rest={rest} sockets={liveSockets} frameRef={poseFrame} />
       {editing && editObject ? (
         <TransformControls
           object={editObject}

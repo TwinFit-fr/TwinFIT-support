@@ -563,32 +563,38 @@ export const LOOP_MODES: readonly LoopMode[] = ["cycle", "pingpong", "once"];
  */
 export function buildKeyframes(poses: PoseAngles[], durationS: number, mode: LoopMode, weights?: number[]): PoseKeyframe[] {
   if (!poses.length) throw new Error("A pose is needed");
-  if (poses.length === 1) {
+  return keyframeTimes(poses.length, durationS, mode, weights).map(({ t, position }) => ({ t, position, angles: poses[position] }));
+}
+
+/**
+ * When each pose is reached in one loop (the timing half of buildKeyframes, which the timeline
+ * shares): `position` is the pose's index, and a pose can come more than once (a boomerang's way
+ * back, a cycle's return to the start).
+ */
+export function keyframeTimes(count: number, durationS: number, mode: LoopMode, weights?: number[] | null): { t: number; position: number }[] {
+  if (count < 1) throw new Error("A pose is needed");
+  if (count === 1) {
     return [
-      { t: 0, position: 0, angles: poses[0] },
-      { t: durationS, position: 0, angles: poses[0] },
+      { t: 0, position: 0 },
+      { t: durationS, position: 0 },
     ];
   }
-  const w = poses.map((_, i) => Math.max(0.05, weights?.[i] ?? 1));
-  const order: number[] =
-    mode === "cycle"
-      ? [...poses.map((_, i) => i), 0]
-      : mode === "pingpong"
-        ? [...poses.map((_, i) => i), ...poses.map((_, i) => i).reverse().slice(1)]
-        : poses.map((_, i) => i);
+  const indices = Array.from({ length: count }, (_, i) => i);
+  const w = indices.map((i) => Math.max(0.05, weights?.[i] ?? 1));
+  const order: number[] = mode === "cycle" ? [...indices, 0] : mode === "pingpong" ? [...indices, ...[...indices].reverse().slice(1)] : indices;
   // Segment k goes from order[k-1] to order[k]; its weight is that of the pose being entered
   // (going forward) or the one being left (going back), so each transition keeps its tempo.
   const segments: number[] = [];
   for (let k = 1; k < order.length; k += 1) {
     const from = order[k - 1];
     const to = order[k];
-    segments.push(to > from ? w[to] : to === 0 && from === poses.length - 1 && mode === "cycle" ? w[0] : w[from]);
+    segments.push(to > from ? w[to] : to === 0 && from === count - 1 && mode === "cycle" ? w[0] : w[from]);
   }
   const total = segments.reduce((acc, v) => acc + v, 0);
   let t = 0;
-  return order.map((index, k) => {
+  return order.map((position, k) => {
     if (k > 0) t += (durationS * segments[k - 1]) / total;
-    return { t: k === order.length - 1 ? durationS : t, position: index, angles: poses[index] };
+    return { t: k === order.length - 1 ? durationS : t, position };
   });
 }
 

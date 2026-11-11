@@ -30,6 +30,8 @@ import { DockPreview, useDockPreview } from "./shell/dock-preview";
 import { StageStartHint } from "./shell/stage-start-hint";
 import { StudioShell } from "./shell/studio-shell";
 import { PanelStatusNote, StageFallback } from "./stage-states";
+import { TimelineDock } from "./timeline/timeline-dock";
+import { useTimelineShown } from "./timeline/use-timeline";
 import { CurrentExercise, TopbarTools } from "./topbar-tools";
 import { StudioViewport } from "./viewer/studio-viewport";
 
@@ -57,6 +59,8 @@ export function StudioWorkspace() {
   const [tab, setTab] = useRightTab(exercise?.id ?? null);
   const guard = useSelectionGuard();
   const dockPreview = useDockPreview();
+  // The timeline takes the dock while a pose draft or a clip is open; with nothing open the dock takes no space.
+  const timelineShown = useTimelineShown();
 
   const refresh = useCallback(() => Promise.all([mutateVectors(), mutateCatalog()]), [mutateVectors, mutateCatalog]);
 
@@ -153,8 +157,7 @@ export function StudioWorkspace() {
             onSettings={() => setSettingsDialog(true)}
           />
         }
-        // The bottom dock holds the timeline once it exists; until then it is empty (no space).
-        dock={dockPreview ? <DockPreview /> : undefined}
+        dock={timelineShown && stage.kind === "ready" ? <TimelineDock /> : dockPreview ? <DockPreview /> : undefined}
         left={<CatalogSidebar exercises={exercises} state={data.catalogState} error={data.catalogError} onRetry={mutateCatalog} />}
         center={
           // Until an avatar can be drawn the stage says why (loading, failed, first run), never "no avatar" too early.

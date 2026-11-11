@@ -5,15 +5,16 @@ import { TransformControls } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { TransformControls as TransformControlsImpl } from "three-stdlib";
-import { poseClipFromDraft } from "@/lib/studio/anatomy";
 import { useDragMode } from "@/lib/studio/drag-mode";
 import type { RestPose, SolveContext } from "@/lib/studio/pose-clip";
 import { dragPoint, mirrorApplies, settleDrag } from "@/lib/studio/pose-drag";
 import { OUT_OF_REACH_PX, nudgeKeepsAim, nudgeMetres } from "@/lib/studio/pose-hit";
+import { holdNearestKey } from "@/lib/studio/playback";
 import { legNote } from "@/lib/studio/pose-legs";
 import { POINT_LABEL, SKELETON_CHAINS, isPointId, metresPerPixel, mirrorPoint, nudgeOffset, pointerOnCameraPlane, toScreen, type NudgeKey, type PointId } from "@/lib/studio/pose-points";
 import { createPoseSession, median, type PoseSession } from "@/lib/studio/pose-session";
 import { useStudioStore, type PoseEditState } from "@/lib/studio/store";
+import { poseName } from "@/lib/studio/timeline";
 import type { AvatarSocket } from "@/lib/studio/types";
 import { createExerciseDrag } from "./exercise-drag";
 import { poseStage, type ScreenXY, type StageFrame } from "./pose-stage";
@@ -45,16 +46,17 @@ function contextOf(edit: PoseEditState, sockets: AvatarSocket[]): SolveContext {
   return { twoHanded: edit.twoHanded, grip: edit.grip, sockets, stance: edit.poses[0] };
 }
 
-/** The keyframe whose time is nearest the playhead: what a grab during playback edits. */
-function nearestPose(edit: PoseEditState, time: number): number {
-  const clip = poseClipFromDraft(edit);
-  const t = clip.duration > 0 ? ((time % clip.duration) + clip.duration) % clip.duration : 0;
-  let best = edit.keyframe;
-  let gap = Infinity;
-  for (const k of clip.keyframes) {
-    if (k.position !== undefined && Math.abs(k.t - t) < gap) [best, gap] = [k.position, Math.abs(k.t - t)];
-  }
-  return best;
+/** The view is not a held key pose (playing, or an in-between): a grab first holds the nearest key. */
+const notHeld = () => {
+  const s = useStudioStore.getState();
+  return s.playing || s.scrubTime !== null;
+};
+
+/** Hold the key pose nearest the playhead, and say so (a grab between keys edits a real pose). */
+function snapToNearestKey() {
+  const pose = holdNearestKey();
+  const edit = useStudioStore.getState().poseEdit;
+  if (pose !== null && edit) poseStage.layer?.announce(`Now editing ${poseName(pose, edit.labels)}, the key pose nearest the playhead.`);
 }
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -70,20 +72,19 @@ export function PoseRig({
   rest,
   sockets,
   frameRef,
-  timeRef,
 }: {
   model: THREE.Object3D;
   rest: RestPose;
   sockets: AvatarSocket[];
   frameRef: RefObject<(() => void) | null>;
-  timeRef: RefObject<number>;
 }) {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const session = useMemo<PoseSession>(() => createPoseSession(model, rest), [model, rest]);
   const editorOpen = useStudioStore((s) => Boolean(s.poseEdit) && s.edit.mode === "off");
   const selected = useStudioStore((s) => (s.poseEdit && isPointId(s.poseEdit.dragTarget) ? s.poseEdit.dragTarget : null));
-  const playing = useStudioStore((s) => s.playing);
+  // Playing or on an in-between the gizmo steps aside: a grab first holds the nearest key pose.
+  const moving = useStudioStore((s) => s.playing || s.scrubTime !== null);
   const limbMode = useDragMode().mode === "limb";
   const helper = useMemo(() => new THREE.Object3D(), []);
   const gizmo = useRef<TransformControlsImpl>(null);
@@ -149,13 +150,12 @@ export function PoseRig({
       return points[id]?.clone() ?? null;
     };
 
-    /** Selects the point and holds its pose: a grab during playback pauses on the nearest key pose. */
+    /** Selects the point and holds its pose: a grab during playback or on an in-between holds the nearest key pose. */
     const hold = (id: PointId) => {
       const state = useStudioStore.getState();
-      const edit = state.poseEdit;
-      if (!edit) return;
-      if (state.playing) state.setPoseKeyframe(nearestPose(edit, timeRef.current ?? 0));
-      state.setPoseDragTarget(id);
+      if (!state.poseEdit) return;
+      if (notHeld()) snapToNearestKey();
+      useStudioStore.getState().setPoseDragTarget(id);
     };
 
     /** What there is to say about how this point moves (a standing body's legs), for the status near the stage. */
@@ -199,7 +199,7 @@ export function PoseRig({
 
     poseStage.scene = {
       beginDrag(id, at) {
-        const wasPlaying = useStudioStore.getState().playing;
+        const wasPlaying = notHeld();
         hold(id);
         if (exercise.begin(id, at)) {
           byExercise = true;
@@ -275,7 +275,7 @@ export function PoseRig({
         d.moved = true;
       }
       const now = useStudioStore.getState();
-      const held = !now.playing;
+      const held = !now.playing && now.scrubTime === null;
       let solved = null;
       let preview = false;
       if (held && now.poseEdit) {
@@ -329,11 +329,11 @@ export function PoseRig({
       poseStage.scene = null;
       poseStage.layer?.frame(null);
     };
-  }, [session, frameRef, timeRef, helper]);
+  }, [session, frameRef, helper]);
 
   // The axis gizmo is for constrained moves of the selected point; it steps aside while the point itself is dragged.
   // In Exercise mode a drag drives the settings: the gizmo (exact moves of one limb) is for Limb mode.
-  const showGizmo = editorOpen && selected !== null && limbMode && !pointerDragging && (!playing || gizmoDragging);
+  const showGizmo = editorOpen && selected !== null && limbMode && !pointerDragging && (!moving || gizmoDragging);
   return (
     <>
       <primitive object={helper} />
@@ -347,8 +347,7 @@ export function PoseRig({
           translationSnap={null}
           onMouseDown={() => {
             if (!selected) return;
-            const state = useStudioStore.getState();
-            if (state.playing && state.poseEdit) state.setPoseKeyframe(nearestPose(state.poseEdit, timeRef.current ?? 0));
+            if (notHeld()) snapToNearestKey();
             drag.current = { id: selected, by: "gizmo", soft: false, through: new THREE.Vector3(), offset: new THREE.Vector3(), pending: null, aim: null, moved: false };
             poseStage.layer?.setDragging(selected, null);
             setGizmoDragging(true);
