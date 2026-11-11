@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { ChevronDown, Download, Dumbbell, Plus, Settings2, Users } from "lucide-react";
-import { useToast } from "@/components/ui/toast";
-import { downloadStudioAsset } from "@/lib/studio/asset-auth";
 import { useStudioStore } from "@/lib/studio/store";
-import { studioAssetUrl } from "@/lib/studio/storage-url";
-import type { BaseAvatar } from "@/lib/studio/types";
 import { AvatarDialog } from "./avatar-dialog";
 import { AvatarManageDialog } from "./avatar-manage-dialog";
 import { CatalogSidebar } from "./catalog-sidebar";
@@ -20,63 +15,10 @@ import { InspectorPanel } from "./inspector-panel";
 import { PoseEditor } from "./pose-editor";
 import { RigEditor } from "./rig-editor";
 import { SettingsDialog } from "./settings-dialog";
-import { StudioShell } from "./studio-shell";
-import { IconButton, M3Button } from "./ui";
+import { DockPreview, useDockPreview } from "./shell/dock-preview";
+import { StudioShell } from "./shell/studio-shell";
+import { CurrentExercise, TopbarTools } from "./topbar-tools";
 import { StudioViewport } from "./viewer/studio-viewport";
-
-function AvatarMenu({
-  avatars,
-  selected,
-  onSelect,
-  onAdd,
-  onManage,
-}: {
-  avatars: BaseAvatar[];
-  selected: BaseAvatar | null;
-  onSelect: (id: string) => void;
-  onAdd: () => void;
-  onManage: () => void;
-}) {
-  const toast = useToast();
-  const modelUrl = selected ? studioAssetUrl(selected.file_id, selected.model_url) : null;
-  return (
-    <div className="flex items-center gap-2">
-      <div className="relative">
-        <select
-          value={selected?.id ?? ""}
-          onChange={(e) => onSelect(e.target.value)}
-          aria-label="Base avatar"
-          className="studio-state h-8 cursor-pointer appearance-none rounded-full border border-(--m3-outline-variant) bg-(--m3-surface-container-high) pl-3 pr-8 text-xs text-(--m3-on-surface) outline-none focus-visible:border-(--m3-primary)"
-        >
-          {!avatars.length ? <option value="">No avatar</option> : null}
-          {avatars.map((a) => (
-            <option key={a.id} value={a.id} disabled={a.status !== "ready"}>
-              {a.name} · {a.subject} · {a.rig}
-              {a.is_default ? " · default" : ""}
-              {a.status === "processing" || a.status === "pending" ? ` · building ${a.progress}%` : a.status === "error" ? " · failed" : ""}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-(--m3-on-surface-variant)" />
-      </div>
-      <M3Button size="sm" variant="outlined" onClick={onAdd}>
-        <Plus className="h-3.5 w-3.5" /> Avatar
-      </M3Button>
-      <IconButton label="Manage the avatars (rename, default, retry, delete)" onClick={onManage} className="h-8 w-8">
-        <Users className="h-3.5 w-3.5" />
-      </IconButton>
-      {modelUrl && selected ? (
-        <IconButton
-          label="Download this avatar's .glb (upload it to a capture tool as a custom character so its exports fit the rig)"
-          onClick={() => void downloadStudioAsset(modelUrl, `${selected.code.toLowerCase()}.glb`).catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Download failed"))}
-          className="h-8 w-8"
-        >
-          <Download className="h-3.5 w-3.5" />
-        </IconButton>
-      ) : null}
-    </div>
-  );
-}
 
 /**
  * The Studio page: data and selection (useStudioData), the pipeline driver, vector actions and
@@ -90,6 +32,7 @@ export function StudioWorkspace() {
   const setAvatar = useStudioStore((s) => s.setAvatar);
   const poseEditing = useStudioStore((s) => Boolean(s.poseEdit));
   const guard = useSelectionGuard();
+  const dockPreview = useDockPreview();
 
   const refresh = useCallback(() => Promise.all([mutateVectors(), mutateCatalog()]), [mutateVectors, mutateCatalog]);
 
@@ -124,23 +67,22 @@ export function StudioWorkspace() {
   return (
     <>
       <StudioShell
-        topbar={
-          <div className="flex items-center gap-4">
-            {exercise ? (
-              <span className="hidden max-w-[32ch] truncate text-sm text-(--m3-on-surface-variant) lg:block">
-                <span className="text-(--m3-on-surface)">{exercise.display_name}</span>
-                <span className="ml-2 font-mono text-[11px] opacity-60">#{exercise.exo_id}</span>
-              </span>
-            ) : null}
-            <AvatarMenu avatars={avatars} selected={avatar} onSelect={chooseAvatar} onAdd={() => setAvatarDialog(true)} onManage={() => setManageDialog(true)} />
-            <M3Button size="sm" variant="outlined" onClick={() => setEquipmentDialog(true)} title="3D models of the catalog equipment">
-              <Dumbbell className="h-3.5 w-3.5" /> Equipment
-            </M3Button>
-            <IconButton label="Studio settings (pipeline, defaults, prompt template, storage)" onClick={() => setSettingsDialog(true)} disabled={!settings} className="h-8 w-8">
-              <Settings2 className="h-3.5 w-3.5" />
-            </IconButton>
-          </div>
+        title={<CurrentExercise exercise={exercise} />}
+        rightTitle={poseEditing ? "Pose editor" : "Inspector"}
+        tools={
+          <TopbarTools
+            avatars={avatars}
+            selected={avatar}
+            settingsReady={Boolean(settings)}
+            onSelectAvatar={chooseAvatar}
+            onAddAvatar={() => setAvatarDialog(true)}
+            onManageAvatars={() => setManageDialog(true)}
+            onEquipment={() => setEquipmentDialog(true)}
+            onSettings={() => setSettingsDialog(true)}
+          />
         }
+        // The bottom dock holds the timeline once it exists; until then it is empty (no space).
+        dock={dockPreview ? <DockPreview /> : undefined}
         left={<CatalogSidebar exercises={exercises} loading={catalogLoading} />}
         center={
           <>
@@ -155,27 +97,30 @@ export function StudioWorkspace() {
           </>
         }
         right={
-          poseEditing ? (
-            <PoseEditor onSave={poses.onSavePoses} saving={poses.saving} onDraft={poses.onDraftPoses} drafting={poses.drafting} />
-          ) : (
-            <InspectorPanel
-              // Remounted per exercise (fresh draft); an avatar change keeps what you typed.
-              key={exercise?.id ?? "none"}
-              exercise={exercise}
-              avatar={avatar}
-              settings={settings}
-              vectors={vectors}
-              vectorsLoading={vectorsLoading}
-              equipmentCodes={equipmentCodes}
-              supportCodes={supportCodes}
-              generating={actions.generating}
-              busyVectorId={actions.busyVectorId}
-              onGenerate={actions.onGenerate}
-              onVectorAction={actions.onVectorAction}
-              onUploadClip={actions.onUploadClip}
-              onNewPoses={poses.onNewPoses}
-            />
-          )
+          <>
+            {poseEditing ? <PoseEditor onSave={poses.onSavePoses} saving={poses.saving} onDraft={poses.onDraftPoses} drafting={poses.drafting} /> : null}
+            {/* Kept mounted (hidden) while the pose editor is open, so the prompt, equipment and
+                pipeline being written survive a round trip to the editor. */}
+            <div hidden={poseEditing} className="flex min-h-0 flex-1 flex-col">
+              <InspectorPanel
+                // Remounted per exercise (fresh draft); an avatar change keeps what you typed.
+                key={exercise?.id ?? "none"}
+                exercise={exercise}
+                avatar={avatar}
+                settings={settings}
+                vectors={vectors}
+                vectorsLoading={vectorsLoading}
+                equipmentCodes={equipmentCodes}
+                supportCodes={supportCodes}
+                generating={actions.generating}
+                busyVectorId={actions.busyVectorId}
+                onGenerate={actions.onGenerate}
+                onVectorAction={actions.onVectorAction}
+                onUploadClip={actions.onUploadClip}
+                onNewPoses={poses.onNewPoses}
+              />
+            </div>
+          </>
         }
       />
       {equipmentDialog ? <EquipmentDialog onClose={() => setEquipmentDialog(false)} onChanged={() => void data.mutateEquipment()} /> : null}

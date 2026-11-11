@@ -19,6 +19,7 @@ import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
 import { EmptyState, IconButton, Segmented } from "../ui";
 import { useMovementClip } from "./movement-clip";
+import { PosePointsLayer } from "./pose-points-layer";
 import { useCanvasCommits } from "./render-stats";
 import type { ModelInfo } from "./studio-canvas";
 
@@ -141,9 +142,11 @@ function Hud({
           ? `Clip error: ${clipState.error}`
           : `Playing #${scene.vectorSeq}${scene.vectorFps ? ` · ${scene.vectorFps} fps` : ""}`;
   return (
-    <div className="pointer-events-none absolute left-4 top-4 flex flex-col gap-2">
-      <div className="studio-glass flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px]">
-        <span className="h-1.5 w-1.5 rounded-full bg-(--m3-primary)" />
+    // Leaves room on the right for the axis gizmo and the rig editor button under it.
+    <div className="pointer-events-none absolute left-(--studio-stage-inset) top-(--studio-stage-inset) flex max-w-[calc(100%-var(--studio-gizmo-reserve)-2*var(--studio-stage-inset))] flex-col items-start gap-2">
+      {/* Wraps onto a second line on a narrow stage instead of cutting the details. */}
+      <div className="studio-glass flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-2xl px-3 py-1.5 text-[11px]">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--m3-primary)" />
         <span className="font-medium text-(--m3-on-surface)">{scene.avatarName ?? "No avatar"}</span>
         {scene.rig ? (
           <span className="text-(--m3-on-surface-variant)">
@@ -185,6 +188,7 @@ function Hud({
       ) : null}
       {process.env.NODE_ENV !== "production" ? (
         <div
+          data-dev-only
           className="studio-glass rounded-full px-3 py-1 font-mono text-[10px] text-(--m3-on-surface-variant)/70"
           title="React commits of the 3D canvas. It should stay still while you type, scroll or the queue refreshes."
         >
@@ -247,6 +251,7 @@ export const StudioViewport = memo(function StudioViewport() {
         onError={onError}
         onClipError={onClipError}
       />
+      <PosePointsLayer />
       {progress !== null || modelError ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div
@@ -265,10 +270,11 @@ export const StudioViewport = memo(function StudioViewport() {
         clipState={clipSolveError && clipSolveError.key === scene.clipUrl ? { ...clipState, error: clipSolveError.message } : clipState}
         info={info}
       />
-      <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center">
+      <div className="pointer-events-none absolute inset-x-(--studio-stage-inset) bottom-(--studio-stage-inset) flex justify-center">
         <Toolbar />
       </div>
-      <div className="pointer-events-none absolute right-4 top-4 flex items-center gap-1 rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-(--m3-on-surface-variant)/70">
+      {/* Left of the axis gizmo, only where the stage is wide enough for it next to the HUD. */}
+      <div className="pointer-events-none absolute right-(--studio-gizmo-reserve) top-(--studio-stage-inset) hidden items-center gap-1 rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-(--m3-on-surface-variant) @4xl/stage:flex">
         <Crosshair className="h-3 w-3" /> orbit · pan · zoom
       </div>
     </div>
