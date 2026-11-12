@@ -7,6 +7,7 @@ import { aiReplacement, handMadeWork, keepHandWork, replacementSummary, type AiD
 import { useAiDraftStore } from "@/lib/studio/ai-draft-store";
 import { useDragModeStore } from "@/lib/studio/drag-mode";
 import { useStudioStore, type PoseEditState } from "@/lib/studio/store";
+import { draftPoses } from "@/lib/studio/studio-api";
 
 /** One request at a time, page-wide: a new one, a cancel or another draft aborts the previous. */
 let controller: AbortController | null = null;
@@ -64,18 +65,18 @@ export function useAiDraft() {
       const request: AiRequest = { id: ++nextId, exerciseId: edit.exerciseId, avatarId: edit.avatarId, editId: edit.editId, instructions: instructions.trim(), startedAt: Date.now() };
       useAiDraftStore.setState({ pending: request, latestId: request.id, suggestion: null, failure: null, landed: null });
       try {
-        const body = (await staffFetch("/api/studio/poses/draft", {
-          method: "POST",
-          signal: own.signal,
-          body: JSON.stringify({
+        const body = (await draftPoses(
+          staffFetch,
+          {
             exercise_id: edit.exerciseId,
             avatar_id: edit.avatarId,
             items: edit.items,
             two_handed: edit.twoHanded,
             instructions: request.instructions || null,
             pose_count: null,
-          }),
-        })) as { draft: AiDraftResponse };
+          },
+          own.signal,
+        )) as { draft: AiDraftResponse };
         if (!own.signal.aborted) land(request, body.draft);
       } catch (err) {
         if (own.signal.aborted || useAiDraftStore.getState().latestId !== request.id) return;

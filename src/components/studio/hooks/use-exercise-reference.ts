@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
 import { referenceOf, type ExerciseReference, type ReferenceResponse } from "@/lib/studio/exercise-reference";
 import { useStudioStore } from "@/lib/studio/store";
+import { STUDIO_AVATARS_KEY, STUDIO_EXERCISES_KEY, exerciseReferenceKey } from "@/lib/studio/studio-api";
 import type { BaseAvatar, StudioExercise } from "@/lib/studio/types";
 
 /**
@@ -20,11 +21,11 @@ export function useExerciseReference(): {
 } {
   const exerciseId = useStudioStore((s) => s.exerciseId);
   const avatarId = useStudioStore((s) => s.scene.avatarId);
-  const { data: catalog } = useStaffSWR<{ exercises: StudioExercise[] }>("/api/studio/exercises");
-  const { data: avatars } = useStaffSWR<{ avatars: BaseAvatar[] }>("/api/studio/avatars");
+  const { data: catalog } = useStaffSWR<{ exercises: StudioExercise[] }>(STUDIO_EXERCISES_KEY);
+  const { data: avatars } = useStaffSWR<{ avatars: BaseAvatar[] }>(STUDIO_AVATARS_KEY);
   const exercise = useMemo(() => catalog?.exercises.find((e) => e.id === exerciseId) ?? null, [catalog, exerciseId]);
   const subject = avatars?.avatars.find((a) => a.id === avatarId)?.subject === "woman" ? "woman" : "man";
-  const key = exercise ? `/api/studio/exercises/reference?exo=${exercise.exo_id}&subject=${subject}` : null;
+  const key = exercise ? exerciseReferenceKey(exercise.exo_id, subject) : null;
   const { data, error, isLoading, mutate } = useStaffSWR<ReferenceResponse>(key, { keepPreviousData: false, dedupingInterval: 60_000 });
   const reference = useMemo(() => (data ? referenceOf(data) : null), [data]);
   return { exercise, reference, loading: Boolean(key) && isLoading, error, retry: () => void mutate() };

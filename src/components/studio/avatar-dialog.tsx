@@ -8,6 +8,7 @@ import { explainAvatarError } from "@/lib/studio/avatar-form";
 import { readAsDataUrl } from "@/lib/studio/format";
 import { MESHY_AVATAR, avatarBuildRequest, shortEstimate } from "@/lib/studio/paid-actions";
 import { defaultSockets } from "@/lib/studio/prompt";
+import { createAvatar } from "@/lib/studio/studio-api";
 import type { AvatarRig, AvatarSubject, BaseAvatar } from "@/lib/studio/types";
 import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
 import { AVATAR_SOURCES, AvatarSourceList } from "./avatar-sources";
@@ -50,7 +51,7 @@ export function AvatarDialog({
   const about = AVATAR_SOURCES.find((s) => s.value === source)!;
 
   const post = async (body: FormData | object): Promise<BaseAvatar> =>
-    ((await staffFetch("/api/studio/avatars", { method: "POST", body: body instanceof FormData ? body : JSON.stringify(body) })) as { avatar: BaseAvatar }).avatar;
+    ((await createAvatar(staffFetch, body)) as { avatar: BaseAvatar }).avatar;
 
   const submit = async () => {
     setError(null);
