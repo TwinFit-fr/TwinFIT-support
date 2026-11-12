@@ -42,7 +42,7 @@ Keep a live progress page (one line per event, including each routing decision) 
 ## Backend scope
 
 Only the `animation_studio` schema:
-- edit migration `1790000000082_animation_studio` in place and mirror each change to the local database with psql;
+- edit migration `1790000000086_animation_studio` in place and mirror each change to the local database with psql;
 - keep `DATABASE_CONTRACT.md` and `CHANGELOG.md` aligned;
 - keep the schema test green: `cd tests && node --import tsx --test integration/animation-studio-schema/*.test.ts`.
 
