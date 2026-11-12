@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type { AvatarSocket } from "./types";
+import { mannequinSockets } from "./rig-points.ts";
 
 /**
  * A procedural mannequin with the Mixamo skeleton (bone names `mixamorig<Name>`, T-pose rest,
@@ -79,15 +79,8 @@ const HEAD_RADIUS = 0.11;
 const BASE_HEIGHT = 1.75;
 export const MANNEQUIN_CODE = "MANNEQUIN_MIXAMO";
 
-export function mannequinSockets(heightM: number): AvatarSocket[] {
-  const k = heightM / BASE_HEIGHT;
-  return [
-    { id: "hand_l", bone: "mixamorigLeftHand", offset: [0.05 * k, 0, 0] },
-    { id: "hand_r", bone: "mixamorigRightHand", offset: [-0.05 * k, 0, 0] },
-    { id: "back", bone: "mixamorigSpine2", offset: [0, 0, -0.16 * k] },
-    { id: "feet", bone: "mixamorigHips", offset: [0, -0.98 * k, 0] },
-  ];
-}
+/** The mannequin's sockets (rig-points.ts holds the rule, so the rig editor can offer to go back to them). */
+export { mannequinSockets };
 
 function withSkin(geometry: THREE.BufferGeometry, boneIndex: number): THREE.BufferGeometry {
   const count = geometry.attributes.position.count;

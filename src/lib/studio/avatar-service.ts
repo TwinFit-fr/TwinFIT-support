@@ -9,6 +9,7 @@
  */
 
 import { canonicalBoneName, type CanonicalBone } from "./bone-names";
+import { socketsForBones } from "./rig-points";
 import {
   MESHY_DEFAULTS,
   MeshyError,
@@ -132,12 +133,8 @@ export function socketsFromBones(names: string[]): { sockets: AvatarSocket[]; bo
     const canonical = canonicalBoneName(name);
     if (canonical && !bones[canonical]) bones[canonical] = name;
   }
-  const sockets: AvatarSocket[] = [];
-  if (bones.LeftHand) sockets.push({ id: "hand_l", bone: bones.LeftHand, offset: [0.05, 0, 0] });
-  if (bones.RightHand) sockets.push({ id: "hand_r", bone: bones.RightHand, offset: [-0.05, 0, 0] });
-  if (bones.Spine2 ?? bones.Spine1) sockets.push({ id: "back", bone: (bones.Spine2 ?? bones.Spine1)!, offset: [0, 0, -0.16] });
-  if (bones.Hips) sockets.push({ id: "feet", bone: bones.Hips, offset: [0, -0.95, 0] });
-  return { sockets, bones };
+  // The rule is shared with the rig editor, which offers to put a moved socket back where it was detected.
+  return { sockets: socketsForBones(bones), bones };
 }
 
 /** Download the rigged GLB, store it, detect the sockets, mark the row ready (default if asked). Caller holds the finish claim. */

@@ -1,8 +1,8 @@
 "use client";
 
-import { Component, Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, createPortal, useFrame } from "@react-three/fiber";
-import { ContactShadows, Grid, OrbitControls, TransformControls, useGLTF, useProgress } from "@react-three/drei";
+import { ContactShadows, Grid, OrbitControls, useGLTF, useProgress } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { useShallow } from "zustand/react/shallow";
@@ -21,6 +21,8 @@ import { AxisWidget } from "./axis-widget";
 import { CameraRig } from "./camera-rig";
 import { showBody } from "./stage-body";
 import { PoseRig } from "./pose-rig";
+import { RigEditScene } from "./rig-edit-scene";
+import { rigTargetRef } from "./rig-stage";
 import { poseStage } from "./pose-stage";
 import { usePoseChecks } from "./use-pose-checks";
 import { bakeDraftClip, useClipPlayback } from "./use-clip-playback";
@@ -197,20 +199,26 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   const draftSockets = useStudioStore((s) => (s.draftSockets?.avatarId === avatarId ? s.draftSockets.sockets : null));
   const draftPlacements = useStudioStore((s) => s.draftPlacements);
   const liveSockets = draftSockets ?? sockets;
+  const editing = edit.mode !== "off";
+  // While the rig is edited the avatar stands still: the clip and the body checks keep the sockets
+  // they had (a drag writes the draft every frame), and take the edited ones once the editor closes.
+  const [heldSockets, setHeldSockets] = useState(liveSockets);
+  if (!editing && heldSockets !== liveSockets) setHeldSockets(liveSockets);
+  const solveSockets = editing ? heldSockets : liveSockets;
 
   // Anatomical keyframes become a three.js clip for this very rig; a ready clip is used as it is.
   const [resolvedClip, clipError] = useMemo<[THREE.AnimationClip | null, string | null]>(() => {
     if (editorOpen && !draft) return [null, null]; // a held key pose: PoseRig holds it
     if (draft) {
       try {
-        return [bakeDraftClip(model, draft, rest, liveSockets, draftSource?.poses[0]), null];
+        return [bakeDraftClip(model, draft, rest, solveSockets, draftSource?.poses[0]), null];
       } catch (error) {
         return [null, error instanceof Error ? error.message : String(error)];
       }
     }
     if (!clip) return [null, null];
     try {
-      if (isPoseClipJson(clip)) return [buildPoseClip(model, clip, rest, liveSockets), null];
+      if (isPoseClipJson(clip)) return [buildPoseClip(model, clip, rest, solveSockets), null];
       if (isMocapClip(clip)) {
         const { clip: retargeted, report } = retargetToAvatar(model, clip, rest);
         if (report.unmatched.length && process.env.NODE_ENV !== "production") {
@@ -225,16 +233,17 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
     } catch (error) {
       return [null, error instanceof Error ? error.message : String(error)];
     }
-  }, [clip, draft, draftSource, editorOpen, model, rest, liveSockets, cleanMocap]);
+  }, [clip, draft, draftSource, editorOpen, model, rest, solveSockets, cleanMocap]);
   useEffect(() => {
     if (clipError) onClipError?.(clipError);
   }, [clipError, onClipError]);
 
   // The clip on screen, checked as a body on this rig once the edits settle.
-  usePoseChecks(model, rest, liveSockets, clip);
+  usePoseChecks(model, rest, solveSockets, clip);
 
-  // The camera frames the body once it shows something new: this avatar, another clip, the pose editor.
-  const shown = editorOpen ? "editor" : resolvedClip;
+  // The camera frames the body once it shows something new: this avatar, another clip, the pose
+  // editor, the rig editor (beside its panel, in the free part of the stage).
+  const shown = editing ? "rig" : editorOpen ? "editor" : resolvedClip;
   useEffect(() => {
     showBody(model);
     return () => showBody(null);
@@ -266,9 +275,6 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
     const draft = draftPlacements[key];
     return draft ? { ...saved, placement: draft } : saved;
   };
-  const [editObject, setEditObject] = useState<THREE.Object3D | null>(null);
-  // Stable callback ref: it is attached to the edit target only, so React calls it once per target change.
-  const editRef = useCallback((o: THREE.Object3D | null) => setEditObject(o), []);
 
   // Items by the socket they hang from; bilateral items are drawn between two bones (see below).
   const { socketGroups, bilateral, rootItems } = useMemo(() => {
@@ -305,37 +311,20 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   // avatar stands in its bind pose so sockets are placed on a still body.
   const mixer = useMemo(() => new THREE.AnimationMixer(model), [model]);
   useEffect(() => () => mixer.uncacheRoot(model), [mixer, model]);
-  const editing = edit.mode !== "off";
   const holding = editorOpen && !editorPlaying && !scrubbing;
   // The pose editor's frame (held pose, drag, points) runs after the mixer, so its points sit on the bones as drawn.
   const poseFrame = useRef<(() => void) | null>(null);
   useClipPlayback({ mixer, model, rest, clip: resolvedClip, fallback: animations[0] ?? null, editing, holding, poseFrame });
 
-  // The gizmo moved the target: write its transform (metres, degrees) into the draft.
-  const commitEdit = () => {
-    if (!editObject || !avatarId) return;
-    const { edit, updateDraftSocket, setDraftPlacement } = useStudioStore.getState();
-    const r3 = (v: number) => Math.round(v * 1000) / 1000;
-    const r1 = (v: number) => Math.round(THREE.MathUtils.radToDeg(v) * 10) / 10;
-    const offset: [number, number, number] = [r3(editObject.position.x), r3(editObject.position.y), r3(editObject.position.z)];
-    const rotation: [number, number, number] = [r1(editObject.rotation.x), r1(editObject.rotation.y), r1(editObject.rotation.z)];
-    if (edit.mode === "sockets" && edit.target) updateDraftSocket(avatarId, sockets, edit.target, { offset, rotation });
-    if (edit.mode === "model" && edit.target) {
-      const [kind, code] = edit.target.split(":") as [EquipmentItem["kind"], string];
-      const current = modelFor(kind, code)?.placement;
-      if (current) setDraftPlacement(edit.target, { size_m: current.size_m, offset, rotation });
-    }
-  };
-
   const supports = items.filter((i) => i.kind === "support");
-  const isModelTarget = (kind: EquipmentItem["kind"], code: string) => edit.mode === "model" && edit.target === equipmentKey(kind, code);
+  // In the rig editor each point (a socket, or a generated model's placement) registers the group its numbers move.
+  const modelRef = (kind: EquipmentItem["kind"], code: string) => (edit.mode === "model" ? rigTargetRef(equipmentKey(kind, code)) : undefined);
 
   return (
     <>
       <primitive object={model} />
       {socketGroups.map((g) => {
         const { offset, quaternion } = socketTransform(g.socket);
-        const selected = edit.mode === "sockets" && edit.target === g.socket.id;
         const show = (showEquipment && g.items.length > 0) || edit.mode === "sockets";
         if (!show) return null;
         return (
@@ -343,10 +332,9 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
           <Fragment key={g.socket.id}>
             {createPortal(
               // Outer group: bone units → metres. Inner group: the socket itself (offset in metres,
-              // rotation), which is what the gizmo moves in sockets mode.
+              // rotation), which is what the rig editor moves in sockets mode (its point is drawn by rig-points-layer.tsx).
               <group scale={g.scale}>
-                <group ref={selected ? editRef : undefined} position={offset} quaternion={quaternion}>
-                  {edit.mode === "sockets" ? <SocketMarker selected={selected} /> : null}
+                <group ref={edit.mode === "sockets" ? rigTargetRef(g.socket.id) : undefined} position={offset} quaternion={quaternion}>
                   {showEquipment
                     ? g.items.map((item, i) => (
                         <EquipmentMesh
@@ -354,7 +342,7 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
                           item={item}
                           index={i}
                           model={modelFor("load", item.code)}
-                          editRef={isModelTarget("load", item.code) ? editRef : undefined}
+                          editRef={modelRef("load", item.code)}
                           // A grip is defined for the right hand; the left hand gets its mirror image.
                           mirrored={g.socket.id === "hand_l" || /left/i.test(g.socket.bone)}
                         />
@@ -375,14 +363,14 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
                 index={i}
                 model={modelFor("load", b.item.code)}
                 alignLongAxis
-                editRef={isModelTarget("load", b.item.code) ? editRef : undefined}
+                editRef={modelRef("load", b.item.code)}
               />
             </BilateralAttachment>
           ))
         : null}
       {showEquipment
         ? rootItems.map((item, i) => (
-            <EquipmentMesh key={`${item.code}-root-${i}`} item={item} index={i} model={modelFor("load", item.code)} editRef={isModelTarget("load", item.code) ? editRef : undefined} />
+            <EquipmentMesh key={`${item.code}-root-${i}`} item={item} index={i} model={modelFor("load", item.code)} editRef={modelRef("load", item.code)} />
           ))
         : null}
       {showEquipment
@@ -392,36 +380,13 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
               item={item}
               index={i}
               model={modelFor("support", item.code)}
-              editRef={isModelTarget("support", item.code) ? editRef : undefined}
+              editRef={modelRef("support", item.code)}
             />
           ))
         : null}
       <PoseRig model={model} rest={rest} sockets={liveSockets} frameRef={poseFrame} />
-      {editing && editObject ? (
-        <TransformControls
-          object={editObject}
-          mode={edit.tool}
-          space="local"
-          size={0.7}
-          rotationSnap={edit.snap ? Math.PI / 4 : null}
-          translationSnap={edit.snap ? 0.005 : null}
-          onMouseUp={commitEdit}
-        />
-      ) : null}
+      {editing ? <RigEditScene avatarId={avatarId} sockets={sockets} /> : null}
     </>
-  );
-}
-
-/** Where a socket sits: a dot and its axes, drawn over everything while the rig is edited. */
-function SocketMarker({ selected }: { selected: boolean }) {
-  return (
-    <group>
-      <axesHelper args={[0.08]} />
-      <mesh renderOrder={999}>
-        <sphereGeometry args={[0.012, 12, 8]} />
-        <meshBasicMaterial color={selected ? "#7fe0c4" : "#e3e7f0"} depthTest={false} transparent opacity={0.95} />
-      </mesh>
-    </group>
   );
 }
 

@@ -26,7 +26,7 @@ import { ErrorState, StudioLoader } from "./load-states";
 import { PoseEditor } from "./pose-editor";
 import { PosesPlaceholder } from "./poses-placeholder";
 import { RIGHT_TAB_IDS, RightPaneTabs, type RightTab } from "./right-pane-tabs";
-import { RigEditor } from "./rig-editor";
+import { RigEditor, RigEditorButton } from "./rig-editor";
 import { SettingsDialog } from "./settings-dialog";
 import { DockPreview, useDockPreview } from "./shell/dock-preview";
 import { StageStartHint } from "./shell/stage-start-hint";
@@ -68,6 +68,8 @@ export function StudioWorkspace() {
   const jobsOpen = useJobsTray((s) => s.open);
   const stopPoseEdit = useStudioStore((s) => s.stopPoseEdit);
   const poseEditing = useStudioStore((s) => Boolean(s.poseEdit));
+  // Posing pauses while the rig editor is open: the editor takes the side pane and says so, the timeline steps aside.
+  const rigOpen = useStudioStore((s) => s.edit.mode !== "off");
   const [tab, setTab, setTabFor] = useRightTab(exercise?.id ?? null);
   const guard = useSelectionGuard();
   const dockPreview = useDockPreview();
@@ -102,7 +104,7 @@ export function StudioWorkspace() {
     onEditPoses: poses.onEditPoses,
   });
   // Picking an exercise lands on editable poses (its clip, or the instant template draft).
-  const plan = useExerciseLanding({ exercise, avatar, vectors, vectorsLoaded, active: tab === "poses", onEditPoses: poses.onEditPoses, onOpenDraft: poses.onOpenDraft });
+  const plan = useExerciseLanding({ exercise, avatar, vectors, vectorsLoaded, active: tab === "poses" && !rigOpen, onEditPoses: poses.onEditPoses, onOpenDraft: poses.onOpenDraft });
   const startFromTemplate = () => {
     if (exercise && avatar) poses.onOpenDraft(defaultDraft(templateExerciseOf(exercise)), defaultEquipmentItems(exercise, avatar.sockets));
   };
@@ -183,8 +185,8 @@ export function StudioWorkspace() {
   return (
     <>
       <StudioShell
-        title={<CurrentExercise exercise={exercise} catalog={data.catalogState} editingShown={!blocked} />}
-        rightTitle="Animation"
+        title={<CurrentExercise exercise={exercise} catalog={data.catalogState} editingShown={!blocked && !rigOpen} />}
+        rightTitle={rigOpen ? "Rig editor" : "Animation"}
         tools={
           <>
             <JobsCenter
@@ -220,7 +222,7 @@ export function StudioWorkspace() {
         stageSide={<JobsSlot />}
         stageSideOpen={jobsOpen}
         onStageSideClose={() => setJobsOpen(false)}
-        dock={timelineShown && stage.kind === "ready" ? <TimelineDock /> : dockPreview ? <DockPreview /> : undefined}
+        dock={rigOpen ? undefined : timelineShown && stage.kind === "ready" ? <TimelineDock /> : dockPreview ? <DockPreview /> : undefined}
         left={<CatalogSidebar exercises={exercises} state={data.catalogState} error={data.catalogError} onRetry={mutateCatalog} />}
         center={
           // Until an avatar can be drawn the stage says why (loading, failed, first run), never "no avatar" too early.
@@ -228,13 +230,7 @@ export function StudioWorkspace() {
             <>
               <StudioViewport />
               {focus.kind === "pick" ? <StageStartHint /> : null}
-              <RigEditor
-                avatar={avatar}
-                onSaved={() => {
-                  void data.mutateAvatars();
-                  void data.mutateEquipment();
-                }}
-              />
+              {rigOpen ? null : <RigEditorButton avatar={avatar} />}
             </>
           ) : (
             <StageFallback stage={stage} error={data.avatarsError} onRetry={mutateAvatars} mannequin={mannequin} onMoreOptions={() => setAvatarDialog(true)} />
@@ -242,8 +238,19 @@ export function StudioWorkspace() {
         }
         right={
           <>
-            {exercise ? <RightPaneTabs value={tab} onChange={setTab} clipCount={vectors.length} /> : null}
-            {exercise && tab === "poses" ? (
+            {/* The rig editor takes the pane while it is open: posing pauses, and nothing of it covers the body. */}
+            {rigOpen ? (
+              <RigEditor
+                avatar={avatar}
+                onBack={() => void guard("rig-close")}
+                onSaved={() => {
+                  void data.mutateAvatars();
+                  void data.mutateEquipment();
+                }}
+              />
+            ) : null}
+            {exercise && !rigOpen ? <RightPaneTabs value={tab} onChange={setTab} clipCount={vectors.length} /> : null}
+            {exercise && tab === "poses" && !rigOpen ? (
               <div role="tabpanel" id={RIGHT_TAB_IDS.poses.panel} aria-labelledby={RIGHT_TAB_IDS.poses.tab} className="flex min-h-0 flex-1 flex-col">
                 {stage.kind === "loading" ? (
                   <StudioLoader className="h-auto py-10" label="Loading avatars…" />
@@ -264,7 +271,7 @@ export function StudioWorkspace() {
             {/* Kept mounted (hidden) on the Poses tab, so the prompt, equipment and pipeline being
                 written survive a round trip, and its equipment stays drawn on the avatar. */}
             <div
-              hidden={Boolean(exercise) && tab !== "clips"}
+              hidden={rigOpen || (Boolean(exercise) && tab !== "clips")}
               role={exercise ? "tabpanel" : undefined}
               id={RIGHT_TAB_IDS.clips.panel}
               aria-labelledby={exercise ? RIGHT_TAB_IDS.clips.tab : undefined}

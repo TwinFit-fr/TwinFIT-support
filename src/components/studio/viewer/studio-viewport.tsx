@@ -20,6 +20,7 @@ import { InBetweenNote } from "./in-between-note";
 import { BodyCheckMarks } from "./body-check-marks";
 import { PosePointsLayer } from "./pose-points-layer";
 import { ReferenceCard } from "./reference-card";
+import { RigPointsLayer } from "./rig-points-layer";
 import { useCanvasCommits } from "./render-stats";
 import { VIEW_SHORTCUTS, ViewControls } from "./view-controls";
 import type { ModelInfo } from "./studio-canvas";
@@ -123,7 +124,8 @@ function Hud({
   const errors = issues.filter((i) => i.severity === "error");
   const warnings = issues.length - errors.length;
   // While the editor holds poses the stage shows them, not the selected clip: say so (a string, so slider ticks do not re-render this).
-  const editing = useStudioStore((s) => (s.poseEdit ? editingStatus(s.poseEdit) : null));
+  // The rig editor pauses posing: the status says that instead of the poses.
+  const editing = useStudioStore((s) => (s.edit.mode !== "off" ? "Rig editor · posing paused" : s.poseEdit ? editingStatus(s.poseEdit) : null));
   const editingSaved = useStudioStore((s) => Boolean(s.poseEdit?.vectorId && !s.poseEdit.dirty));
   const noExercise = useStudioStore((s) => s.exerciseId === null);
   const clipText = editing
@@ -273,6 +275,8 @@ export const StudioViewport = memo(function StudioViewport() {
       {/* Under the body points: a press on a point over the card always reaches the point. */}
       <ReferenceCard />
       <PosePointsLayer statusHost={barsHost} legendHost={legendHost} />
+      {/* The rig editor's points, handled like the body points; only one of the two layers shows at a time. */}
+      <RigPointsLayer statusHost={barsHost} legendHost={legendHost} />
       <BodyCheckMarks />
       {modelError ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
