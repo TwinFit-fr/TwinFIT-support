@@ -124,9 +124,10 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
     };
     const directionNow = (): Vec3 => normalize([camera.position.x - controls.target.x, camera.position.y - controls.target.y, camera.position.z - controls.target.z]);
 
-    /** The selected body point's part (pose editor), from the held pose's probe; null without one. */
+    /** The selected body point's part (pose editor), from the held pose's probe; null without one (and in the rig editor, which frames the whole body). */
     const selectedPart = (): Vec3[] | null => {
       const st = useStudioStore.getState();
+      if (st.edit.mode !== "off") return null;
       const id = st.poseEdit?.dragTarget;
       if (!st.poseEdit || !isPointId(id)) return null;
       const pts = PART_POINTS[id].map((p) => st.poseProbe[p]).filter((p): p is [number, number, number] => Array.isArray(p));
@@ -297,7 +298,8 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
     const box = boundsOf(body);
     if (!box) return;
     const st = useStudioStore.getState();
-    const moving = !st.poseEdit || st.playing || st.scrubTime !== null;
+    // The rig editor holds the body still in its rest pose.
+    const moving = st.edit.mode === "off" && (!st.poseEdit || st.playing || st.scrubTime !== null);
     const step = followStep(f.state, box, moving);
     f.state = step.state;
     if (!step.frame) return;

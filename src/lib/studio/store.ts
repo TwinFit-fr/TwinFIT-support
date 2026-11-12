@@ -5,7 +5,9 @@ import type { LoopMode, PoseAngles } from "./anatomy.ts";
 import { savedFrom, type DraftOrigin } from "./pose-origin.ts";
 import type { BodyReport } from "./body-issues";
 import type { PoseIssue } from "./pose-validate";
-import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, EquipmentPlacement, VectorFormat, VectorStatus } from "./types";
+import { EMPTY_RIG_HISTORY } from "./rig-history.ts";
+import { NO_EDIT, createRigSlice, type RigSlice } from "./rig-slice.ts";
+import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, VectorFormat, VectorStatus } from "./types";
 
 /**
  * What one undo step restores: everything the clip is made of, not just the angles, plus where
@@ -86,20 +88,7 @@ function remember(draft: PoseEditState, gesture = false): PoseEditState {
   return { ...draft, history, future: [], gestureOpen: gesture, edited: true };
 }
 
-/** Rig editor: move the avatar's sockets, or a generated model relative to its socket, with a gizmo. */
-export type EditMode = "off" | "sockets" | "model";
-export type EditTool = "translate" | "rotate";
-export type EditState = {
-  mode: EditMode;
-  /** Socket id (sockets mode) or equipment key `kind:code` (model mode). */
-  target: string | null;
-  tool: EditTool;
-  /** Gizmo snapping: 45° steps and 5 mm steps, so a grip lands on 45 / 90 / 135 / 180. */
-  snap: boolean;
-};
-
-/** Sockets being edited, bound to the avatar they were taken from: a draft never lands on another avatar. */
-export type SocketDraft = { avatarId: string; sockets: AvatarSocket[] };
+export { NO_EDIT, type EditMode, type EditState, type EditTool, type SocketDraft } from "./rig-slice.ts";
 
 /**
  * What the 3D scene needs, and nothing else: primitives plus the socket list, derived by the
@@ -163,7 +152,7 @@ function sameJson(a: unknown, b: unknown): boolean {
  * canvas: it listens to `scene`, `previewItems`, `equipmentModels` and the view toggles only, and reads the
  * playback controls imperatively inside its frame loop.
  */
-export type StudioState = {
+export type StudioState = RigSlice & {
   exerciseId: string | null;
   avatarId: string | null;
   vectorId: string | null;
@@ -184,7 +173,6 @@ export type StudioState = {
   showEquipment: boolean;
   /** Clean motion-capture clips on load: ground and lock the feet, remove drift, close the loop. */
   cleanMocap: boolean;
-  edit: EditState;
   poseEdit: PoseEditState | null;
   /** World position of the pinnable points of the pose the editor holds (from the canvas). */
   poseProbe: Record<string, [number, number, number]>;
@@ -196,10 +184,6 @@ export type StudioState = {
   bodyReport: BodyReport | null;
   /** The poses changed and the body checks have not run on them yet (poseIssues is the previous result). */
   poseChecksPending: boolean;
-  /** Sockets being edited (the avatar's with the gizmo moves applied); null when untouched. */
-  draftSockets: SocketDraft | null;
-  /** Placement being edited per equipment key; empty when untouched. */
-  draftPlacements: Record<string, EquipmentPlacement>;
 
   selectExercise: (exerciseId: string | null) => void;
   setAvatar: (avatarId: string | null) => void;
@@ -216,7 +200,6 @@ export type StudioState = {
   toggleGrid: () => void;
   toggleEquipment: () => void;
   toggleCleanMocap: () => void;
-  setEdit: (edit: Partial<EditState>) => void;
   setModelBones: (bones: string[]) => void;
   /** The result of the body checks on the poses as they are now, with where they fail (clears poseChecksPending). */
   setPoseChecks: (issues: PoseIssue[], report: BodyReport | null) => void;
@@ -262,18 +245,10 @@ export type StudioState = {
   removePose: (index: number) => void;
   movePose: (index: number, direction: -1 | 1) => void;
   setPoseProbe: (probe: Record<string, [number, number, number]>) => void;
-  setDraftSockets: (draft: SocketDraft | null) => void;
-  /** Change one socket of the draft (started from `base`, the avatar's saved sockets). */
-  updateDraftSocket: (avatarId: string, base: AvatarSocket[], id: string, patch: Partial<Omit<AvatarSocket, "id">>) => void;
-  addDraftSocket: (avatarId: string, base: AvatarSocket[], socket: AvatarSocket) => void;
-  removeDraftSocket: (avatarId: string, base: AvatarSocket[], id: string) => void;
-  setDraftPlacement: (key: string, placement: EquipmentPlacement | null) => void;
-  clearDrafts: () => void;
 };
 
-const NO_EDIT: EditState = { mode: "off", target: null, tool: "translate", snap: true };
-
 export const useStudioStore = create<StudioState>((set) => ({
+  ...createRigSlice(set),
   exerciseId: null,
   avatarId: null,
   vectorId: null,
@@ -286,21 +261,18 @@ export const useStudioStore = create<StudioState>((set) => ({
   showGrid: true,
   showEquipment: true,
   cleanMocap: true,
-  edit: NO_EDIT,
   poseEdit: null,
   poseProbe: {},
   modelBones: [],
   poseIssues: [],
   bodyReport: null,
   poseChecksPending: false,
-  draftSockets: null,
-  draftPlacements: {},
 
   selectExercise: (exerciseId) =>
     set((s) => (s.exerciseId === exerciseId ? s : { exerciseId, vectorId: null, previewItems: [], scrubTime: null })),
   // Another avatar: rig drafts belong to the previous one, so they go, and the gizmo closes.
   setAvatar: (avatarId) =>
-    set((s) => (s.avatarId === avatarId ? s : { avatarId, draftSockets: null, draftPlacements: {}, edit: NO_EDIT, modelBones: [] })),
+    set((s) => (s.avatarId === avatarId ? s : { avatarId, draftSockets: null, draftPlacements: {}, rigHistory: EMPTY_RIG_HISTORY, edit: NO_EDIT, modelBones: [] })),
   setVector: (vectorId) => set((s) => (s.vectorId === vectorId ? s : { vectorId, scrubTime: null })),
   setScene: (scene) => set((s) => (sameScene(s.scene, scene) ? s : { scene })),
   setPreviewItems: (previewItems) => set((s) => (sameJson(s.previewItems, previewItems) ? s : { previewItems })),
@@ -319,7 +291,6 @@ export const useStudioStore = create<StudioState>((set) => ({
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   toggleEquipment: () => set((s) => ({ showEquipment: !s.showEquipment })),
   toggleCleanMocap: () => set((s) => ({ cleanMocap: !s.cleanMocap })),
-  setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
   setModelBones: (modelBones) => set((s) => (sameJson(s.modelBones, modelBones) ? s : { modelBones })),
   setPoseChecks: (poseIssues, bodyReport) =>
     set((s) => {
@@ -327,12 +298,15 @@ export const useStudioStore = create<StudioState>((set) => ({
       return same ? (s.poseChecksPending ? { poseChecksPending: false } : s) : { poseIssues, bodyReport, poseChecksPending: false };
     }),
   markPoseChecksPending: () => set((s) => (s.poseChecksPending ? s : { poseChecksPending: true })),
+  // Posing and rig editing never run at once: callers close the rig editor through the unsaved-work
+  // guard first (use-selection-guard.ts); this only makes sure no path leaves both open.
   startPoseEdit: (state) =>
-    set({
+    set((s) => ({
       poseEdit: { keyframe: 0, dirty: false, dragTarget: null, history: [], future: [], gestureOpen: false, weights: null, labels: null, edited: false, ...state, editId: ++editCounter },
       playing: false,
       scrubTime: null,
-    }),
+      edit: s.edit.mode === "off" ? s.edit : { ...s.edit, mode: "off" },
+    })),
   replacePoses: (next) =>
     set((s) => {
       if (!s.poseEdit) return s;
@@ -486,30 +460,4 @@ export const useStudioStore = create<StudioState>((set) => ({
       return { poseEdit: { ...remember(s.poseEdit), poses, weights, labels, keyframe: to, dirty: true }, scrubTime: null };
     }),
   setPoseProbe: (poseProbe) => set((s) => (sameJson(s.poseProbe, poseProbe) ? s : { poseProbe })),
-  setDraftSockets: (draftSockets) => set({ draftSockets }),
-  updateDraftSocket: (avatarId, base, id, patch) =>
-    set((s) => {
-      const current = s.draftSockets?.avatarId === avatarId ? s.draftSockets.sockets : base;
-      return { draftSockets: { avatarId, sockets: current.map((socket) => (socket.id === id ? { ...socket, ...patch } : socket)) } };
-    }),
-  addDraftSocket: (avatarId, base, socket) =>
-    set((s) => {
-      const current = s.draftSockets?.avatarId === avatarId ? s.draftSockets.sockets : base;
-      if (current.some((x) => x.id === socket.id)) return s;
-      return { draftSockets: { avatarId, sockets: [...current, socket] }, edit: { ...s.edit, mode: "sockets", target: socket.id } };
-    }),
-  removeDraftSocket: (avatarId, base, id) =>
-    set((s) => {
-      const current = s.draftSockets?.avatarId === avatarId ? s.draftSockets.sockets : base;
-      const sockets = current.filter((x) => x.id !== id);
-      return { draftSockets: { avatarId, sockets }, edit: s.edit.target === id ? { ...s.edit, target: sockets[0]?.id ?? null } : s.edit };
-    }),
-  setDraftPlacement: (key, placement) =>
-    set((s) => {
-      const next = { ...s.draftPlacements };
-      if (placement) next[key] = placement;
-      else delete next[key];
-      return { draftPlacements: next };
-    }),
-  clearDrafts: () => set({ draftSockets: null, draftPlacements: {} }),
 }));

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { CircleHelp, X } from "lucide-react";
 import { useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
+import { useDismiss } from "../hooks/use-dismiss";
 import type { PointMarks } from "../hooks/use-point-marks";
 import { IssueGlyph } from "../issue-glyph";
 import { MARK_WORDS, PointMark, noAutoWords, type MarkKind } from "../point-mark";
+import { RigHelp } from "./rig-help";
 import { CameraHelp } from "./view-controls";
 
 type Item = { kind: Exclude<MarkKind, "plain">; count: number | null };
@@ -36,29 +38,13 @@ export function PointLegend({ marks, limit }: { marks: PointMarks; limit: boolea
   ];
 
   // Escape or a press outside closes the explanations.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setOpen(false);
-      toggle.current?.focus();
-    };
-    const onDown = (event: PointerEvent) => {
-      if (root.current && event.target instanceof Node && !root.current.contains(event.target)) setOpen(false);
-    };
-    window.addEventListener("keydown", onKey, true);
-    window.addEventListener("pointerdown", onDown, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("pointerdown", onDown, true);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(open, close, root, toggle);
 
   return (
     <div ref={root} className="pointer-events-none relative" data-point-legend>
       {open ? (
-        <div id={panelId} role="region" aria-label="What the point marks mean, and the camera keys" className="pointer-events-auto absolute top-[calc(100%+6px)] left-0 z-10 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-high) p-3 text-[11px] shadow-2xl" data-point-legend-help>
+        <div id={panelId} role="region" aria-label="What the point marks mean, the rig editor and camera keys" className="pointer-events-auto absolute top-[calc(100%+6px)] left-0 z-10 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-high) p-3 text-[11px] shadow-2xl" data-point-legend-help>
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <p className="font-semibold text-(--m3-on-surface)">Points on the body</p>
             <button
@@ -98,6 +84,7 @@ export function PointLegend({ marks, limit }: { marks: PointMarks; limit: boolea
               `${noAutoWords(marks.missing)} Select a hand, knee or foot and press P to pin it.`
             )}
           </p>
+          <RigHelp />
           <CameraHelp />
         </div>
       ) : null}
