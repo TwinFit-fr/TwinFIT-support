@@ -37,6 +37,8 @@ const LOGICAL = [
   "LeftToeBase", "RightToeBase",
 ] as const;
 export type Logical = (typeof LOGICAL)[number];
+/** Every bone the poses turn, Mixamo names (the rig resolves its own name for each). */
+export const LOGICAL_BONES: readonly Logical[] = LOGICAL;
 
 /**
  * Resolve the rig's bone name for each logical Mixamo bone: exact Mixamo names first, then any
@@ -70,7 +72,7 @@ const qz = (deg: number) => new THREE.Quaternion().setFromAxisAngle(Z, rad(deg))
 const mul = (...qs: THREE.Quaternion[]) => qs.reduce((acc, q) => acc.multiply(q), new THREE.Quaternion());
 
 /** How much of raising the arm the clavicle takes: about 6° at 120° of elevation (Ludewig 2009). */
-const CLAVICLE_RISE = 0.05;
+export const CLAVICLE_RISE = 0.05;
 
 /**
  * Rotation of every bone away from the anatomical position, in the character frame, each one

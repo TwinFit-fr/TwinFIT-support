@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ChevronDown, FileCheck2, LayoutTemplate, PenLine, PersonStanding, Sparkles } from "lucide-react";
+import { Activity, ChevronDown, FileCheck2, Info, LayoutTemplate, PenLine, PersonStanding, Sparkles } from "lucide-react";
 import { DEFAULT_PARAMS } from "@/lib/studio/exercise-templates";
 import { originLabel, type AiNotes, type DraftOrigin } from "@/lib/studio/pose-origin";
 import { useStudioStore } from "@/lib/studio/store";
@@ -12,6 +12,7 @@ const ICON: Record<DraftOrigin["kind"], typeof Sparkles> = {
   ai: Sparkles,
   clip: FileCheck2,
   neutral: PersonStanding,
+  capture: Activity,
 };
 
 /** The one-line summary of the AI's notes, for the disclosure button. */
@@ -98,7 +99,8 @@ export function DraftOriginLine({ className }: { className?: string }) {
           <Icon className="h-3.5 w-3.5" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-(length:--studio-text-sm) font-semibold leading-tight tracking-tight text-(--m3-on-surface)" title={label.text}>
+          {/* Wraps rather than cutting the name of where the poses come from. */}
+          <div className="text-(length:--studio-text-sm) font-semibold leading-tight tracking-tight text-pretty break-words text-(--m3-on-surface)" title={label.text}>
             {label.base}
           </div>
           {/* Wraps in a narrow pane rather than cutting what the poses are. */}
@@ -113,6 +115,26 @@ export function DraftOriginLine({ className }: { className?: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Under the editor's header, for key poses from a capture: what it leaves out (parts it does not move, bones the avatar has nothing for, travel), in words. */
+export function DraftOriginNotes() {
+  const origin = useStudioStore((s) => s.poseEdit?.origin ?? null);
+  const edited = useStudioStore((s) => s.poseEdit?.edited ?? false);
+  if (!origin) return null;
+  const { notes } = originLabel(origin, edited, DEFAULT_PARAMS);
+  if (!notes.length) return null;
+  // Read with the origin's status line (its text holds them); shown here across the full width.
+  return (
+    <ul aria-hidden className="mt-1.5 space-y-0.5 pl-9" data-origin-notes>
+      {notes.map((note) => (
+        <li key={note} className="flex items-start gap-1.5 text-[11px] leading-snug text-(--m3-on-surface-variant)">
+          <Info className="mt-0.5 h-3 w-3 shrink-0 text-(--m3-tertiary)" aria-hidden="true" />
+          <span>{note}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

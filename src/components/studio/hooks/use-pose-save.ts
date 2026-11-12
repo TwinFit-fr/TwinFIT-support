@@ -5,6 +5,7 @@ import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { useToast } from "@/components/ui/toast";
 import { isPoseClipJson, poseClipFromDraft, posesFromClip, type PoseClipJson } from "@/lib/studio/anatomy";
 import { fetchStudioAsset } from "@/lib/studio/asset-auth";
+import { notPosesClip, unreadableClip } from "@/lib/studio/clip-problems";
 import { play } from "@/lib/studio/playback";
 import { clipFrom } from "@/lib/studio/pose-origin";
 import { labelsFromClip } from "@/lib/studio/pose-names";
@@ -13,6 +14,7 @@ import { studioAssetUrl } from "@/lib/studio/storage-url";
 import type { PoseDraft } from "@/lib/studio/template-draft";
 import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
 import type { SaveMode } from "../pose-editor";
+import { reportClipProblem } from "./use-clip-problems";
 
 /**
  * The pose editor's lifecycle: open a saved clip or an instant draft, save in place or as a new
@@ -36,10 +38,20 @@ export function usePoseSave(input: {
     async (target: MovementVector) => {
       const url = studioAssetUrl(target.file_id, target.vector_url);
       if (!exercise || !avatar || !url) return;
-      const res = await fetchStudioAsset(url);
-      if (!res.ok) throw new Error(`Clip download failed (${res.status})`);
-      const json = (await res.json()) as unknown;
-      if (!isPoseClipJson(json)) throw new Error("Only pose clips (generated or made in the editor) can be edited");
+      // A file that does not download, does not parse or holds no poses is reported for the row and
+      // the Poses tab to say in words (use-clip-problems.ts); it is not opened as something else.
+      const fail = (problem: ReturnType<typeof notPosesClip>) => {
+        reportClipProblem(target, problem);
+        return new Error(problem.title);
+      };
+      const res = await fetchStudioAsset(url).catch((err: unknown) => {
+        throw fail(unreadableClip(err instanceof Error ? err.message : String(err), target.format, target.seq));
+      });
+      if (!res.ok) throw fail(unreadableClip(`Clip download failed (${res.status})`, target.format, target.seq));
+      const json = (await res.json().catch(() => {
+        throw fail(unreadableClip("not JSON", target.format, target.seq));
+      })) as unknown;
+      if (!isPoseClipJson(json)) throw fail(notPosesClip(target.seq));
       // Another exercise or avatar was picked while the clip was downloading: it no longer belongs on the stage.
       const now = useStudioStore.getState();
       if (now.exerciseId !== exercise.id || now.avatarId !== avatar.id) return;

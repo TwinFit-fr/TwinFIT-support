@@ -120,11 +120,11 @@ export function guardOf(edit: EditLike | null, exercise: TemplateExercise | null
   return edit ? clipGuard(edit.origin, replacedOf(edit, exercise), edit.poses.length, agreed) : { locked: false };
 }
 
-const guardKey = (g: ClipGuard) => (g.locked ? JSON.stringify([g.vectorId, g.seq, g.poses]) : "");
+const guardKey = (g: ClipGuard) => (g.locked ? JSON.stringify([g.source, g.vectorId, g.seq, g.poses]) : "");
 const guardFromKey = (key: string): ClipGuard => {
   if (!key) return { locked: false };
-  const [vectorId, seq, poses] = JSON.parse(key) as [string, number | null, number];
-  return { locked: true, vectorId, seq, poses };
+  const [source, vectorId, seq, poses] = JSON.parse(key) as ["clip" | "capture", string, number | null, number];
+  return { locked: true, source, vectorId, seq, poses };
 };
 
 /** The drag mode for the editor's poses now (read once: the stage calls it when a drag starts). */

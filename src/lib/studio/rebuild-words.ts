@@ -12,15 +12,15 @@ export type DragMode = "exercise" | "limb";
 
 /**
  * What a rebuild replaces: "edits" the user made by hand, the poses of a saved "clip" that differ
- * from the template, or a "draft" that is not the template's (angles written by the AI); null
- * when the poses are the template's own and nothing would be lost.
+ * from the template, the key poses read from a "capture", or a "draft" that is not the template's
+ * (angles written by the AI); null when the poses are the template's own and nothing would be lost.
  */
-export type Replaced = "edits" | "clip" | "draft" | null;
+export type Replaced = "edits" | "clip" | "capture" | "draft" | null;
 
 export function replacedBy(origin: DraftOrigin, edited: boolean, differs: boolean): Replaced {
   if (!differs) return null;
   if (edited) return "edits";
-  return origin.kind === "clip" ? "clip" : "draft";
+  return origin.kind === "clip" ? "clip" : origin.kind === "capture" ? "capture" : "draft";
 }
 
 /**
@@ -30,12 +30,14 @@ export function replacedBy(origin: DraftOrigin, edited: boolean, differs: boolea
  */
 export function effectiveDragMode(choice: DragMode | null, draggable: boolean, replaced: Replaced): DragMode {
   if (!draggable) return "limb";
-  return choice ?? (replaced === "edits" ? "limb" : "exercise");
+  // A capture's key poses are the capture: a drag moves the limb, it does not rebuild them from the template.
+  return choice ?? (replaced === "edits" || replaced === "capture" ? "limb" : "exercise");
 }
 
 const WHAT: Record<Exclude<Replaced, null>, string> = {
   edits: "your manual edits",
   clip: "the saved clip's poses",
+  capture: "the key poses from the capture",
   draft: "the draft's poses",
 };
 
@@ -49,6 +51,7 @@ const CHANGING = "Changing a setting, here or by dragging the body,";
  */
 export function rebuildWarning(replaced: Replaced, match: RebuildMatch | null = null): string | null {
   if (!replaced || match?.kind === "match") return null;
+  if (replaced === "capture") return "These key poses come from the capture. Changing a template setting, here or by dragging the body in Exercise mode, rebuilds them from the template instead; Ctrl+Z brings them back.";
   const back = replaced === "clip" ? "Ctrl+Z brings the clip back." : "Ctrl+Z brings them back.";
   if (match?.kind === "count") {
     const { poses, built } = match;
@@ -73,7 +76,7 @@ export function rebuildWarning(replaced: Replaced, match: RebuildMatch | null = 
 }
 
 /** Short, for the stage status while a drag changes a setting (the stage is narrow): "replaces the saved clip". */
-const SHORT: Record<Exclude<Replaced, null>, string> = { edits: "your edits", clip: "the saved clip", draft: "the draft" };
+const SHORT: Record<Exclude<Replaced, null>, string> = { edits: "your edits", clip: "the saved clip", capture: "the capture's poses", draft: "the draft" };
 
 export function replacesNote(replaced: Replaced): string | null {
   return replaced ? `replaces ${SHORT[replaced]}` : null;

@@ -39,7 +39,7 @@ export function PointProperties({ point }: { point: PointId }) {
   const pinned = anchor ? Boolean(pose.anchors?.[anchor]) : false;
   const togglePin = (next: boolean) => setSaid(setPointPin(point, next));
   const state = marks.states?.[point] ?? null;
-  const madeBy = draft.origin.kind === "ai" ? "the AI draft" : "the exercise template";
+  const madeBy = draft.origin.kind === "ai" ? "the AI draft" : draft.origin.kind === "capture" ? "the capture" : "the exercise template";
   const poseName = draft.labels?.[index]?.trim();
   return (
     <section aria-labelledby="point-properties-title" className="flex flex-col" data-point-properties={point}>

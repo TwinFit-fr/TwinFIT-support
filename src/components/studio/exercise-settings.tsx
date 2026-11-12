@@ -11,6 +11,7 @@ import { hasTemplate } from "@/lib/studio/template-draft";
 import { TEMPO_S, normalizeParams, optionOf, settingChange, settingsFor, tempoMatters, type ChoiceKey } from "@/lib/studio/template-settings";
 import { cn } from "@/lib/utils";
 import { AiDraftControl } from "./ai-draft";
+import { CaptureDetail } from "./capture-detail";
 import { applyTemplateSettings, useRebuildNotice } from "./hooks/use-template-settings";
 import { ClipGuardNotice, RebuildConfirm } from "./rebuild-guard";
 import { NumberField, Segmented } from "./ui";
@@ -79,15 +80,18 @@ export function ExerciseSettings() {
     applyTemplateSettings(exercise, question.params);
   };
   const warning = guard.locked ? null : rebuildWarning(replaced, match);
+  const capture = edit.origin.kind === "capture";
 
   return (
     <section aria-labelledby="exercise-settings-title" className="border-b border-(--m3-outline-variant) px-4 py-3" data-exercise-settings>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
         <h3 id="exercise-settings-title" className="text-[10px] font-medium uppercase tracking-[0.16em] text-(--m3-on-surface-variant)">
-          {hasSettings ? "Exercise settings" : "AI draft"}
+          {hasSettings || capture ? "Exercise settings" : "AI draft"}
         </h3>
-        {hasSettings ? <span className="text-[11px] text-(--m3-on-surface-variant)">{guard.locked ? "locked to keep the saved clip" : "every pose follows, instantly"}</span> : null}
+        {hasSettings ? <span className="text-[11px] text-(--m3-on-surface-variant)">{guard.locked ? (guard.source === "capture" ? "locked to keep the capture's key poses" : "locked to keep the saved clip") : "every pose follows, instantly"}</span> : null}
       </div>
+      {/* Key poses from a capture: how many of them, rebuilt from the capture. */}
+      <CaptureDetail rowClass={ROW} />
       {question && guard.locked ? (
         <RebuildConfirm guard={guard} change={question.change} onConfirm={confirm} onCancel={() => setAsking(null)} />
       ) : guard.locked && params ? (

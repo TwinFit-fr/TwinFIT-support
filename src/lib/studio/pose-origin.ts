@@ -4,7 +4,9 @@
  * together with the poses it describes.
  */
 
+import { missingSentence, unusedSentence } from "./capture-words.ts";
 import { DEFAULT_PARAMS } from "./exercise-templates.ts";
+import type { Detail } from "./key-poses.ts";
 import { settingsSummary } from "./template-settings.ts";
 
 /**
@@ -28,7 +30,44 @@ export type DraftOrigin =
   /** A clip saved earlier (opened from the list, or just saved here); `from` says how it was made, when known. */
   | { kind: "clip"; vectorId: string; seq: number | null; from: string | null }
   /** One neutral standing pose: the exercise has no template, or the user started from scratch. */
-  | { kind: "neutral"; reason: "no-template" | "scratch" };
+  | { kind: "neutral"; reason: "no-template" | "scratch" }
+  /** Key poses read from a motion capture (a clip row of the exercise, which stays as it is). */
+  | ({ kind: "capture" } & CaptureOrigin);
+
+/** What the origin of poses read from a capture says about it. */
+export type CaptureOrigin = {
+  vectorId: string;
+  seq: number | null;
+  /** The file's kind: "bvh", "fbx", "glb", "gltf". */
+  format: string;
+  /** Key poses kept, and frames read; `keyFrames` is the frame each key pose was read from. */
+  keys: number;
+  keyFrames?: number[];
+  frames: number;
+  /** The largest joint difference between the key poses as played and the capture, degrees. */
+  maxDiff: number;
+  detail: Detail;
+  /** Avatar body parts the capture does not move, and capture bones the avatar has nothing for, in words. */
+  missing: string[];
+  unused: string[];
+  /** The feet moved across the floor and the poses stay in place. */
+  travel: boolean;
+  /** Joints held to their range ("left wrist"). */
+  clamped: string[];
+};
+
+/** "capture #12" or "the capture". */
+const captureName = (o: { seq: number | null }) => (o.seq !== null ? `capture #${o.seq}` : "the capture");
+
+/** The notes under the origin of key poses read from a capture, one sentence each: what it lacks, what was dropped or held. */
+export function captureNotes(o: CaptureOrigin): string[] {
+  return [
+    missingSentence(o.missing),
+    unusedSentence(o.unused),
+    o.travel ? "The capture walks across the floor: the poses stay in place." : null,
+    o.clamped.length ? `Held to their range: ${o.clamped.slice(0, 4).join(", ")}${o.clamped.length > 4 ? ` and ${o.clamped.length - 4} more` : ""}.` : null,
+  ].filter((n): n is string => Boolean(n));
+}
 
 /** "romanian_deadlift" -> "romanian deadlift". */
 export function templateName(id: string): string {
@@ -47,6 +86,8 @@ export type OriginLabel = {
   detail: string | null;
   /** The user changed something since. */
   edited: boolean;
+  /** Sentences to show under it (what a capture lacks, what was dropped); empty for most origins. */
+  notes: string[];
   /** One line for a status or a screen reader: "Template: curl, default settings · Edited by you". */
   text: string;
 };
@@ -54,6 +95,7 @@ export type OriginLabel = {
 export function originLabel(origin: DraftOrigin, edited: boolean, defaults: Record<string, unknown> = DEFAULT_PARAMS): OriginLabel {
   let base: string;
   let detail: string | null = null;
+  let notes: string[] = [];
   switch (origin.kind) {
     case "template":
       base = `Template: ${templateName(origin.template)}`;
@@ -71,9 +113,14 @@ export function originLabel(origin: DraftOrigin, edited: boolean, defaults: Reco
       base = "Neutral pose";
       detail = origin.reason === "no-template" ? "no template yet" : null;
       break;
+    case "capture":
+      base = `From ${captureName(origin)}`;
+      detail = `${origin.format.toUpperCase()} · ${origin.keys} key pose${origin.keys === 1 ? "" : "s"} from ${origin.frames} frames · within ${Math.max(1, Math.round(origin.maxDiff))}° of the capture`;
+      notes = captureNotes(origin);
+      break;
   }
-  const text = `${base}${detail ? `, ${detail}` : ""}${edited ? " · Edited by you" : ""}`;
-  return { base, detail, edited, text };
+  const text = `${base}${detail ? `, ${detail}` : ""}${edited ? " · Edited by you" : ""}${notes.length ? `. ${notes.join(" ")}` : ""}`;
+  return { base, detail, edited, notes, text };
 }
 
 /** How a clip being saved was made, kept on its label after the save ("curl template, edited"). */
@@ -90,6 +137,8 @@ export function savedFrom(origin: DraftOrigin, edited: boolean): string | null {
       return edited ? (origin.seq !== null ? `edited from #${origin.seq}` : "edited") : origin.from;
     case "neutral":
       return edited ? "posed by hand" : "neutral pose";
+    case "capture":
+      return `key poses from ${captureName(origin)}${touched}; the capture is kept as it was`;
   }
 }
 

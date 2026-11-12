@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { Lock, RefreshCcw } from "lucide-react";
-import { guardConsequence, guardDragQuestion, guardNotice, guardQuestion, type ClipGuard } from "@/lib/studio/rebuild-guard";
+import { guardConsequence, guardDragQuestion, guardKeepLabel, guardNotice, guardQuestion, type ClipGuard } from "@/lib/studio/rebuild-guard";
 import { M3Button } from "./ui";
 
 type Locked = Extract<ClipGuard, { locked: true }>;
@@ -52,7 +52,7 @@ export function RebuildConfirm({ guard, change, onConfirm, onCancel }: { guard: 
       </p>
       <div className="mt-2 flex justify-end gap-1.5">
         <M3Button data-keep size="sm" variant="text" onClick={onCancel} className="text-(--m3-on-surface)">
-          Keep the clip
+          {guardKeepLabel(guard)}
         </M3Button>
         <M3Button size="sm" variant="filled" onClick={onConfirm}>
           Rebuild

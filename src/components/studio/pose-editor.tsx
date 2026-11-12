@@ -11,7 +11,7 @@ import { isPointId } from "@/lib/studio/pose-points";
 import { useStudioStore } from "@/lib/studio/store";
 import { AllJoints } from "./all-joints";
 import { BodyChecks } from "./body-checks";
-import { DraftAiNotes, DraftOriginLine } from "./draft-origin";
+import { DraftAiNotes, DraftOriginLine, DraftOriginNotes } from "./draft-origin";
 import { ExerciseSettings } from "./exercise-settings";
 import { PointProperties } from "./point-properties";
 import { PoseBody } from "./pose-body";
@@ -136,7 +136,8 @@ export function PoseEditor({
             </M3Button>
           </div>
         </div>
-        {/* What the AI said about the draft on the stage: a line that opens to the full width. */}
+        {/* What a capture leaves out, and what the AI said about a draft: across the full width. */}
+        <DraftOriginNotes />
         <DraftAiNotes />
       </div>
 
@@ -160,7 +161,7 @@ export function PoseEditor({
         <BodyChecks />
       </div>
 
-      <PoseEditorActions quiet={noTemplate} vectorId={draft.vectorId} sourceSeq={draft.sourceSeq} dirty={draft.dirty} saving={saving} onSave={(mode) => void save(mode)} onRevert={() => void revert()} />
+      <PoseEditorActions quiet={noTemplate} capture={draft.origin.kind === "capture" ? { seq: draft.origin.seq } : null} vectorId={draft.vectorId} sourceSeq={draft.sourceSeq} dirty={draft.dirty} saving={saving} onSave={(mode) => void save(mode)} onRevert={() => void revert()} />
     </div>
   );
 }

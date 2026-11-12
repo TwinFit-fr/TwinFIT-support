@@ -6,6 +6,8 @@ import { stepKey, togglePlayback } from "@/lib/studio/playback";
 import { useStudioStore } from "@/lib/studio/store";
 import { adjacentKey, formatSeconds, keyAt, poseName } from "@/lib/studio/timeline";
 import { cn } from "@/lib/utils";
+import type { MovementVector } from "@/lib/studio/types";
+import { CaptureEditButton } from "../capture-edit-button";
 import { IconButton } from "../ui";
 import { TimelineTrack } from "./timeline-track";
 import { useStageTime, useTimelineModel, type TimelineModel } from "./use-timeline";
@@ -96,26 +98,36 @@ function SpeedButton() {
  * transport and time readout on top, then the ruler in seconds, one marker per key pose and the
  * playhead, and the loop mode at the end. Comma and period jump between key poses anywhere.
  */
-export function TimelineDock() {
+export function TimelineDock({ capture = null, onEditCapture }: { capture?: MovementVector | null; onEditCapture?: (vector: MovementVector) => void }) {
   const model = useTimelineModel();
   useShortcuts({ ",": () => stepKey(-1), ".": () => stepKey(1) }, model?.kind === "draft");
   if (!model) return null;
+  // A capture plays: every frame is a pose of its own (drawn as one tick per frame), until it is made key poses.
+  const frames = model.kind === "clip" && capture ? Math.round(model.duration * model.fps) + 1 : null;
   return (
-    <div className="@container/dock flex min-h-0 flex-1 flex-col" data-timeline={model.kind}>
+    <div className="@container/dock flex min-h-0 flex-1 flex-col" data-timeline={model.kind} data-timeline-capture={frames ? capture?.id : undefined}>
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-(--m3-outline-variant) px-2">
         <h2 className="hidden px-1 text-(length:--studio-text-2xs) font-semibold uppercase tracking-[0.14em] text-(--m3-on-surface-variant) @[34rem]/dock:block">Timeline</h2>
         <Transport model={model} />
         <Readout model={model} />
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {model.kind === "draft" ? (
             <span className="hidden whitespace-nowrap text-(length:--studio-text-xs) text-(--m3-on-surface-variant) @[52rem]/dock:inline">
               {model.keys.filter((k) => !k.repeat).length} key poses · drag the playhead to scrub
             </span>
           ) : null}
+          {frames && capture ? (
+            <>
+              <span className="hidden whitespace-nowrap text-(length:--studio-text-xs) text-(--m3-on-surface-variant) @[46rem]/dock:inline">
+                Capture #{capture.seq} · {frames} frames, each one a pose
+              </span>
+              {onEditCapture ? <CaptureEditButton vector={capture} onEdit={onEditCapture} variant="tonal" size="sm" /> : null}
+            </>
+          ) : null}
           <SpeedButton />
         </div>
       </div>
-      <TimelineTrack model={model} />
+      <TimelineTrack model={model} frames={frames} />
     </div>
   );
 }

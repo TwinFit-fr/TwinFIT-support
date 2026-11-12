@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DraftOrigin } from "./pose-origin.ts";
-import { clipGuard, guardConsequence, guardDragQuestion, guardNotice, guardQuestion } from "./rebuild-guard.ts";
+import { clipGuard, guardConsequence, guardDragQuestion, guardKeepLabel, guardNotice, guardQuestion } from "./rebuild-guard.ts";
 
 const clip: DraftOrigin = { kind: "clip", vectorId: "v12", seq: 12, from: "squat template" };
 const template: DraftOrigin = { kind: "template", template: "squat" };
 
 describe("rebuild guard for saved clips", () => {
   it("locks a saved clip whose poses a rebuild would replace (hand-tuned or edited)", () => {
-    assert.deepEqual(clipGuard(clip, "clip", 3, []), { locked: true, vectorId: "v12", seq: 12, poses: 3 });
+    assert.deepEqual(clipGuard(clip, "clip", 3, []), { locked: true, source: "clip", vectorId: "v12", seq: 12, poses: 3 });
     assert.equal(clipGuard(clip, "edits", 3, []).locked, true);
   });
 
@@ -38,5 +38,18 @@ describe("rebuild guard for saved clips", () => {
     assert.ok(one.locked);
     assert.match(guardConsequence(one), /replaces the 1 pose of this saved clip /);
     assert.match(guardNotice(one), /^This saved clip has poses/);
+  });
+
+  it("locks key poses read from a capture: a setting change asks before replacing them with the template", () => {
+    const capture: DraftOrigin = { kind: "capture", vectorId: "c9", seq: 900, format: "bvh", keys: 3, frames: 121, maxDiff: 4, detail: "balanced", missing: [], unused: [], travel: false, clamped: [] };
+    const g = clipGuard(capture, "capture", 3, []);
+    assert.deepEqual(g, { locked: true, source: "capture", vectorId: "c9", seq: 900, poses: 3 });
+    assert.ok(g.locked);
+    assert.match(guardNotice(g), /^These 3 key poses were read from capture #900, not built from these settings\./);
+    assert.match(guardConsequence(g), /replaces the 3 key poses read from capture #900 with the template's poses \(capture #900 itself stays as it is/);
+    assert.match(guardDragQuestion(g), /replacing the 3 key poses read from capture #900\.$/);
+    assert.equal(guardKeepLabel(g), "Keep the key poses");
+    assert.equal(clipGuard(capture, "edits", 3, []).locked, true);
+    assert.equal(clipGuard(capture, "capture", 3, ["c9"]).locked, false);
   });
 });

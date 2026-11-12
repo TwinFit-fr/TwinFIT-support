@@ -38,4 +38,10 @@ describe("landing on an exercise", () => {
   it("trusts a loaded list over a stale catalog count", () => {
     assert.deepEqual(landingPlan({ readyCount: 0, vectors: [v("fresh")], avatarId: "a1", preferredId: null }), { kind: "edit", vector: v("fresh") });
   });
+
+  it("does not try a clip again once it is known not to hold poses: it is shown as it is", () => {
+    const odd = v("odd", { active: true });
+    assert.deepEqual(landingPlan({ readyCount: 1, vectors: [odd], avatarId: "a1", preferredId: null, problems: { odd: "not-poses" } }), { kind: "play", vector: odd });
+    assert.deepEqual(landingPlan({ readyCount: 1, vectors: [odd], avatarId: "a1", preferredId: null, problems: { other: "unreadable" } }), { kind: "edit", vector: odd });
+  });
 });
