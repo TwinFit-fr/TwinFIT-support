@@ -1,5 +1,5 @@
 /**
- * The inverse of characterDeltas (pose-clip.ts): the editor's angles (PoseAngles) read back from
+ * The inverse of characterDeltas (pose-deltas.ts): the editor's angles (PoseAngles) read back from
  * where the avatar's bones are at one instant. Each bone's rotation away from the rig's anatomical
  * position (its calibration) is measured in the character frame, relative to the posed bone above
  * it, which is the frame characterDeltas writes in; each group of angles is then taken apart in

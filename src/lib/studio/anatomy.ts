@@ -5,7 +5,7 @@
  *
  * Every angle is measured from the anatomical position: standing erect, arms at the sides, palms
  * facing forward, feet parallel and flat. A pose of all zeros IS that position on every rig
- * (pose-clip.ts calibrates each avatar to it). Arms are relative to the thorax, legs to the pelvis.
+ * (pose-calibrate.ts calibrates each avatar to it). Arms are relative to the thorax, legs to the pelvis.
  * The one departure from clinical goniometry is the forearm, whose zero here is full supination
  * (the anatomical position) instead of the thumb-up mid-position: see `clinicalForearm`.
  *
