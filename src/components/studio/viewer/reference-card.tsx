@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronDown, ImageOff, Images, Maximize2, Minimize2, Move, RotateCw } from "lucide-react";
 import {
   CARD_PARTS,
@@ -18,6 +18,7 @@ import {
   type ReferencePrefs,
   type ReferenceSlot,
 } from "@/lib/studio/exercise-reference";
+import { useStageView } from "@/lib/studio/stage-view";
 import { useStudioStore } from "@/lib/studio/store";
 import { cn } from "@/lib/utils";
 import { AuthImage } from "../auth-image";
@@ -28,11 +29,13 @@ import { AXIS_WIDGET_PX } from "./stage-body";
 const prefsListeners = new Set<() => void>();
 let prefsCache: ReferencePrefs | null = null;
 function readPrefs(): ReferencePrefs {
+  // Never cache a failed read (the server render, or storage not ready yet): the next read tries again.
+  if (typeof window === "undefined") return DEFAULT_REFERENCE_PREFS;
   if (!prefsCache) {
     try {
       prefsCache = parseReferencePrefs(window.localStorage.getItem(REFERENCE_STORAGE_KEY));
     } catch {
-      prefsCache = DEFAULT_REFERENCE_PREFS;
+      return DEFAULT_REFERENCE_PREFS;
     }
   }
   return prefsCache;
@@ -46,9 +49,19 @@ function writePrefs(next: Partial<ReferencePrefs>): void {
   }
   for (const listener of prefsListeners) listener();
 }
+/** Another tab changed the remembered state: take it, so this tab never writes the old one back. */
+function onStorage(event: StorageEvent): void {
+  if (event.key !== REFERENCE_STORAGE_KEY) return;
+  prefsCache = parseReferencePrefs(event.newValue);
+  for (const listener of prefsListeners) listener();
+}
 function subscribePrefs(listener: () => void): () => void {
+  if (!prefsListeners.size) window.addEventListener("storage", onStorage);
   prefsListeners.add(listener);
-  return () => prefsListeners.delete(listener);
+  return () => {
+    prefsListeners.delete(listener);
+    if (!prefsListeners.size) window.removeEventListener("storage", onStorage);
+  };
 }
 function useReferencePrefs(): [ReferencePrefs, (next: Partial<ReferencePrefs>) => void] {
   return [useSyncExternalStore(subscribePrefs, readPrefs, () => DEFAULT_REFERENCE_PREFS), writePrefs];
@@ -157,7 +170,14 @@ function Frame({ slot, exercise, large, full, caption }: { slot: ReferenceSlot; 
 export function ReferenceCard() {
   const exerciseId = useStudioStore((s) => s.exerciseId);
   const rigEditing = useStudioStore((s) => s.edit.mode !== "off");
-  const [prefs, setPrefs] = useReferencePrefs();
+  const [chosen, writeChosen] = useReferencePrefs();
+  // The camera may make the card give way to the body (compact, then collapsed) without changing what the user chose.
+  const gaveWay = useStageView((s) => s.cardYield);
+  const prefs = useMemo<ReferencePrefs>(() => ({ ...chosen, large: chosen.large && gaveWay < 1, open: gaveWay >= 2 ? false : chosen.open }), [chosen, gaveWay]);
+  const setPrefs = (next: Partial<ReferencePrefs>) => {
+    useStageView.getState().resetCardYield();
+    writeChosen(next);
+  };
   const [full, setFull] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
