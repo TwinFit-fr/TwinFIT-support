@@ -83,6 +83,29 @@ export function viewOfAxis(axis: Vec3): CameraViewId | null {
   return null;
 }
 
+/** A body this much lower than it is long lies down (a standing or seated one is taller than wide). */
+const LYING_RATIO = 0.65;
+
+/**
+ * The side view a lying body (supine, prone, side-lying, a plank) opens from: its profile, so the
+ * whole length of the body is read across the screen and not foreshortened from the feet or the
+ * head. Null for a body that is not lying, or when the camera already looks at its profile.
+ */
+export function lyingView(min: Vec3, max: Vec3, current: CameraViewId | null): CameraViewId | null {
+  const dx = max[0] - min[0];
+  const dz = max[2] - min[2];
+  const length = Math.max(dx, dz);
+  if (!(length > 0) || max[1] - min[1] >= LYING_RATIO * length) return null;
+  // Along Z (the avatar's facing axis) the profile is a side view; along X it is the front or the back.
+  const profile: readonly CameraViewId[] = dz >= dx ? ["left", "right"] : ["front", "back"];
+  return current && profile.includes(current) ? null : profile[0];
+}
+
+/** Ids of the screen points that lie inside any box grown by `pad` pixels. */
+export function pointsInside(points: readonly { id: string; x: number; y: number }[], boxes: readonly Box[], pad = 0): string[] {
+  return points.filter((p) => boxes.some((b) => p.x > b.left - pad && p.x < b.right + pad && p.y > b.top - pad && p.y < b.bottom + pad)).map((p) => p.id);
+}
+
 /** The body points that make the part around a selected point, for framing it (the point first). */
 export const PART_POINTS: Record<PointId, readonly PointId[]> = {
   head: ["head", "chest"],

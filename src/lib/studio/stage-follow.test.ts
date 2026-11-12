@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { START_FOLLOW, followStep, outgrows, type Bounds, type FollowState } from "./stage-follow.ts";
+import { SIZE_SETTLE_MS, START_FOLLOW, followStep, outgrows, watchSize, type Bounds, type FollowState } from "./stage-follow.ts";
 
 const STANDING: Bounds = { min: [-0.3, 0, -0.15], max: [0.3, 1.8, 0.15] };
 const SEATED: Bounds = { min: [-0.3, 0, -0.2], max: [0.3, 1.3, 0.5] };
@@ -48,5 +48,24 @@ describe("following the body when an exercise opens", () => {
   it("tells when a box reaches past another", () => {
     assert.equal(outgrows(STANDING, SEATED), true);
     assert.equal(outgrows(STANDING, nudge(STANDING, 0.05)), false);
+  });
+});
+
+describe("waiting for the stage's final size", () => {
+  it("is settled only after the size held for SIZE_SETTLE_MS", () => {
+    let r = watchSize(null, 800, 600, 1000);
+    assert.equal(r.settled, false);
+    r = watchSize(r.watch, 800, 600, 1000 + SIZE_SETTLE_MS - 1);
+    assert.equal(r.settled, false);
+    r = watchSize(r.watch, 800, 600, 1000 + SIZE_SETTLE_MS);
+    assert.equal(r.settled, true);
+  });
+  it("starts over whenever the size changes", () => {
+    let r = watchSize(null, 800, 600, 0);
+    r = watchSize(r.watch, 800, 600, 400);
+    assert.equal(r.settled, true);
+    r = watchSize(r.watch, 640, 600, 500);
+    assert.equal(r.settled, false);
+    assert.equal(watchSize(r.watch, 640.4, 600, 500 + SIZE_SETTLE_MS).settled, true);
   });
 });

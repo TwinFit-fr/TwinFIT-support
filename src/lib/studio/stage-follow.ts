@@ -57,3 +57,15 @@ export function followStep(state: FollowState, box: Bounds, moving: boolean): { 
   if (stable >= STABLE_SAMPLES && (!state.framed || !close(state.framed, box, DIFFERS_M))) return { state: { ...next, framed: box }, frame: box };
   return { state: next, frame: null };
 }
+
+/** The stage must keep one size this long (ms) before the body is framed: a panel or window still resizing is not its final size. */
+export const SIZE_SETTLE_MS = 250;
+
+export type SizeWatch = { width: number; height: number; since: number };
+
+/** One look at the stage's size: the watch to keep, and whether the size has held long enough. */
+export function watchSize(prev: SizeWatch | null, width: number, height: number, now: number): { watch: SizeWatch; settled: boolean } {
+  const same = prev && Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1;
+  const watch = same ? prev : { width, height, since: now };
+  return { watch, settled: now - watch.since >= SIZE_SETTLE_MS };
+}

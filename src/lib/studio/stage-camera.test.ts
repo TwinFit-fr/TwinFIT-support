@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { POINT_IDS } from "./pose-points.ts";
 import { describe, it } from "node:test";
 import {
+  lyingView,
+  pointsInside,
   CAMERA_VIEWS,
   PART_POINTS,
   directionOf,
@@ -270,5 +272,33 @@ describe("easing between views", () => {
     near(easeOutCubic(1), 1);
     assert.ok(easeOutCubic(0.5) > 0.8);
     near(easeOutCubic(2), 1);
+  });
+});
+
+describe("the view a lying body opens from", () => {
+  it("opens a body lying along Z (supine, prone) from a side view", () => {
+    assert.equal(lyingView([-0.3, 0, -0.9], [0.3, 0.5, 0.9], "three-quarter"), "left");
+    assert.equal(lyingView([-0.3, 0, -0.9], [0.3, 0.5, 0.9], "front"), "left");
+  });
+  it("keeps a side view the camera is already on", () => {
+    assert.equal(lyingView([-0.3, 0, -0.9], [0.3, 0.5, 0.9], "right"), null);
+    assert.equal(lyingView([-0.3, 0, -0.9], [0.3, 0.5, 0.9], "left"), null);
+  });
+  it("shows the profile of a body lying along X from the front", () => {
+    assert.equal(lyingView([-0.9, 0, -0.3], [0.9, 0.4, 0.3], "left"), "front");
+    assert.equal(lyingView([-0.9, 0, -0.3], [0.9, 0.4, 0.3], "back"), null);
+  });
+  it("leaves standing and seated bodies alone", () => {
+    assert.equal(lyingView([-0.35, 0, -0.2], [0.35, 1.8, 0.2], "three-quarter"), null);
+    assert.equal(lyingView([-0.3, 0, -0.5], [0.3, 1.2, 0.5], "three-quarter"), null);
+  });
+});
+
+describe("body points under an overlay", () => {
+  const pts = [{ id: "a", x: 10, y: 10 }, { id: "b", x: 100, y: 100 }];
+  it("lists the points inside a box, with a margin", () => {
+    assert.deepEqual(pointsInside(pts, [{ left: 0, top: 0, right: 50, bottom: 50 }]), ["a"]);
+    assert.deepEqual(pointsInside(pts, [{ left: 105, top: 0, right: 150, bottom: 150 }]), []);
+    assert.deepEqual(pointsInside(pts, [{ left: 105, top: 0, right: 150, bottom: 150 }], 6), ["b"]);
   });
 });

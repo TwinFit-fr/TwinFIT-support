@@ -24,6 +24,10 @@ type StageViewState = {
   frame: () => void;
   reset: () => void;
   setCurrent: (view: CameraViewId | null) => void;
+  /** How far the Reference card has given way to the body: 0 as chosen, 1 compact, 2 collapsed. */
+  cardYield: 0 | 1 | 2;
+  yieldCard: () => void;
+  resetCardYield: () => void;
 };
 
 export const useStageView = create<StageViewState>((set) => ({
@@ -33,4 +37,7 @@ export const useStageView = create<StageViewState>((set) => ({
   frame: () => set((s) => ({ request: { kind: "frame", nonce: (s.request?.nonce ?? 0) + 1 } })),
   reset: () => set((s) => ({ request: { kind: "reset", nonce: (s.request?.nonce ?? 0) + 1 } })),
   setCurrent: (current) => set((s) => (s.current === current ? s : { current })),
+  cardYield: 0,
+  yieldCard: () => set((s) => (s.cardYield >= 2 ? s : { cardYield: (s.cardYield + 1) as 1 | 2 })),
+  resetCardYield: () => set((s) => (s.cardYield === 0 ? s : { cardYield: 0 })),
 }));

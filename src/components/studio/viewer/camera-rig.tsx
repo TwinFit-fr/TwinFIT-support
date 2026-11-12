@@ -12,9 +12,11 @@ import {
   frameInStage,
   framingPoints,
   interpolatePose,
+  lyingView,
   matchView,
   normalize,
   orbitOf,
+  pointsInside,
   positionOf,
   viewDirection,
   type CameraPose,
@@ -23,7 +25,7 @@ import {
   type Vec3,
 } from "@/lib/studio/stage-camera";
 import { useStageView, type ViewRequest } from "@/lib/studio/stage-view";
-import { START_FOLLOW, followStep, type FollowState } from "@/lib/studio/stage-follow";
+import { START_FOLLOW, followStep, watchSize, type FollowState, type SizeWatch } from "@/lib/studio/stage-follow";
 import { useStudioStore } from "@/lib/studio/store";
 import { boundsOf, bodySurface, cornersOf, stageBody, stageObstacles } from "./stage-body";
 
@@ -42,6 +44,10 @@ const PART_PAD_M = 0.1;
 /** A selected part is shown with at least this much around it (a hand with its forearm and some of the body). */
 const PART_RADIUS_M = 0.38;
 const MARGIN_PX = 14;
+/** A rectangle must hold still this long (ms) before the body points are checked against it. */
+const CARD_SETTLE_MS = 200;
+/** A body point this close (px) to the card's edge counts as under it. */
+const POINT_CLEARANCE_PX = 6;
 const FILL_INTENSITY = 0.75;
 
 declare global {
@@ -58,6 +64,10 @@ type Rig = {
   key: string;
   follow: { until: number; next: number; frames: number; state: FollowState } | null;
   framedOnce: boolean;
+  /** The stage's size, and when it last changed: a body is framed only at its final size. */
+  size: SizeWatch | null;
+  /** The Reference card's rectangle (as text), since when it has been that, and whether the body points were checked against it. */
+  card: { sig: string; since: number; checked: boolean; reframedFor: string };
   /** Set while the controls exist (see the effect). */
   apply?: (pose: CameraPose) => void;
   setOffset?: (offset: ScreenOffset) => void;
@@ -80,7 +90,7 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
   const gl = useThree((s) => s.gl);
-  const live = useRef<Rig>({ anim: null, offset: { x: 0, y: 0 }, key: "", follow: null, framedOnce: false });
+  const live = useRef<Rig>({ anim: null, offset: { x: 0, y: 0 }, key: "", follow: null, framedOnce: false, size: null, card: { sig: "", since: 0, checked: true, reframedFor: "" } });
   // A soft light from the camera: the back and the far side read as well as the front (the key light is front left).
   const fill = useMemo(() => new THREE.DirectionalLight("#ffffff", FILL_INTENSITY), []);
 
@@ -232,14 +242,50 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
     const d: Vec3 = [camera.position.x - controls.target.x, camera.position.y - controls.target.y, camera.position.z - controls.target.z];
     useStageView.getState().setCurrent(matchView(d));
 
+    // The Reference card never covers a body point: when its rectangle changes (size, corner, its
+    // content arriving) and a point is under it, frame the body beside it again; if the body still
+    // does not fit beside it, the card gives way (compact, then collapsed).
+    const pane = gl.domElement.closest(".stage-frame")?.parentElement;
+    const card = pane?.querySelector<HTMLElement>("[data-reference-card]");
+    const cr = card?.getBoundingClientRect();
+    const sig = cr ? [cr.left, cr.top, cr.right, cr.bottom].map(Math.round).join(",") : "";
+    if (sig !== s.card.sig) s.card = { ...s.card, sig, since: now, checked: !cr };
+    else if (!s.card.checked && now - s.card.since > CARD_SETTLE_MS) {
+      s.card.checked = true;
+      const dots = [...(pane?.querySelectorAll<HTMLElement>("[data-pose-point]") ?? [])]
+        .filter((b) => getComputedStyle(b).visibility !== "hidden")
+        .map((b) => {
+          const r = b.getBoundingClientRect();
+          return { id: b.dataset.posePoint ?? "", x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        });
+      if (cr && pointsInside(dots, [{ left: cr.left, top: cr.top, right: cr.right, bottom: cr.bottom }], POINT_CLEARANCE_PX).length) {
+        if (s.card.reframedFor !== sig) {
+          s.card.reframedFor = sig;
+          s.card.checked = false;
+          const body = bodySurface();
+          s.frame(body.length ? body : STANDING, normalize(d), BODY_PAD_M);
+        } else useStageView.getState().yieldCard();
+        return;
+      }
+    }
+
     // A new body on the stage: frame it once it is drawn, and again while its clip arrives.
     const key = `${useStudioStore.getState().exerciseId ?? ""}|${stageBody.version}`;
     if (key !== s.key) {
       s.key = key;
+      useStageView.getState().resetCardYield();
       s.follow = stageBody.model ? { until: now + FOLLOW_MS, next: 0, frames: 0, state: START_FOLLOW } : null;
     }
     const f = s.follow;
     if (!f || !stageBody.model) return;
+    // Wait for the stage's final size (a window or panel still settling); a size change after a framing frames again.
+    const size = watchSize(s.size, state.size.width, state.size.height, now);
+    s.size = size.watch;
+    if (!size.settled) {
+      f.until = Math.max(f.until, now + FOLLOW_MS / 2);
+      f.state = { ...f.state, framed: null };
+      return;
+    }
     if (now > f.until) {
       s.follow = null;
       return;
@@ -257,7 +303,13 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
     if (!step.frame) return;
     // A held pose is framed by its surface; a moving body by everything it reached. The very first
     // framing after the model loads is instant, later ones ease.
-    const direction = normalize(d);
+    // A body lying down opens from its profile, never from its feet.
+    let direction = normalize(d);
+    const side = lyingView(box.min, box.max, matchView(d));
+    if (side) {
+      direction = viewDirection(side);
+      useStageView.getState().setCurrent(side);
+    }
     s.frame(framingPoints(step.frame === box ? body : cornersOf(step.frame), direction), direction, BODY_PAD_M, !s.framedOnce);
     s.framedOnce = true;
   });
