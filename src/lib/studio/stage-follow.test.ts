@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { SIZE_SETTLE_MS, START_FOLLOW, followStep, outgrows, watchSize, type Bounds, type FollowState } from "./stage-follow.ts";
+import { SIZE_SETTLE_MS, obstacleSignature, START_FOLLOW, followStep, outgrows, watchSize, type Bounds, type FollowState } from "./stage-follow.ts";
 
 const STANDING: Bounds = { min: [-0.3, 0, -0.15], max: [0.3, 1.8, 0.15] };
 const SEATED: Bounds = { min: [-0.3, 0, -0.2], max: [0.3, 1.3, 0.5] };
@@ -67,5 +67,13 @@ describe("waiting for the stage's final size", () => {
     r = watchSize(r.watch, 640, 600, 500);
     assert.equal(r.settled, false);
     assert.equal(watchSize(r.watch, 640.4, 600, 500 + SIZE_SETTLE_MS).settled, true);
+  });
+});
+
+describe("the overlays' signature", () => {
+  it("changes with a rectangle, not with a sub-pixel move", () => {
+    const a = [{ left: 0, top: 0, right: 100, bottom: 50 }];
+    assert.equal(obstacleSignature(a), obstacleSignature([{ left: 0.2, top: 0, right: 100.3, bottom: 50 }]));
+    assert.notEqual(obstacleSignature(a), obstacleSignature([{ left: 0, top: 0, right: 100, bottom: 80 }]));
   });
 });

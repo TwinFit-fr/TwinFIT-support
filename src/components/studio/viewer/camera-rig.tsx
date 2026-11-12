@@ -11,8 +11,10 @@ import {
   easeOutCubic,
   frameInStage,
   framingPoints,
+  framingDiffers,
   interpolatePose,
   lyingView,
+  openingView,
   matchView,
   normalize,
   orbitOf,
@@ -25,7 +27,7 @@ import {
   type Vec3,
 } from "@/lib/studio/stage-camera";
 import { useStageView, type ViewRequest } from "@/lib/studio/stage-view";
-import { START_FOLLOW, followStep, watchSize, type FollowState, type SizeWatch } from "@/lib/studio/stage-follow";
+import { OVERLAY_SETTLE_MS, START_FOLLOW, followStep, obstacleSignature, watchSize, type FollowState, type SizeWatch } from "@/lib/studio/stage-follow";
 import { useStudioStore } from "@/lib/studio/store";
 import { boundsOf, bodySurface, cornersOf, stageBody, stageObstacles } from "./stage-body";
 
@@ -62,7 +64,10 @@ type Rig = {
   offset: ScreenOffset;
   /** What the body shows (exercise and stage version); a change starts a follow. */
   key: string;
-  follow: { until: number; next: number; frames: number; state: FollowState } | null;
+  follow: { until: number; next: number; frames: number; state: FollowState; overlays: string } | null;
+  /** A newly opened exercise has not been framed yet: its first framing opens from a view that depends on the body alone. */
+  opening: boolean;
+  exercise: string;
   framedOnce: boolean;
   /** The stage's size, and when it last changed: a body is framed only at its final size. */
   size: SizeWatch | null;
@@ -73,6 +78,8 @@ type Rig = {
   setOffset?: (offset: ScreenOffset) => void;
   /** Fit these points from this direction, easing unless `instant` (or reduced motion). */
   frame?: (points: readonly Vec3[], direction: Vec3, pad: number, instant?: boolean, minRadiusM?: number) => void;
+  /** Would framing these points now (overlays as they are) put the camera somewhere else than it is? */
+  stale?: (points: readonly Vec3[], direction: Vec3, pad: number) => boolean;
 };
 
 const reducedMotion = () => typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
@@ -90,7 +97,7 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
   const gl = useThree((s) => s.gl);
-  const live = useRef<Rig>({ anim: null, offset: { x: 0, y: 0 }, key: "", follow: null, framedOnce: false, size: null, card: { sig: "", since: 0, checked: true, reframedFor: "" } });
+  const live = useRef<Rig>({ anim: null, offset: { x: 0, y: 0 }, key: "", follow: null, opening: false, exercise: "", framedOnce: false, size: null, card: { sig: "", since: 0, checked: true, reframedFor: "" } });
   // A soft light from the camera: the back and the far side read as well as the front (the key light is front left).
   const fill = useMemo(() => new THREE.DirectionalLight("#ffffff", FILL_INTENSITY), []);
 
@@ -149,9 +156,11 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
       camera.lookAt(target);
     };
 
+    const fit = (points: readonly Vec3[], direction: Vec3, pad: number, minRadiusM = 0) =>
+      frameInStage({ points, direction, fovYDeg: camera.fov, viewport: size(), padM: pad, marginPx: MARGIN_PX, minRadiusM, minDistance, maxDistance }, stageObstacles(gl.domElement));
     const frame = (points: readonly Vec3[], direction: Vec3, pad: number, instant = false, minRadiusM = 0) => {
       settleControls();
-      const to = frameInStage({ points, direction, fovYDeg: camera.fov, viewport: size(), padM: pad, marginPx: MARGIN_PX, minRadiusM, minDistance, maxDistance }, stageObstacles(gl.domElement));
+      const to = fit(points, direction, pad, minRadiusM);
       if (instant || reducedMotion()) {
         s.anim = null;
         apply(to);
@@ -182,6 +191,7 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
     s.apply = apply;
     s.setOffset = setOffset;
     s.frame = frame;
+    s.stale = (points, direction, pad) => framingDiffers(current(), fit(points, direction, pad));
     if (process.env.NODE_ENV !== "production") {
       const r3 = (v: number) => Math.round(v * 1000) / 1000;
       window.__studioCamera = () => ({
@@ -207,17 +217,24 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
     };
     frameEl?.addEventListener("pointerdown", stop, true);
     frameEl?.addEventListener("wheel", stop, { capture: true, passive: true });
-    window.addEventListener("keydown", stop, true);
+    // Typing in a field (the catalog search) is not the user taking over the camera.
+    const stopKey = (e: KeyboardEvent) => {
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      stop();
+    };
+    window.addEventListener("keydown", stopKey, true);
     controls.addEventListener("start", startOrbit);
     return () => {
       unsubscribe();
       frameEl?.removeEventListener("pointerdown", stop, true);
       frameEl?.removeEventListener("wheel", stop, true);
-      window.removeEventListener("keydown", stop, true);
+      window.removeEventListener("keydown", stopKey, true);
       controls.removeEventListener("start", startOrbit);
       s.apply = undefined;
       s.setOffset = undefined;
       s.frame = undefined;
+      s.stale = undefined;
     };
   }, [camera, controls, gl, minDistance, maxDistance]);
 
@@ -227,7 +244,7 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
       fill.position.copy(camera.position);
       fill.target.position.copy(controls.target);
     }
-    if (!controls || !s.apply || !s.setOffset || !s.frame) return;
+    if (!controls || !s.apply || !s.setOffset || !s.frame || !s.stale) return;
     // The view offset is in pixels of the canvas: keep it with the canvas's size.
     if (camera.view && (camera.view.fullWidth !== state.size.width || camera.view.fullHeight !== state.size.height)) s.setOffset(s.offset);
 
@@ -271,11 +288,16 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
     }
 
     // A new body on the stage: frame it once it is drawn, and again while its clip arrives.
-    const key = `${useStudioStore.getState().exerciseId ?? ""}|${stageBody.version}`;
+    const exercise = useStudioStore.getState().exerciseId ?? "";
+    const key = `${exercise}|${stageBody.version}`;
     if (key !== s.key) {
       s.key = key;
+      if (exercise !== s.exercise) {
+        s.exercise = exercise;
+        s.opening = exercise !== "";
+      }
       useStageView.getState().resetCardYield();
-      s.follow = stageBody.model ? { until: now + FOLLOW_MS, next: 0, frames: 0, state: START_FOLLOW } : null;
+      s.follow = stageBody.model ? { until: now + FOLLOW_MS, next: 0, frames: 0, state: START_FOLLOW, overlays: "" } : null;
     }
     const f = s.follow;
     if (!f || !stageBody.model) return;
@@ -302,12 +324,28 @@ export function CameraRig({ minDistance, maxDistance }: { minDistance: number; m
     const moving = st.edit.mode === "off" && (!st.poseEdit || st.playing || st.scrubTime !== null);
     const step = followStep(f.state, box, moving);
     f.state = step.state;
-    if (!step.frame) return;
+    // Overlays still appearing, closing or resizing change the free part of the stage: keep following
+    // until they hold still, and frame again if the body no longer sits where the stage would put it.
+    const overlays = obstacleSignature(stageObstacles(gl.domElement));
+    if (overlays !== f.overlays) {
+      f.overlays = overlays;
+      f.until = Math.max(f.until, now + OVERLAY_SETTLE_MS);
+    }
+    if (!step.frame) {
+      if (!moving && step.state.stable >= 2 && step.state.framed && s.stale(body, normalize(d), BODY_PAD_M)) s.frame(body, normalize(d), BODY_PAD_M);
+      return;
+    }
     // A held pose is framed by its surface; a moving body by everything it reached. The very first
     // framing after the model loads is instant, later ones ease.
     // A body lying down opens from its profile, never from its feet.
     let direction = normalize(d);
-    const side = lyingView(box.min, box.max, matchView(d));
+    let side: CameraViewId | null;
+    if (s.opening) {
+      // The first framing of a newly opened exercise: a view that depends on the body alone, not on the previous exercise.
+      const pose = st.poseEdit?.poses[st.poseEdit.keyframe];
+      side = openingView(pose?.orientation ?? null, box.min, box.max);
+      s.opening = false;
+    } else side = lyingView(box.min, box.max, matchView(d));
     if (side) {
       direction = viewDirection(side);
       useStageView.getState().setCurrent(side);
