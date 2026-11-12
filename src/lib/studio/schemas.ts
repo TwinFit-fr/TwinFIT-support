@@ -14,6 +14,13 @@ const MAX_IMAGE_DATA_URL = 28 * 1024 * 1024;
 
 export const codeSchema = z.string().trim().regex(/^[A-Z][A-Z0-9_]*$/, "code must be SCREAMING_SNAKE");
 
+/** A base avatar's display name and height in metres (the avatar routes and the add-avatar form). */
+export const avatarNameSchema = z.string().trim().min(1).max(120);
+export const AVATAR_HEIGHT_M = { min: 0.5, max: 2.5 } as const;
+export const avatarHeightSchema = z.number().min(AVATAR_HEIGHT_M.min).max(AVATAR_HEIGHT_M.max);
+/** A model to import from the web: a full https link (the import route and the add-avatar form). */
+export const modelUrlSchema = z.string().url().refine((u) => u.startsWith("https://"), "only https URLs");
+
 export const equipmentKindSchema = z.enum(["load", "support"]);
 
 export const imageDataUrlSchema = z

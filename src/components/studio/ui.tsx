@@ -1,9 +1,10 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { parseEntry } from "@/lib/studio/joint-props";
+import { parseEntry, stepEntry } from "@/lib/studio/joint-props";
+import { rovingIndex } from "@/lib/studio/roving";
 import type { VectorStatus } from "@/lib/studio/types";
 
 /* Material 3 pieces for the dark Studio: filled / tonal / outlined / text buttons, filled text
@@ -97,11 +98,11 @@ export function Field({
 }) {
   const id = useId();
   const caption = (
-    <span id={group ? id : undefined} className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.12em] text-(--m3-on-surface-variant)">
+    <span id={group ? id : undefined} className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.1em] text-(--m3-on-surface-variant)">
       {label}
     </span>
   );
-  const hintNode = hint ? <span className="mt-1 block text-[11px] text-(--m3-on-surface-variant)/80">{hint}</span> : null;
+  const hintNode = hint ? <span className="mt-1 block text-[12px] text-(--m3-on-surface-variant)">{hint}</span> : null;
   if (group) {
     return (
       <div role="group" aria-labelledby={id} className={cn("block", className)}>
@@ -126,15 +127,19 @@ const fieldBase =
 /**
  * A number input that is pleasant to type in: it shows the value rounded while idle, keeps what
  * you type while focused (decimals, a cleared field) and commits on blur or Enter; an empty or
- * unparsable field goes back to the last value instead of becoming 0.
+ * unparsable field goes back to the last value instead of becoming 0. Escape undoes this field's
+ * edit only. With `decimalPoint` it is a text field with spin-button semantics that always shows
+ * a dot ("1.75", whatever the browser's language, matching the hints) and accepts "1,75" too; the
+ * arrow keys step it (ten steps with Shift).
  */
 export function NumberField({
   value,
   onCommit,
   digits = 0,
+  decimalPoint = false,
   className,
   ...props
-}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & { value: number; onCommit: (value: number) => void; digits?: number }) {
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & { value: number; onCommit: (value: number) => void; digits?: number; decimalPoint?: boolean }) {
   const [text, setText] = useState<string | null>(null);
   // A new value from outside drops what was being typed (state adjusted during render, no effect).
   const [seen, setSeen] = useState(value);
@@ -143,17 +148,35 @@ export function NumberField({
     setText(null);
   }
   const shown = text ?? (Number.isFinite(value) ? value.toFixed(digits) : "");
+  const min = props.min !== undefined ? Number(props.min) : -Infinity;
+  const max = props.max !== undefined ? Number(props.max) : Infinity;
   const commit = () => {
     if (text === null) return;
     setText(null);
-    const min = props.min !== undefined ? Number(props.min) : -Infinity;
-    const max = props.max !== undefined ? Number(props.max) : Infinity;
     const entry = parseEntry(text, { min, max });
     if (entry.kind === "ok" && entry.value !== value) onCommit(entry.value);
   };
+  const step = (direction: 1 | -1, coarse: boolean) => {
+    const typed = text !== null ? parseEntry(text, { min, max }) : null;
+    const from = typed?.kind === "ok" ? typed.value : value;
+    const next = stepEntry(from, direction, { step: Number(props.step) || 1, min, max, coarse });
+    setText(null);
+    if (next !== value) onCommit(next);
+  };
+  const spin = decimalPoint
+    ? {
+        type: "text",
+        role: "spinbutton",
+        autoComplete: "off",
+        spellCheck: false,
+        "aria-valuenow": Number.isFinite(value) ? value : undefined,
+        "aria-valuemin": Number.isFinite(min) ? min : undefined,
+        "aria-valuemax": Number.isFinite(max) ? max : undefined,
+      }
+    : { type: "number" };
   return (
     <input
-      type="number"
+      {...spin}
       inputMode="decimal"
       className={cn(fieldBase, "font-mono tabular-nums", className)}
       value={shown}
@@ -161,7 +184,15 @@ export function NumberField({
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") setText(null);
+        if (decimalPoint && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          e.preventDefault();
+          step(e.key === "ArrowUp" ? 1 : -1, e.shiftKey);
+        }
+        // Escape cancels this field's edit only; with nothing typed it is left to the dialog.
+        if (e.key === "Escape" && text !== null) {
+          e.preventDefault();
+          setText(null);
+        }
       }}
       {...props}
     />
@@ -178,7 +209,7 @@ export function TextArea({ className, ...props }: React.TextareaHTMLAttributes<H
 
 export function Select({ className, children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select className={cn(fieldBase, "cursor-pointer appearance-none pr-8", className)} {...props}>
+    <select className={cn(fieldBase, "cursor-pointer appearance-none bg-(image:--studio-select-chevron) bg-size-[14px] bg-position-[right_0.75rem_center] bg-no-repeat pr-9", className)} {...props}>
       {children}
     </select>
   );
@@ -187,16 +218,17 @@ export function Select({ className, children, ...props }: React.SelectHTMLAttrib
 export function Chip({
   className,
   tone = "neutral",
-  selected = false,
+  selected,
   children,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?: "neutral" | "primary" | "success" | "warning" | "error";
+  /** Makes an interactive chip a toggle, announced with aria-pressed; leave it out for an action chip. */
   selected?: boolean;
 }) {
   const interactive = typeof props.onClick === "function";
   const classes = cn(
-    "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium tracking-tight transition-colors",
+    "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] font-medium tracking-tight transition-colors",
     interactive ? "studio-state cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-(--m3-primary)/70" : "cursor-default",
     selected
       ? "border-transparent bg-(--m3-secondary-container) text-(--m3-on-secondary-container)"
@@ -216,12 +248,16 @@ export function Chip({
     );
   }
   return (
-    <button type="button" className={classes} {...props}>
+    <button type="button" className={classes} aria-pressed={selected} {...props}>
       {children}
     </button>
   );
 }
 
+/**
+ * One choice of a few, as a row of pressed / not pressed buttons in a labelled group. Tab lands on
+ * the chosen one; the arrow keys (and Home / End) move the choice, as in a radio group.
+ */
 export function Segmented<T extends string>({
   value,
   options,
@@ -236,18 +272,29 @@ export function Segmented<T extends string>({
   size?: "sm" | "md";
   className?: string;
   /** What the choice is about, for screen readers ("Range"). */
-  label?: string;
+  label: string;
 }) {
+  const group = useRef<HTMLDivElement>(null);
+  const current = options.findIndex((o) => o.value === value);
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const next = rovingIndex(event.key, current, options.length);
+    if (next === null) return;
+    event.preventDefault();
+    onChange(options[next].value);
+    group.current?.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
+  };
   return (
     <div
+      ref={group}
       role="group"
       aria-label={label}
+      onKeyDown={onKeyDown}
       className={cn(
         "inline-flex overflow-hidden rounded-full border border-(--m3-outline) p-0.5",
         className,
       )}
     >
-      {options.map((option) => {
+      {options.map((option, i) => {
         const active = option.value === value;
         return (
           <button
@@ -255,10 +302,11 @@ export function Segmented<T extends string>({
             type="button"
             title={option.title}
             aria-pressed={active}
+            tabIndex={active || (current < 0 && i === 0) ? 0 : -1}
             onClick={() => onChange(option.value)}
             className={cn(
-              "studio-state cursor-pointer rounded-full font-medium transition-colors",
-              size === "sm" ? "h-7 px-2.5 text-[11px]" : "h-8 px-3.5 text-xs",
+              "studio-state cursor-pointer rounded-full font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--m3-primary)/70",
+              size === "sm" ? "h-7 px-2.5 text-[12px]" : "h-8 px-3.5 text-xs",
               active
                 ? "bg-(--m3-secondary-container) text-(--m3-on-secondary-container)"
                 : "text-(--m3-on-surface-variant) hover:text-(--m3-on-surface)",

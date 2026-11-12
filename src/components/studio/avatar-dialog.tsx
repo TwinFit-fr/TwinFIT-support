@@ -1,330 +1,190 @@
 "use client";
 
 import { useState } from "react";
-import { Bone, ImagePlus, Link2, Sparkles, Upload, X } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
-import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
+import { explainAvatarError } from "@/lib/studio/avatar-form";
 import { readAsDataUrl } from "@/lib/studio/format";
 import { MESHY_AVATAR, avatarBuildRequest, shortEstimate } from "@/lib/studio/paid-actions";
-import { codeFromFileName, defaultSockets } from "@/lib/studio/prompt";
-import type { AvatarRig, AvatarSocket, AvatarSubject, BaseAvatar } from "@/lib/studio/types";
+import { defaultSockets } from "@/lib/studio/prompt";
+import type { AvatarRig, AvatarSubject, BaseAvatar } from "@/lib/studio/types";
 import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
-import { MANNEQUIN_DEFAULTS, postMannequin } from "./hooks/use-mannequin";
+import { AVATAR_SOURCES, AvatarSourceList } from "./avatar-sources";
+import { DialogRow, FilePick, rowDescription } from "./dialog-form";
+import { useAvatarForm, type ImageChoice } from "./hooks/use-avatar-form";
+import { postMannequin } from "./hooks/use-mannequin";
 import { usePaidConfirm } from "./studio-confirm";
-import { Field, M3Button, Segmented, Select, TextArea, TextInput } from "./ui";
+import { StudioDialog } from "./studio-dialog";
+import { M3Button, Segmented, Select, TextInput } from "./ui";
 
-type Mode = "style" | "generate" | "upload" | "url";
-
-/** What the paid Meshy build costs, said on its tab and on its button (the confirmation repeats it before anything is sent). */
-const STYLE_COST = shortEstimate(MESHY_AVATAR);
-
-// The free, instant mannequin comes first and is the default; the paid build says its cost where it is chosen.
-const MODES: { value: Mode; label: React.ReactNode; title: string }[] = [
-  { value: "generate", label: "Mannequin · free", title: "Build a mannequin with the Mixamo skeleton right here: free, ready in seconds, no file needed" },
-  { value: "upload", label: "Upload", title: "Upload a rigged .glb / .gltf" },
-  { value: "url", label: "From URL", title: "Import a .glb from an https URL (Ready Player Me, a CDN…)" },
-  {
-    value: "style",
-    label: (
-      <>
-        TwinFIT style <span className="font-normal opacity-80">· {STYLE_COST}</span>
-      </>
-    ),
-    title: `Build the catalog's character with Meshy from its reference image, auto-rigged (about ${MESHY_AVATAR.credits} credits, ${MESHY_AVATAR.duration})`,
-  },
-];
-
-type Fields = {
-  code: string;
-  name: string;
-  subject: AvatarSubject;
-  rig: AvatarRig;
-  height_m: number | null;
-  sockets: AvatarSocket[];
-  is_default: boolean;
-  params?: Record<string, unknown>;
-};
-
-type StyleBody = { mode: "style"; code: string; name: string; subject: "man" | "woman"; height_m: number; is_default: boolean; image_data_url?: string | null };
+const RIG_LABEL: Record<AvatarRig, string> = { mixamo: "Mixamo skeleton", vrm: "VRM (VRoid, avatar apps)", custom: "Other skeleton" };
+const SUBMIT_LABEL = { generate: "Create the mannequin", upload: "Upload avatar", url: "Import avatar", style: `Build with Meshy · ${shortEstimate(MESHY_AVATAR)}` } as const;
 
 /**
- * Register a base avatar: the free in-browser mannequin (the default), a rigged model upload, an
- * import from a URL, or the paid Meshy build of the catalog's character.
+ * Register a base avatar: the free in-browser mannequin (the default, first in the list), a rigged
+ * model upload, an import from a link, or the paid Meshy build of the catalog's character.
+ * Attachment points are not typed here: each rig starts on its default bones, and the rig editor
+ * corrects them on the loaded model. Every field is checked while typing with the server's rules;
+ * a refusal shows in the dialog's alert line.
  */
 export function AvatarDialog({
   hasDefault,
+  takenCodes,
   onClose,
   onCreated,
 }: {
   hasDefault: boolean;
+  /** Codes other avatars already use (a code is unique). */
+  takenCodes: readonly string[];
   onClose: () => void;
   onCreated: (avatar: BaseAvatar) => void;
 }) {
   const staffFetch = useStaffFetch();
   const toast = useToast();
   const paidConfirm = usePaidConfirm();
-  const [mode, setMode] = useState<Mode>("generate");
-  /** POST /api/studio/avatars: multipart (file + fields), `{url, fields}` or the style body; a 502 carries the provider's message. */
-  const postAvatar = async (body: FormData | { url: string; fields: Fields } | StyleBody): Promise<BaseAvatar> => {
-    const json = (await staffFetch("/api/studio/avatars", { method: "POST", body: body instanceof FormData ? body : JSON.stringify(body) })) as { avatar: BaseAvatar };
-    return json.avatar;
-  };
-  const [file, setFile] = useState<File | null>(null);
-  const [image, setImage] = useState<File | null>(null);
-  const [url, setUrl] = useState("");
-  const [code, setCode] = useState(MANNEQUIN_DEFAULTS.code);
-  const [name, setName] = useState(MANNEQUIN_DEFAULTS.name);
-  const [subject, setSubject] = useState<AvatarSubject>(MANNEQUIN_DEFAULTS.subject);
-  const [rig, setRig] = useState<AvatarRig>("mixamo");
-  const [height, setHeight] = useState("1.75");
-  const [socketsText, setSocketsText] = useState(() => JSON.stringify(defaultSockets("mixamo"), null, 2));
-  const [isDefault, setIsDefault] = useState(!hasDefault);
+  const form = useAvatarForm({ hasDefault, takenCodes });
+  const { source, values, set, errors } = form;
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const about = AVATAR_SOURCES.find((s) => s.value === source)!;
 
-  const changeMode = (next: Mode) => {
-    setMode(next);
-    if (next === "generate") {
-      setCode(MANNEQUIN_DEFAULTS.code);
-      setName(MANNEQUIN_DEFAULTS.name);
-      setSubject(MANNEQUIN_DEFAULTS.subject);
-      setRig("mixamo");
-      setSocketsText(JSON.stringify(defaultSockets("mixamo"), null, 2));
-    } else if (next === "style") {
-      const s = subject === "woman" ? "woman" : "man";
-      setSubject(s);
-      setCode(`TWINFIT_${s.toUpperCase()}`);
-      setName(`TwinFIT ${s}`);
-    } else if (code === MANNEQUIN_DEFAULTS.code || code.startsWith("TWINFIT_")) {
-      setCode("");
-      setName("");
-    }
-  };
-  const changeSubject = (next: AvatarSubject) => {
-    setSubject(next);
-    if (mode === "style" && next !== "neutral") {
-      setCode(`TWINFIT_${next.toUpperCase()}`);
-      setName(`TwinFIT ${next}`);
-    }
-  };
-
-  const pickFile = (next: File | null) => {
-    setFile(next);
-    if (next && !code) setCode(codeFromFileName(next.name));
-    if (next && !name) setName(next.name.replace(/\.(glb|gltf)$/i, ""));
-  };
-
-  const changeRig = (next: AvatarRig) => {
-    setRig(next);
-    setSocketsText(JSON.stringify(defaultSockets(next), null, 2));
-  };
-
-  const readFields = (): Fields | null => {
-    try {
-      const sockets = JSON.parse(socketsText || "[]") as AvatarSocket[];
-      if (!Array.isArray(sockets)) throw new Error("sockets must be a JSON array");
-      return {
-        code: code.trim(),
-        name: name.trim(),
-        subject,
-        rig,
-        height_m: height.trim() ? Number(height) : null,
-        sockets,
-        is_default: isDefault,
-      };
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Invalid sockets JSON");
-      return null;
-    }
-  };
+  const post = async (body: FormData | object): Promise<BaseAvatar> =>
+    ((await staffFetch("/api/studio/avatars", { method: "POST", body: body instanceof FormData ? body : JSON.stringify(body) })) as { avatar: BaseAvatar }).avatar;
 
   const submit = async () => {
-    const fields = readFields();
-    if (!fields) return;
+    setError(null);
+    if (form.blocker) {
+      form.revealErrors();
+      return;
+    }
+    const fields = { code: values.code.trim(), name: values.name.trim(), subject: values.subject, rig: values.rig, height_m: form.height, sockets: defaultSockets(values.rig), is_default: values.isDefault };
     // The paid build states what it does, its cost and its time first; Cancel sends nothing.
-    if (mode === "style" && subject !== "neutral" && !(await paidConfirm(avatarBuildRequest({ name: fields.name, subject, customImage: image?.name ?? null })))) return;
+    if (source === "style" && !(await paidConfirm(avatarBuildRequest({ name: fields.name, subject: fields.subject, customImage: form.image?.name ?? null })))) return;
     setBusy(true);
     try {
       let avatar: BaseAvatar;
-      if (mode === "style") {
-        if (subject === "neutral") throw new Error("Pick man or woman: the style has a character for each");
-        const image_data_url = image ? await readAsDataUrl(image) : null;
-        avatar = await postAvatar({
-          mode: "style",
-          code: fields.code,
-          name: fields.name,
-          subject,
-          height_m: fields.height_m ?? 1.75,
-          is_default: isDefault,
-          image_data_url,
-        });
+      if (source === "style") {
+        const image_data_url = form.image ? await readAsDataUrl(form.image) : null;
+        avatar = await post({ mode: "style", code: fields.code, name: fields.name, subject: fields.subject, height_m: fields.height_m ?? 1.75, is_default: fields.is_default, image_data_url });
         toast.success(`${avatar.name}: Meshy is building it (${MESHY_AVATAR.duration}). Follow it in Jobs; your current avatar stays until you choose the new one.`, "Avatar started");
-        onCreated(avatar);
-        return;
-      }
-      if (mode === "generate") {
-        avatar = await postMannequin(staffFetch, fields);
-      } else if (mode === "upload") {
-        if (!file) return;
-        const form = new FormData();
-        form.set("file", file);
-        form.set("fields", JSON.stringify(fields));
-        avatar = await postAvatar(form);
       } else {
-        avatar = await postAvatar({ url: url.trim(), fields });
+        if (source === "generate") avatar = await postMannequin(staffFetch, fields);
+        else if (source === "upload" && form.file) {
+          const body = new FormData();
+          body.set("file", form.file);
+          body.set("fields", JSON.stringify(fields));
+          avatar = await post(body);
+        } else avatar = await post({ url: form.url.trim(), fields });
+        toast.success(`${avatar.name} is ready`, "Avatar added");
       }
-      toast.success(`${avatar.name} is ready`, "Avatar added");
       onCreated(avatar);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not add the avatar");
+      setError(explainAvatarError(err instanceof Error ? err.message : "Could not add the avatar."));
     } finally {
       setBusy(false);
     }
   };
 
-  const canSubmit =
-    Boolean(code.trim() && name.trim()) &&
-    (mode === "generate" ||
-      (mode === "style" && subject !== "neutral") ||
-      (mode === "upload" && Boolean(file)) ||
-      (mode === "url" && /^https:\/\/\S+/.test(url.trim())));
+  const subjects = AVATAR_SUBJECTS.filter((s) => source !== "style" || s !== "neutral");
 
   return (
-    <Modal
+    <StudioDialog
+      data-avatar-dialog=""
+      title="New base avatar"
+      icon={<UserPlus />}
+      subtitle="Poses are shown and edited on a base avatar. Choose where it comes from."
       onClose={onClose}
-      labelledBy="avatar-dialog-title"
-      dismissible={!busy}
-      className="studio-root w-[580px] max-w-[calc(100vw-2rem)] rounded-3xl border border-(--m3-outline-variant) bg-(--m3-surface-container) p-0 text-(--m3-on-surface) shadow-2xl backdrop:bg-(--m3-scrim)"
+      dirty={form.dirty}
+      busy={busy}
+      error={error}
+      onDismissError={() => setError(null)}
+      bodyClassName="p-0"
+      footerNote={form.blocker ?? (about.paid ? `Paid: about ${MESHY_AVATAR.credits} Meshy credits. You confirm the cost next.` : source === "generate" ? "Free. Nothing is sent to a paid service." : null)}
+      actions={
+        <M3Button variant="filled" onClick={() => void submit()} busy={busy} disabled={Boolean(form.blocker)} data-avatar-submit>
+          {SUBMIT_LABEL[source]}
+        </M3Button>
+      }
     >
-      <div className="flex items-center justify-between border-b border-(--m3-outline-variant) px-5 py-4">
-        <h2 id="avatar-dialog-title" className="text-base font-semibold tracking-tight">
-          New base avatar
-        </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={busy}
-          aria-label="Close"
-          className="studio-state flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-(--m3-on-surface-variant)"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="studio-scroll max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
-        <Segmented value={mode} onChange={changeMode} options={MODES} className="w-full justify-between" />
-
-        {mode === "style" ? (
-          <div className="space-y-3 rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-low) px-4 py-3">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-(--m3-primary-container) text-(--m3-on-primary-container)">
-                <Sparkles className="h-4 w-4" />
-              </span>
-              <p className="text-xs leading-relaxed text-(--m3-on-surface-variant)">
-                Takes the character reference image of the default style (Images → Styles) for the subject, asks Meshy for the model in a
-                T-pose with PBR textures, auto-rigs it and stores the rigged <code className="font-mono">.glb</code>. Sockets land on the
-                rig&apos;s own hand, back and hip bones. About {MESHY_AVATAR.credits} credits; {MESHY_AVATAR.duration}. It runs in the background and shows in Jobs in the top bar.
-              </p>
+      <div className="grid min-h-full grid-cols-[232px_minmax(0,1fr)]">
+        <div className="border-r border-(--m3-outline-variant) bg-(--m3-surface-container-low) p-3">
+          <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-(--m3-on-surface-variant)">Source</p>
+          <AvatarSourceList value={source} onChange={form.changeSource} disabled={busy} />
+        </div>
+        <div className="min-w-0 px-5 py-4">
+          <p className="mb-2 text-[13px] leading-relaxed text-(--m3-on-surface-variant)" data-source-about>
+            {about.about}
+          </p>
+          {source === "upload" ? (
+            <DialogRow id="avatar-file" label="Model file" hint="A rigged .glb or .gltf, up to 100 MB. The name and code below follow the file name." error={errors.file}>
+              <FilePick id="avatar-file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" file={form.file} onPick={form.pickFile} placeholder="No file chosen" describedBy={rowDescription("avatar-file", { hint: true, error: errors.file })} />
+            </DialogRow>
+          ) : null}
+          {source === "url" ? (
+            <DialogRow id="avatar-url" label="Model link" hint="An https link to a .glb or .gltf. The name and code below follow the file name in the link." error={errors.url}>
+              <TextInput id="avatar-url" type="url" value={form.url} onChange={(e) => form.setUrl(e.target.value)} placeholder="https://models.readyplayer.me/….glb" inputMode="url" spellCheck={false} autoComplete="off" {...rowDescription("avatar-url", { hint: true, error: errors.url })} />
+            </DialogRow>
+          ) : null}
+          {source === "style" ? (
+            <DialogRow id="avatar-image" label="Reference image" hint={form.imageChoice === "own" ? "Full body, front view, plain background. PNG, JPEG or WebP, up to 20 MB." : `Meshy builds from the ${values.subject} character image of the default style (Images → Styles).`} error={form.imageChoice === "own" ? errors.image : null}>
+              <Segmented
+                label="Reference image"
+                size="sm"
+                value={form.imageChoice}
+                onChange={(v: ImageChoice) => form.setImageChoice(v)}
+                options={[
+                  { value: "own", label: "My image" },
+                  { value: "style", label: "The style's image" },
+                ]}
+                className="mb-2"
+              />
+              {form.imageChoice === "own" ? (
+                <FilePick id="avatar-image" accept="image/png,image/jpeg,image/webp" file={form.image} onPick={form.pickImage} placeholder="No image chosen" buttonLabel="Choose image…" preview describedBy={rowDescription("avatar-image", { hint: true, error: errors.image })} />
+              ) : null}
+            </DialogRow>
+          ) : null}
+          <DialogRow id="avatar-name" label="Name" hint="Shown in the avatar menu." error={errors.name}>
+            <TextInput id="avatar-name" value={values.name} onChange={(e) => set("name", e.target.value)} placeholder="Neutral man" {...rowDescription("avatar-name", { hint: true, error: errors.name })} />
+          </DialogRow>
+          <DialogRow id="avatar-code" label="Code" hint="A unique ID in capitals, such as NEUTRAL_MAN." error={errors.code}>
+            <TextInput id="avatar-code" value={values.code} onChange={(e) => set("code", e.target.value.toUpperCase())} placeholder="NEUTRAL_MAN" spellCheck={false} autoComplete="off" className="font-mono" {...rowDescription("avatar-code", { hint: true, error: errors.code })} />
+          </DialogRow>
+          <DialogRow id="avatar-subject" label="Subject" group>
+            <Segmented label="Subject" value={values.subject} onChange={(v: AvatarSubject) => set("subject", v)} options={subjects.map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }))} />
+          </DialogRow>
+          <DialogRow
+            id="avatar-height"
+            label="Height"
+            optional={source === "upload" || source === "url"}
+            hint={source === "generate" ? "In metres, 0.5 to 2.5. The mannequin is built at this size." : source === "style" ? "In metres, 0.5 to 2.5. Meshy rigs the character at this height." : "In metres, 0.5 to 2.5. Leave empty to keep the model's own size."}
+            error={errors.height}
+          >
+            <div className="flex items-center gap-2">
+              <TextInput id="avatar-height" inputMode="decimal" value={values.height} onChange={(e) => set("height", e.target.value)} className="w-28 font-mono tabular-nums" {...rowDescription("avatar-height", { hint: true, error: errors.height })} />
+              <span className="text-[13px] text-(--m3-on-surface-variant)">m</span>
             </div>
-            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-(--m3-outline) px-3 py-2 text-xs transition-colors hover:border-(--m3-primary)">
-              <ImagePlus className="h-4 w-4 shrink-0 text-(--m3-primary)" />
-              <span className="min-w-0 flex-1 truncate text-(--m3-on-surface-variant)">
-                {image ? image.name : "Optional: another reference image instead of the style's (full body, plain background)"}
-              </span>
-              <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
+          </DialogRow>
+          {source === "upload" || source === "url" ? (
+            <DialogRow id="avatar-rig" label="Skeleton" hint="Sets where the attachment points start; fix them later in the rig editor.">
+              <Select id="avatar-rig" value={values.rig} onChange={(e) => set("rig", e.target.value as AvatarRig)} {...rowDescription("avatar-rig", { hint: true })}>
+                {AVATAR_RIGS.map((r) => (
+                  <option key={r} value={r}>
+                    {RIG_LABEL[r]}
+                  </option>
+                ))}
+              </Select>
+            </DialogRow>
+          ) : null}
+          <div className="grid grid-cols-[136px_minmax(0,1fr)] gap-x-4 py-2">
+            <span />
+            <label className="flex w-fit cursor-pointer items-center gap-2 text-[13px] text-(--m3-on-surface)">
+              <input type="checkbox" checked={values.isDefault} onChange={(e) => set("isDefault", e.target.checked)} className="h-4 w-4 accent-(--m3-primary)" />
+              Make it the default avatar
             </label>
           </div>
-        ) : null}
-
-        {mode === "generate" ? (
-          <div className="flex items-start gap-3 rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-low) px-4 py-3">
-            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-(--m3-primary-container) text-(--m3-on-primary-container)">
-              <Bone className="h-4 w-4" />
-            </span>
-            <p className="text-xs leading-relaxed text-(--m3-on-surface-variant)">
-              <strong className="font-medium text-(--m3-on-surface)">Free, ready in a few seconds.</strong> Builds a neutral mannequin right here: the Mixamo skeleton (<code className="font-mono">mixamorigHips</code>,
-              arms, legs, head) in T-pose, capsule limbs, sockets on the hands, back and feet. No file, no licence; any
-              clip authored for Mixamo drives it. Scaled to the height below.
-            </p>
-          </div>
-        ) : null}
-
-        {mode === "upload" ? (
-          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-(--m3-outline) bg-(--m3-surface-container-low) px-4 py-6 text-center transition-colors hover:border-(--m3-primary)">
-            <Upload className="h-5 w-5 text-(--m3-primary)" />
-            <span className="text-sm">{file ? file.name : "Choose a rigged .glb or .gltf"}</span>
-            <span className="text-[11px] text-(--m3-on-surface-variant)">
-              {file ? `${(file.size / 1024 / 1024).toFixed(1)} MiB` : "Up to 100 MiB · Mixamo, VRM or a custom skeleton"}
-            </span>
-            <input
-              type="file"
-              accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
-              className="hidden"
-              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
-        ) : null}
-
-        {mode === "url" ? (
-          <Field label="Model URL" hint="https link to a .glb or .gltf; the server downloads it into the 3d-workspace bucket.">
-            <div className="relative">
-              <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-(--m3-on-surface-variant)" />
-              <TextInput value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://models.readyplayer.me/….glb" className="pl-10" />
-            </div>
-          </Field>
-        ) : null}
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Code" hint="SCREAMING_SNAKE, unique">
-            <TextInput value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="NEUTRAL_MAN" />
-          </Field>
-          <Field label="Name">
-            <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Neutral man" />
-          </Field>
-          <Field label="Subject" group>
-            <Segmented
-              value={subject}
-              onChange={changeSubject}
-              options={AVATAR_SUBJECTS.filter((s) => mode !== "style" || s !== "neutral").map((s) => ({ value: s, label: s }))}
-              className="w-full justify-between"
-            />
-          </Field>
-          <Field label="Height (m)" hint={mode === "generate" ? "Size of the mannequin" : mode === "style" ? "Height Meshy rigs the character at" : "Scales the model; empty keeps its own units"}>
-            <TextInput type="number" min={0.5} max={2.5} step={0.01} value={height} onChange={(e) => setHeight(e.target.value)} />
-          </Field>
-          {mode !== "generate" && mode !== "style" ? (
-            <>
-              <Field label="Rig" className="col-span-2">
-                <Select value={rig} onChange={(e) => changeRig(e.target.value as AvatarRig)}>
-                  {AVATAR_RIGS.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field
-                label="Sockets"
-                className="col-span-2"
-                hint="JSON array of {id, bone, offset?, rotation?}; the bone names must exist in the model."
-              >
-                <TextArea rows={6} value={socketsText} onChange={(e) => setSocketsText(e.target.value)} className="font-mono text-[11px]" />
-              </Field>
-            </>
-          ) : null}
         </div>
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-(--m3-on-surface-variant)">
-          <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="h-4 w-4 accent-(--m3-primary)" />
-          Make it the default avatar
-        </label>
       </div>
-      <div className="flex justify-end gap-2 border-t border-(--m3-outline-variant) px-5 py-4">
-        <M3Button variant="text" onClick={onClose} disabled={busy}>
-          Cancel
-        </M3Button>
-        <M3Button variant="filled" onClick={submit} busy={busy} disabled={!canSubmit}>
-          {mode === "style" ? `Build with Meshy (${STYLE_COST})` : mode === "generate" ? "Create the mannequin" : mode === "upload" ? "Upload avatar" : "Import avatar"}
-        </M3Button>
-      </div>
-    </Modal>
+    </StudioDialog>
   );
 }

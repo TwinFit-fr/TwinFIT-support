@@ -4,14 +4,14 @@ import { requireStaffToken } from "@/lib/api-auth";
 import { retryStyledAvatar } from "@/lib/studio/avatar-service";
 import { deleteAvatar, getAvatar, setDefaultAvatar, updateAvatar } from "@/lib/studio/queries";
 import { routeError } from "@/lib/studio/route-error";
-import { socketsSchema, uuidSchema } from "@/lib/studio/schemas";
+import { avatarHeightSchema, avatarNameSchema, socketsSchema, uuidSchema } from "@/lib/studio/schemas";
 import { deleteStudioFile } from "@/lib/studio/storage";
 
 const patchSchema = z.union([
   z.object({
     sockets: socketsSchema.optional(),
-    height_m: z.number().min(0.5).max(2.5).nullable().optional(),
-    name: z.string().trim().min(1).max(120).optional(),
+    height_m: avatarHeightSchema.nullable().optional(),
+    name: avatarNameSchema.optional(),
   }),
   /** Make this ready avatar the default (the previous default is cleared in the same transaction). */
   z.object({ action: z.literal("set_default") }),

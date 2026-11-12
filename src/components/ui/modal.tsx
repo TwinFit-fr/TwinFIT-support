@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,6 +13,7 @@ export function Modal({
   onClose,
   labelledBy,
   dismissible = true,
+  restoreFocus = false,
   className,
   children,
 }: {
@@ -21,22 +22,34 @@ export function Modal({
   labelledBy: string;
   /** False while busy: Escape and backdrop clicks are ignored. */
   dismissible?: boolean;
+  /** Give focus back to the control that had it (the one that opened the dialog) on close. */
+  restoreFocus?: boolean;
   /** Panel size and layout; the dialog element is the panel. */
   className?: string;
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // The control focused when the dialog mounts is the one that opened it (read once, before showModal moves focus).
+  const [opener] = useState(() => (typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null));
 
   useEffect(() => {
     const dialog = ref.current;
     if (dialog && !dialog.open) dialog.showModal();
-  }, []);
+    if (!restoreFocus) return;
+    // Unmounting does not run the dialog's own close steps, so focus is handed back here.
+    return () => {
+      if (opener?.isConnected) requestAnimationFrame(() => opener.focus({ preventScroll: true }));
+    };
+  }, [restoreFocus, opener]);
 
   return (
     <dialog
       ref={ref}
       aria-labelledby={labelledBy}
       onCancel={(event) => {
+        // A file input fires a bubbling `cancel` when its picker is dismissed: that is not the
+        // dialog's own Escape, so it must not close (or ask to close) the dialog.
+        if (event.target !== event.currentTarget) return;
         event.preventDefault();
         if (dismissible) onClose();
       }}

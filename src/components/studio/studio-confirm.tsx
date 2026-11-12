@@ -93,6 +93,7 @@ export function StudioConfirmHost() {
     <Modal
       onClose={() => settle(false)}
       labelledBy={titleId}
+      restoreFocus
       className="studio-root w-[520px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-(--studio-radius-lg) border border-(--m3-outline) bg-(--m3-surface-container) p-0 text-(--m3-on-surface) shadow-(--studio-float-shadow) backdrop:bg-(--m3-scrim)"
     >
       <div data-studio-confirm={request.kind} className="flex flex-col">

@@ -93,6 +93,8 @@ body {
     --studio-avatar-select-max: 19rem;
     --studio-motion: 180ms;
     --studio-float-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--studio-glass-border);
+    /* The arrow of a closed <select> (ui.tsx Select), in --m3-on-surface-variant. */
+    --studio-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2398a2b6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background: var(--m3-surface);
     color: var(--m3-on-surface);
     font-feature-settings: "cv02", "cv03", "cv04", "tnum";
@@ -1006,4 +1008,10 @@ body:has(.studio-shell) [data-toast-region] {
   right: auto;
   left: 50%;
   transform: translateX(-50%);
+}
+/* Over a dialog (the region is portalled into it, see toast.tsx) a toast sits just above the
+   dialog's footer, next to the button that raised it, and never over the dialog's title. */
+body:has(.studio-shell) dialog [data-toast-region] {
+  top: auto;
+  bottom: 88px;
 }
