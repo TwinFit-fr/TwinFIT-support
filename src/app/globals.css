@@ -724,6 +724,15 @@ body {
       white-space: nowrap;
     }
   }
+  /* The Reference card's frames: the catalog images have a transparent background, so a light
+     studio-paper tile keeps dark clothes readable on the dark stage. */
+  .reference-tile {
+    background: linear-gradient(180deg, #eef1f6 0%, #d5dbe5 100%);
+  }
+  .reference-card[data-dragging] {
+    opacity: 0.85;
+    box-shadow: var(--studio-float-shadow);
+  }
   .pose-status-live {
     box-shadow: 0 0 0 1px rgba(252, 211, 77, 0.45);
   }

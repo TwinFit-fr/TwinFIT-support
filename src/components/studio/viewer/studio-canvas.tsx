@@ -1,32 +1,25 @@
 "use client";
 
 import { Component, Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, createPortal, useFrame, useThree } from "@react-three/fiber";
-import {
-  ContactShadows,
-  GizmoHelper,
-  GizmoViewport,
-  Grid,
-  OrbitControls,
-  TransformControls,
-  useGLTF,
-  useProgress,
-} from "@react-three/drei";
+import { Canvas, createPortal, useFrame } from "@react-three/fiber";
+import { ContactShadows, Grid, OrbitControls, TransformControls, useGLTF, useProgress } from "@react-three/drei";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useShallow } from "zustand/react/shallow";
 import { isPoseClipJson, poseClipFromDraft } from "@/lib/studio/anatomy";
 import { studioAssetHeaders } from "@/lib/studio/asset-auth";
 import { DEFAULT_CLEANUP, cleanupClip } from "@/lib/studio/clip-cleanup";
 import { isMocapClip, retargetToAvatar } from "@/lib/studio/mocap";
 import { buildPoseClip, captureRestPose, restoreRestPose, type RestPose } from "@/lib/studio/pose-clip";
-import { useStudioStore, type CameraPreset } from "@/lib/studio/store";
+import { useStudioStore } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
 import type { LoadedClip } from "./movement-clip";
 import { EquipmentMesh } from "./equipment-proxies";
 import { equipmentKey } from "@/lib/studio/equipment";
 import { recordCanvasCommit } from "./render-stats";
+import { AxisWidget } from "./axis-widget";
+import { CameraRig } from "./camera-rig";
+import { showBody } from "./stage-body";
 import { PoseRig } from "./pose-rig";
 import { poseStage } from "./pose-stage";
 import { usePoseChecks } from "./use-pose-checks";
@@ -55,29 +48,11 @@ export type ModelInfo = {
   missingSockets: string[];
 };
 
-const CAMERA: Record<CameraPreset, [number, number, number]> = {
-  front: [0, 1.35, 4.4],
-  "three-quarter": [3.1, 1.75, 3.5],
-  side: [4.6, 1.3, 0.2],
-};
-const TARGET = new THREE.Vector3(0, 0.95, 0);
-
-/** Applies the camera preset whenever it (or the reset counter) changes; the user orbits freely in between. */
-function CameraRig() {
-  const preset = useStudioStore((s) => s.cameraPreset);
-  const nonce = useStudioStore((s) => s.viewNonce);
-  const camera = useThree((s) => s.camera);
-  const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
-  useEffect(() => {
-    camera.position.set(...CAMERA[preset]);
-    camera.lookAt(TARGET);
-    if (controls) {
-      controls.target.copy(TARGET);
-      controls.update();
-    }
-  }, [preset, nonce, camera, controls]);
-  return null;
-}
+/** Where the camera starts, before the body is framed (camera-rig.tsx); the orbit limits. */
+const START_CAMERA: [number, number, number] = [3.1, 1.75, 3.5];
+const START_TARGET = new THREE.Vector3(0, 0.95, 0);
+const MIN_DISTANCE = 0.6;
+const MAX_DISTANCE = 12;
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -257,6 +232,13 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
 
   // The clip on screen, checked as a body on this rig once the edits settle.
   usePoseChecks(model, rest, liveSockets, clip);
+
+  // The camera frames the body once it shows something new: this avatar, another clip, the pose editor.
+  const shown = editorOpen ? "editor" : resolvedClip;
+  useEffect(() => {
+    showBody(model);
+    return () => showBody(null);
+  }, [model, rest, shown]);
 
   useEffect(() => {
     onModelInfo?.(info);
@@ -530,7 +512,7 @@ export default function StudioCanvas(props: SceneProps) {
     <Canvas
       shadows="percentage"
       dpr={[1, 2]}
-      camera={{ position: CAMERA["three-quarter"], fov: 38, near: 0.05, far: 100 }}
+      camera={{ position: START_CAMERA, fov: 38, near: 0.05, far: 100 }}
       gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
       onCreated={({ gl, scene }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -577,17 +559,15 @@ export default function StudioCanvas(props: SceneProps) {
         makeDefault
         enableDamping
         dampingFactor={0.08}
-        minDistance={0.8}
-        maxDistance={12}
+        minDistance={MIN_DISTANCE}
+        maxDistance={MAX_DISTANCE}
         maxPolarAngle={Math.PI / 2 - 0.02}
-        target={TARGET}
+        target={START_TARGET}
       />
-      <CameraRig />
+      <CameraRig minDistance={MIN_DISTANCE} maxDistance={MAX_DISTANCE} />
       {/* Top right, like an animation tool's view cube: the bottom of the stage stays free for the
           playback toolbar and the timeline dock. Its space is --studio-gizmo-reserve in the CSS. */}
-      <GizmoHelper alignment="top-right" margin={[64, 64]}>
-        <GizmoViewport axisColors={["#ff6b81", "#7fe0c4", "#7fa6ff"]} labelColor="#e3e7f0" />
-      </GizmoHelper>
+      <AxisWidget />
     </Canvas>
   );
 }

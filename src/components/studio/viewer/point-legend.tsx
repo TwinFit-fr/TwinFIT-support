@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { PointMarks } from "../hooks/use-point-marks";
 import { IssueGlyph } from "../issue-glyph";
 import { MARK_WORDS, PointMark, noAutoWords, type MarkKind } from "../point-mark";
+import { CameraHelp } from "./view-controls";
 
 type Item = { kind: Exclude<MarkKind, "plain">; count: number | null };
 
@@ -57,7 +58,7 @@ export function PointLegend({ marks, limit }: { marks: PointMarks; limit: boolea
   return (
     <div ref={root} className="pointer-events-none relative" data-point-legend>
       {open ? (
-        <div id={panelId} role="region" aria-label="What the point marks mean" className="pointer-events-auto absolute top-[calc(100%+6px)] left-0 z-10 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-high) p-3 text-[11px] shadow-2xl" data-point-legend-help>
+        <div id={panelId} role="region" aria-label="What the point marks mean, and the camera keys" className="pointer-events-auto absolute top-[calc(100%+6px)] left-0 z-10 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-high) p-3 text-[11px] shadow-2xl" data-point-legend-help>
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <p className="font-semibold text-(--m3-on-surface)">Points on the body</p>
             <button
@@ -97,6 +98,7 @@ export function PointLegend({ marks, limit }: { marks: PointMarks; limit: boolea
               `${noAutoWords(marks.missing)} Select a hand, knee or foot and press P to pin it.`
             )}
           </p>
+          <CameraHelp />
         </div>
       ) : null}
       <div className="studio-glass pointer-events-none w-max min-w-[9.75rem] rounded-2xl px-1.5 pt-1 pb-1.5 text-[11px] text-(--m3-on-surface-variant) select-none">
@@ -107,8 +109,8 @@ export function PointLegend({ marks, limit }: { marks: PointMarks; limit: boolea
             type="button"
             aria-expanded={open}
             aria-controls={open ? panelId : undefined}
-            aria-label="What do the point marks mean?"
-            title="What do the point marks mean?"
+            aria-label="What do the point marks mean? Camera keys"
+            title="What the point marks mean, and the camera keys"
             onClick={() => setOpen((v) => !v)}
             className={cn(
               "studio-state pointer-events-auto inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-(--m3-primary)/70",
