@@ -10,6 +10,7 @@ import { MESHY_EQUIPMENT, equipmentBuildRequest } from "@/lib/studio/paid-action
 import { readAsDataUrl, relativeTime } from "@/lib/studio/format";
 import { MAX_IMAGE_BYTES } from "@/lib/studio/schemas";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
+import { createEquipment, deleteEquipment, patchEquipment } from "@/lib/studio/studio-api";
 import type { EquipmentKind, EquipmentModel, StudioEquipment } from "@/lib/studio/types";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
@@ -303,10 +304,7 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
     await withBusy(`${entry.kind}:${entry.code}`, async () => {
       if (image && image.size > MAX_IMAGE_BYTES) throw new Error("The reference image must be under 20 MB");
       const image_data_url = image ? await readAsDataUrl(image) : null;
-      await staffFetch(EQUIPMENT_KEY, {
-        method: "POST",
-        body: JSON.stringify({ kind: entry.kind, code: entry.code, prompt: hint.trim() || null, image_data_url }),
-      });
+      await createEquipment(staffFetch, { kind: entry.kind, code: entry.code, prompt: hint.trim() || null, image_data_url });
       toast.success(`${entry.name}: Meshy task started. Follow it in Jobs; it keeps going if you close this dialog.`, "Generating model");
       await refresh();
     });
@@ -321,10 +319,7 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
     try {
       for (const entry of missing) {
         try {
-          await staffFetch(EQUIPMENT_KEY, {
-            method: "POST",
-            body: JSON.stringify({ kind: entry.kind, code: entry.code, prompt: hint.trim() || null }),
-          });
+          await createEquipment(staffFetch, { kind: entry.kind, code: entry.code, prompt: hint.trim() || null });
         } catch (err) {
           failures.push(`${entry.name}: ${err instanceof Error ? err.message : "failed"}`);
         }
@@ -343,7 +338,7 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
       form.set("file", file);
       form.set("kind", entry.kind);
       form.set("code", entry.code);
-      await staffFetch(EQUIPMENT_KEY, { method: "POST", body: form });
+      await createEquipment(staffFetch, form);
       toast.success(`${entry.name}: model uploaded`);
       await refresh();
     });
@@ -358,10 +353,10 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
           variant: "danger",
         });
         if (!ok) return;
-        await staffFetch(`${EQUIPMENT_KEY}/${model.id}`, { method: "DELETE" });
+        await deleteEquipment(staffFetch, model.id);
         toast.success(`${model.name}: model deleted`);
       } else {
-        await staffFetch(`${EQUIPMENT_KEY}/${model.id}`, { method: "PATCH", body: JSON.stringify({ action: kind }) });
+        await patchEquipment(staffFetch, model.id, { action: kind });
         toast.success(kind === "activate" ? `${model.name}: the viewer now draws this model` : `${model.name}: back to the placeholder shape`);
       }
       await refresh();
@@ -370,10 +365,7 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
   const setSize = (model: EquipmentModel, sizeM: number) =>
     withBusy(`${model.kind}:${model.code}`, async () => {
       const placement = placementOf(model.kind, model.params);
-      await staffFetch(`${EQUIPMENT_KEY}/${model.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ action: "placement", size_m: sizeM, offset: placement.offset, rotation: placement.rotation }),
-      });
+      await patchEquipment(staffFetch, model.id, { action: "placement", size_m: sizeM, offset: placement.offset, rotation: placement.rotation });
       await refresh();
     });
 

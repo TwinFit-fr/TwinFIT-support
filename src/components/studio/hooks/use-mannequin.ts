@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { useToast } from "@/components/ui/toast";
+import { createAvatar } from "@/lib/studio/studio-api";
 import type { AvatarSubject, BaseAvatar } from "@/lib/studio/types";
 
 export type MannequinFields = { code: string; name: string; subject: AvatarSubject; height_m: number | null; is_default: boolean };
@@ -31,7 +32,7 @@ export async function postMannequin(staffFetch: ReturnType<typeof useStaffFetch>
       params: { generated: "mannequin", forward_axis: "+z", rest_pose: "T" },
     }),
   );
-  const json = (await staffFetch("/api/studio/avatars", { method: "POST", body: form })) as { avatar: BaseAvatar };
+  const json = (await createAvatar(staffFetch, form)) as { avatar: BaseAvatar };
   return json.avatar;
 }
 

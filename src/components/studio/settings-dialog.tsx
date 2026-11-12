@@ -6,6 +6,7 @@ import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { changedFields } from "@/lib/studio/form-dirty";
+import { STORAGE_ORPHANS_KEY, deleteStorageOrphans, patchSettings } from "@/lib/studio/studio-api";
 import type { StudioSettings } from "@/lib/studio/types";
 import { DialogRow, DialogSection, rowDescription } from "./dialog-form";
 import { StudioDialog } from "./studio-dialog";
@@ -51,7 +52,7 @@ export function SettingsDialog({ settings, onClose, onSaved }: { settings: Studi
   const [busy, setBusy] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { data: orphans, mutate: mutateOrphans } = useStaffSWR<OrphansResponse>("/api/studio/storage/orphans");
+  const { data: orphans, mutate: mutateOrphans } = useStaffSWR<OrphansResponse>(STORAGE_ORPHANS_KEY);
   const changed = changedFields(baseline, v).length;
 
   const save = async () => {
@@ -59,14 +60,11 @@ export function SettingsDialog({ settings, onClose, onSaved }: { settings: Studi
     setError(null);
     try {
       const { loop_mode: _lm, model: _m, ...rest } = settings.pipeline;
-      await staffFetch("/api/studio/settings", {
-        method: "PATCH",
-        body: JSON.stringify({
-          max_concurrency: v.maxConcurrency,
-          stale_after_minutes: v.staleAfter,
-          prompt_template: v.template,
-          pipeline: { ...rest, fps: v.fps, duration_s: v.duration, loop: v.loop, ...(v.loopMode ? { loop_mode: v.loopMode } : {}), ...(v.model.trim() ? { model: v.model.trim() } : {}) },
-        }),
+      await patchSettings(staffFetch, {
+        max_concurrency: v.maxConcurrency,
+        stale_after_minutes: v.staleAfter,
+        prompt_template: v.template,
+        pipeline: { ...rest, fps: v.fps, duration_s: v.duration, loop: v.loop, ...(v.loopMode ? { loop_mode: v.loopMode } : {}), ...(v.model.trim() ? { model: v.model.trim() } : {}) },
       });
       toast.success("Studio settings saved");
       onSaved();
@@ -90,7 +88,7 @@ export function SettingsDialog({ settings, onClose, onSaved }: { settings: Studi
     setSweeping(true);
     setError(null);
     try {
-      const result = (await staffFetch("/api/studio/storage/orphans", { method: "DELETE" })) as { deleted: number; failed: unknown[] };
+      const result = (await deleteStorageOrphans(staffFetch)) as { deleted: number; failed: unknown[] };
       toast.success(`${result.deleted} file${result.deleted === 1 ? "" : "s"} removed${result.failed.length ? `, ${result.failed.length} could not be` : ""}`);
       await mutateOrphans();
     } catch (err) {

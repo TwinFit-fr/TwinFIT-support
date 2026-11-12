@@ -6,6 +6,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { generationRequest } from "@/lib/studio/paid-actions";
 import { useStudioStore } from "@/lib/studio/store";
+import { createVector, deleteVector, patchVector, postVectorResult, uploadVector } from "@/lib/studio/studio-api";
 import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise } from "@/lib/studio/types";
 import type { GenerateInput, VectorAction } from "../inspector-panel";
 import { useJobsTray } from "../jobs/jobs-tray-store";
@@ -40,15 +41,12 @@ export function useVectorActions(input: {
       if (!ok) return;
       setGenerating(true);
       try {
-        const body = (await staffFetch("/api/studio/vectors", {
-          method: "POST",
-          body: JSON.stringify({
-            exercise_id: exercise.id,
-            avatar_id: avatar.id,
-            prompt: request.prompt,
-            equipment: { items: request.items },
-            params: request.params,
-          }),
+        const body = (await createVector(staffFetch, {
+          exercise_id: exercise.id,
+          avatar_id: avatar.id,
+          prompt: request.prompt,
+          equipment: { items: request.items },
+          params: request.params,
         })) as { vector: MovementVector };
         await refresh();
         setVector(body.vector.id);
@@ -72,7 +70,7 @@ export function useVectorActions(input: {
         const form = new FormData();
         form.set("file", file);
         form.set("fields", JSON.stringify({ exercise_id: exercise.id, avatar_id: avatar.id, equipment: { items }, prompt: `Uploaded clip: ${file.name}` }));
-        const body = (await staffFetch("/api/studio/vectors/upload", { method: "POST", body: form })) as { vector: MovementVector };
+        const body = (await uploadVector(staffFetch, form)) as { vector: MovementVector };
         await refresh();
         setVector(body.vector.id);
         toast.success(`${file.name} added as #${body.vector.seq}`, "Clip uploaded");
@@ -99,7 +97,7 @@ export function useVectorActions(input: {
             variant: "danger",
           });
           if (!ok) return;
-          await staffFetch(`/api/studio/vectors/${target.id}`, { method: "DELETE" });
+          await deleteVector(staffFetch, target.id);
           // The editor must not keep saving over a clip that is gone: it lands again on what is left.
           if (useStudioStore.getState().poseEdit?.vectorId === target.id) useStudioStore.getState().stopPoseEdit();
           if (useStudioStore.getState().vectorId === target.id) setVector(null);
@@ -108,7 +106,7 @@ export function useVectorActions(input: {
           if (!(payload instanceof File)) return;
           const form = new FormData();
           form.set("file", payload);
-          const body = (await staffFetch(`/api/studio/vectors/${target.id}/result`, { method: "POST", body: form })) as { vector: MovementVector };
+          const body = (await postVectorResult(staffFetch, target.id, form)) as { vector: MovementVector };
           setVector(body.vector.id);
           toast.success(`Clip attached to #${target.seq}`, "Movement ready");
         } else if (action === "stop") {
@@ -119,11 +117,11 @@ export function useVectorActions(input: {
             variant: "danger",
           });
           if (!ok) return;
-          await staffFetch(`/api/studio/vectors/${target.id}`, { method: "PATCH", body: JSON.stringify({ action: "fail", error: "Stopped by staff" }) });
+          await patchVector(staffFetch, target.id, { action: "fail", error: "Stopped by staff" });
           toast.success(`#${target.seq} stopped`);
         } else if (action === "prompt") {
           if (typeof payload !== "string" || !payload.trim()) return;
-          await staffFetch(`/api/studio/vectors/${target.id}`, { method: "PATCH", body: JSON.stringify({ action: "edit", prompt: payload.trim() }) });
+          await patchVector(staffFetch, target.id, { action: "edit", prompt: payload.trim() });
           toast.success(`#${target.seq}: prompt updated`);
         } else {
           if (action === "requeue") {
@@ -131,7 +129,7 @@ export function useVectorActions(input: {
             const ok = await paidConfirm(generationRequest({ exercise: exercise?.display_name ?? "this exercise", avatar: avatar?.name ?? "the avatar", model, retry: true, seq: target.seq }));
             if (!ok) return;
           }
-          await staffFetch(`/api/studio/vectors/${target.id}`, { method: "PATCH", body: JSON.stringify({ action }) });
+          await patchVector(staffFetch, target.id, { action });
           if (action === "activate") setVector(target.id);
           toast.success(
             action === "activate"

@@ -10,6 +10,7 @@ import { avatarsPollMs, equipmentPollMs, vectorsPollMs } from "@/lib/studio/jobs
 import { loadState, stageState } from "@/lib/studio/load-state";
 import { EMPTY_SCENE, useStudioStore, type SceneSource } from "@/lib/studio/store";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
+import { STUDIO_AVATARS_KEY, STUDIO_EXERCISES_KEY, STUDIO_SETTINGS_KEY, vectorsKey } from "@/lib/studio/studio-api";
 import type { ActiveEquipmentModels, BaseAvatar, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
 
 /** The scene slice for an avatar and the clip the viewer should play. URLs come from the file ids (stable across environments). */
@@ -54,13 +55,13 @@ export function useStudioData() {
     return () => setStudioAccessToken(null);
   }, [token]);
 
-  const { data: catalog, error: catalogError, mutate: mutateCatalog } = useStaffSWR<{ exercises: StudioExercise[] }>("/api/studio/exercises");
+  const { data: catalog, error: catalogError, mutate: mutateCatalog } = useStaffSWR<{ exercises: StudioExercise[] }>(STUDIO_EXERCISES_KEY);
   // The workspace is where background jobs advance, whatever dialog is open or closed: the avatars
   // and equipment list routes advance their Meshy jobs, so each list polls while one of its jobs runs.
-  const { data: avatarData, error: avatarsError, mutate: mutateAvatars } = useStaffSWR<{ avatars: BaseAvatar[] }>("/api/studio/avatars", {
+  const { data: avatarData, error: avatarsError, mutate: mutateAvatars } = useStaffSWR<{ avatars: BaseAvatar[] }>(STUDIO_AVATARS_KEY, {
     refreshInterval: (latest) => avatarsPollMs(latest?.avatars),
   });
-  const { data: settingsData, error: settingsError, mutate: mutateSettings } = useStaffSWR<{ settings: StudioSettings }>("/api/studio/settings");
+  const { data: settingsData, error: settingsError, mutate: mutateSettings } = useStaffSWR<{ settings: StudioSettings }>(STUDIO_SETTINGS_KEY);
   // Same key as the equipment dialog: one cache, and this one poll (the dialog has none of its own).
   const { data: equipmentData, mutate: mutateEquipment } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY, {
     refreshInterval: (latest) => equipmentPollMs(latest?.equipment),
@@ -83,7 +84,7 @@ export function useStudioData() {
     error: vectorsError,
     isLoading: vectorsLoading,
     mutate: mutateVectors,
-  } = useStaffSWR<{ vectors: MovementVector[] }>(exerciseId ? `/api/studio/vectors?exercise=${exerciseId}` : null, {
+  } = useStaffSWR<{ vectors: MovementVector[] }>(exerciseId ? vectorsKey(exerciseId) : null, {
     refreshInterval: (latest) => vectorsPollMs(latest?.vectors),
     // Another exercise's rows are never this one's answer: while the new list loads (or fails) there is none.
     keepPreviousData: false,

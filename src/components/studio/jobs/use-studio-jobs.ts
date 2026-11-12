@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { useAccessToken } from "@nhost/react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { avatarJobs, equipmentJobs, generationJobs, mergeJobs, vectorsPollMs, watchedExercises, type StudioJob } from "@/lib/studio/jobs";
+import { listVectors } from "@/lib/studio/studio-api";
 import type { BaseAvatar, MovementVector, StudioEquipment, StudioExercise } from "@/lib/studio/types";
 
 const DISMISSED_KEY = "studio.jobs.dismissed";
@@ -88,7 +89,7 @@ export function useStudioJobs(input: {
     token && keyParts.length ? ["studio-job-vectors", ...keyParts] : null,
     async ([, ...parts]: string[]) => {
       const ids = parts.map((part) => part.split(":")[0]);
-      const lists = (await Promise.all(ids.map((id) => staffFetch(`/api/studio/vectors?exercise=${id}`)))) as { vectors: MovementVector[] }[];
+      const lists = (await Promise.all(ids.map((id) => listVectors(staffFetch, id)))) as { vectors: MovementVector[] }[];
       return lists.flatMap((l) => l.vectors);
     },
     { refreshInterval: pollMs, onSuccess: (rows) => setPollMs(vectorsPollMs(rows)), revalidateOnFocus: false, keepPreviousData: true, dedupingInterval: 2000 },

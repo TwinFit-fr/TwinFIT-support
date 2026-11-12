@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { STALL_AFTER_FAILURES, tickDelayMs } from "@/lib/studio/jobs";
+import { tickWorker } from "@/lib/studio/studio-api";
 
 type TickResponse = { results?: ({ claimed: false } | { id: string; status: string; outcome: string })[] };
 
@@ -39,7 +40,7 @@ export function useWorkerDriver(active: boolean, onTicked: (claimed: boolean) =>
     ticking.current = true;
     let claimed = false;
     try {
-      const body = (await staffFetch("/api/studio/worker", { method: "POST", body: JSON.stringify({ max: 1 }) })) as TickResponse;
+      const body = (await tickWorker(staffFetch, { max: 1 })) as TickResponse;
       claimed = Boolean(body.results?.some((r) => "id" in r));
       setHealth((h) => (h.failures ? { failures: 0, error: null } : h));
     } catch (err) {

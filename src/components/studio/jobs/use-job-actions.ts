@@ -2,9 +2,9 @@
 
 import { useCallback, useState } from "react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
-import { EQUIPMENT_KEY } from "@/lib/studio/equipment";
 import type { JobAction, StudioJob } from "@/lib/studio/jobs";
 import { avatarBuildRequest, equipmentBuildRequest, generationRequest } from "@/lib/studio/paid-actions";
+import { createEquipment, patchAvatar, patchVector } from "@/lib/studio/studio-api";
 import type { BaseAvatar } from "@/lib/studio/types";
 import { usePaidConfirm, useStudioConfirm } from "../studio-confirm";
 
@@ -45,19 +45,19 @@ export function useJobActions(handlers: JobHandlers & { avatars: BaseAvatar[]; d
           confirmLabel: "Stop",
           danger: true,
         });
-        if (ok) request = () => staffFetch(`/api/studio/vectors/${job.rowId}`, { method: "PATCH", body: JSON.stringify({ action: "fail", error: "Stopped by staff before it started" }) });
+        if (ok) request = () => patchVector(staffFetch, job.rowId, { action: "fail", error: "Stopped by staff before it started" });
       } else if (action === "retry" && job.kind === "generation") {
         const avatarName = avatars.find((a) => a.id === job.avatarId)?.name ?? "its avatar";
         const ok = await paidConfirm(generationRequest({ exercise: job.subject, avatar: avatarName, model: job.model ?? defaultModel, retry: true }));
-        if (ok) request = () => staffFetch(`/api/studio/vectors/${job.rowId}`, { method: "PATCH", body: JSON.stringify({ action: "requeue" }) });
+        if (ok) request = () => patchVector(staffFetch, job.rowId, { action: "requeue" });
       } else if (action === "retry" && job.kind === "avatar") {
         const avatar = avatars.find((a) => a.id === job.avatarId);
         const ok = await paidConfirm(avatarBuildRequest({ name: job.subject, subject: avatar?.subject ?? "character", retry: true }));
-        if (ok) request = () => staffFetch(`/api/studio/avatars/${job.rowId}`, { method: "PATCH", body: JSON.stringify({ action: "retry" }) });
+        if (ok) request = () => patchAvatar(staffFetch, job.rowId, { action: "retry" });
       } else if (action === "retry" && job.kind === "equipment" && job.equipment) {
         const { kind, code, name, prompt } = job.equipment;
         const ok = await paidConfirm(equipmentBuildRequest({ names: [name], retry: true }));
-        if (ok) request = () => staffFetch(EQUIPMENT_KEY, { method: "POST", body: JSON.stringify({ kind, code, prompt }) });
+        if (ok) request = () => createEquipment(staffFetch, { kind, code, prompt });
       }
       if (!request) return;
 

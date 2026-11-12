@@ -9,6 +9,7 @@ import { downloadStudioAsset } from "@/lib/studio/asset-auth";
 import { MESHY_AVATAR, avatarBuildRequest } from "@/lib/studio/paid-actions";
 import { relativeTime } from "@/lib/studio/format";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
+import { deleteAvatar, patchAvatar } from "@/lib/studio/studio-api";
 import type { BaseAvatar } from "@/lib/studio/types";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { usePaidConfirm } from "./studio-confirm";
@@ -138,17 +139,17 @@ export function AvatarManageDialog({ avatars, onClose, onChanged }: { avatars: B
           variant: "danger",
         });
         if (!ok) return;
-        await staffFetch(`/api/studio/avatars/${avatar.id}`, { method: "DELETE" });
+        await deleteAvatar(staffFetch, avatar.id);
         toast.success(`${avatar.name} deleted`);
       } else if (action === "rename") {
-        await staffFetch(`/api/studio/avatars/${avatar.id}`, { method: "PATCH", body: JSON.stringify({ name: value }) });
+        await patchAvatar(staffFetch, avatar.id, { name: value });
       } else if (action === "height") {
-        await staffFetch(`/api/studio/avatars/${avatar.id}`, { method: "PATCH", body: JSON.stringify({ height_m: value }) });
+        await patchAvatar(staffFetch, avatar.id, { height_m: value });
       } else if (action === "default") {
-        await staffFetch(`/api/studio/avatars/${avatar.id}`, { method: "PATCH", body: JSON.stringify({ action: "set_default" }) });
+        await patchAvatar(staffFetch, avatar.id, { action: "set_default" });
         toast.success(`${avatar.name} is the default avatar`);
       } else if (action === "retry") {
-        await staffFetch(`/api/studio/avatars/${avatar.id}`, { method: "PATCH", body: JSON.stringify({ action: "retry" }) });
+        await patchAvatar(staffFetch, avatar.id, { action: "retry" });
         toast.success(`${avatar.name}: Meshy is building it again. Follow it in Jobs.`);
       }
       onChanged();

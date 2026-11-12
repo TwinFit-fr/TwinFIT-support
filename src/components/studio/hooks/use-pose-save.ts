@@ -11,6 +11,7 @@ import { clipFrom } from "@/lib/studio/pose-origin";
 import { labelsFromClip } from "@/lib/studio/pose-names";
 import { useStudioStore } from "@/lib/studio/store";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
+import { postVectorResult, uploadVector } from "@/lib/studio/studio-api";
 import type { PoseDraft } from "@/lib/studio/template-draft";
 import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
 import type { SaveMode } from "../pose-editor";
@@ -118,13 +119,13 @@ export function usePoseSave(input: {
         if (mode === "replace" && draft.vectorId) {
           // Overwrite the clip of the row being edited: no new row, no copies piling up.
           form.set("meta", JSON.stringify({ model: "pose-editor" }));
-          body = (await staffFetch(`/api/studio/vectors/${draft.vectorId}/result`, { method: "POST", body: form })) as { vector: MovementVector };
+          body = (await postVectorResult(staffFetch, draft.vectorId, form)) as { vector: MovementVector };
         } else {
           form.set(
             "fields",
             JSON.stringify({ exercise_id: draft.exerciseId, avatar_id: draft.avatarId, equipment: { items: draft.items }, prompt: label, source: "pose-editor" }),
           );
-          body = (await staffFetch("/api/studio/vectors/upload", { method: "POST", body: form })) as { vector: MovementVector };
+          body = (await uploadVector(staffFetch, form)) as { vector: MovementVector };
         }
         // The stored clip becomes the one on the stage and in the editor; its label says so (no toast over the buttons).
         markPoseSaved({ id: body.vector.id, seq: body.vector.seq });

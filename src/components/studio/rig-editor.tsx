@@ -9,6 +9,7 @@ import { equipmentKey } from "@/lib/studio/equipment";
 import { useLayoutStore } from "@/lib/studio/layout-store";
 import { detectedSockets, equipmentLabel, socketLabel, socketOrigin } from "@/lib/studio/rig-points";
 import { useStudioStore, type EditMode } from "@/lib/studio/store";
+import { patchAvatar, patchEquipment } from "@/lib/studio/studio-api";
 import type { BaseAvatar, Vec3 } from "@/lib/studio/types";
 import { LAYOUT_TOKENS } from "@/lib/studio/workspace-layout";
 import { RigModeNote } from "./rig-mode-note";
@@ -165,15 +166,12 @@ export function RigEditor({ avatar, onSaved, onBack }: { avatar: BaseAvatar | nu
     setSaving(true);
     try {
       if (draftSockets) {
-        await staffFetch(`/api/studio/avatars/${avatar.id}`, { method: "PATCH", body: JSON.stringify({ sockets: draftSockets }) });
+        await patchAvatar(staffFetch, avatar.id, { sockets: draftSockets });
       }
       for (const [key, placement] of Object.entries(draftPlacements)) {
         const model = models[key];
         if (!model) continue;
-        await staffFetch(`/api/studio/equipment/${model.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ action: "placement", size_m: placement.size_m, offset: placement.offset, rotation: placement.rotation }),
-        });
+        await patchEquipment(staffFetch, model.id, { action: "placement", size_m: placement.size_m, offset: placement.offset, rotation: placement.rotation });
       }
       st().clearDrafts();
       onSaved();
