@@ -9,7 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import { isPoseClipJson, poseClipFromDraft } from "@/lib/studio/anatomy";
 import { studioAssetHeaders } from "@/lib/studio/asset-auth";
 import { DEFAULT_CLEANUP, cleanupClip } from "@/lib/studio/clip-cleanup";
-import { isMocapClip, retargetToAvatar } from "@/lib/studio/mocap";
+import { isMocapClip, retargetToAvatar, type RetargetReport } from "@/lib/studio/mocap";
 import { buildPoseClip, captureRestPose, restoreRestPose, type RestPose } from "@/lib/studio/pose-clip";
 import { useStudioStore } from "@/lib/studio/store";
 import type { AvatarSocket, EquipmentItem } from "@/lib/studio/types";
@@ -26,6 +26,7 @@ import { rigTargetRef } from "./rig-stage";
 import { poseStage } from "./pose-stage";
 import { usePoseChecks } from "./use-pose-checks";
 import { bakeDraftClip, useClipPlayback } from "./use-clip-playback";
+import { usePublishCapture } from "./capture-stage";
 
 export type SceneProps = {
   avatarId: string | null;
@@ -207,36 +208,37 @@ function AvatarModel({ avatarId, modelUrl, heightM, sockets, clip, onModelInfo, 
   const solveSockets = editing ? heldSockets : liveSockets;
 
   // Anatomical keyframes become a three.js clip for this very rig; a ready clip is used as it is.
-  const [resolvedClip, clipError] = useMemo<[THREE.AnimationClip | null, string | null]>(() => {
-    if (editorOpen && !draft) return [null, null]; // a held key pose: PoseRig holds it
+  // A capture is retargeted (what matched is kept, for the side panel to say).
+  const [resolvedClip, clipError, retarget] = useMemo<[THREE.AnimationClip | null, string | null, RetargetReport | null]>(() => {
+    if (editorOpen && !draft) return [null, null, null]; // a held key pose: PoseRig holds it
     if (draft) {
       try {
-        return [bakeDraftClip(model, draft, rest, solveSockets, draftSource?.poses[0]), null];
+        return [bakeDraftClip(model, draft, rest, solveSockets, draftSource?.poses[0]), null, null];
       } catch (error) {
-        return [null, error instanceof Error ? error.message : String(error)];
+        return [null, error instanceof Error ? error.message : String(error), null];
       }
     }
-    if (!clip) return [null, null];
+    if (!clip) return [null, null, null];
     try {
-      if (isPoseClipJson(clip)) return [buildPoseClip(model, clip, rest, solveSockets), null];
+      if (isPoseClipJson(clip)) return [buildPoseClip(model, clip, rest, solveSockets), null, null];
       if (isMocapClip(clip)) {
         const { clip: retargeted, report } = retargetToAvatar(model, clip, rest);
-        if (report.unmatched.length && process.env.NODE_ENV !== "production") {
-          console.info("[studio] mocap bones without an avatar bone:", report.unmatched.join(", "));
-        }
-        if (!cleanMocap) return [retargeted, null];
+        if (!cleanMocap) return [retargeted, null, report];
         const cleaned = cleanupClip(model, retargeted, rest, DEFAULT_CLEANUP);
         if (process.env.NODE_ENV !== "production") console.info("[studio] mocap clean-up:", cleaned.report);
-        return [cleaned.clip, null];
+        return [cleaned.clip, null, report];
       }
-      return [clip, null];
+      return [clip, null, null];
     } catch (error) {
-      return [null, error instanceof Error ? error.message : String(error)];
+      return [null, error instanceof Error ? error.message : String(error), null];
     }
   }, [clip, draft, draftSource, editorOpen, model, rest, solveSockets, cleanMocap]);
   useEffect(() => {
     if (clipError) onClipError?.(clipError);
   }, [clipError, onClipError]);
+
+  // The capture being played, for the side panel to turn into key poses (the clip the stage plays, clean-up included).
+  usePublishCapture({ report: retarget, clip: resolvedClip, mocap: isMocapClip(clip) ? clip : null, avatarId, model, rest });
 
   // The clip on screen, checked as a body on this rig once the edits settle.
   usePoseChecks(model, rest, solveSockets, clip);

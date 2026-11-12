@@ -8,12 +8,15 @@ import { useStudioStore } from "@/lib/studio/store";
 import { defaultDraft, templateExerciseOf } from "@/lib/studio/template-draft";
 import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise } from "@/lib/studio/types";
 import type { PoseDraft } from "@/lib/studio/template-draft";
+import { problemOf, useClipProblems } from "./use-clip-problems";
 
 /**
  * Picking an exercise lands on editable poses: its saved pose clip opens in the editor, else
  * the exercise's template is built on the spot (no model, no queue). It runs again whenever the
  * editor is empty while the Poses tab shows (after a revert, or another avatar), so the stage
- * always holds something to adjust. Returns the plan, for the pane to say what it is opening.
+ * always holds something to adjust. A clip that turns out not to hold poses is not replaced by the
+ * template behind the user's back: the pane says so (use-clip-problems.ts). Returns the plan, for
+ * the pane to say what it is opening.
  */
 export function useExerciseLanding(input: {
   exercise: StudioExercise | null;
@@ -31,13 +34,16 @@ export function useExerciseLanding(input: {
   const hasDraft = Boolean(exercise && avatar && draftFor === `${exercise.id}:${avatar.id}`);
   const preferredId = useStudioStore((s) => s.vectorId);
   const opening = useRef<string | null>(null);
+  // Clips found not to hold poses, or not to load, are shown as they are instead of opened again.
+  const problemList = useClipProblems((s) => s.problems);
+  const problems = useMemo(() => Object.fromEntries(vectors.filter((v) => problemOf(problemList, v)).map((v) => [v.id, true])), [vectors, problemList]);
 
   const plan = useMemo(
     () =>
       exercise && avatar
-        ? landingPlan({ readyCount: exercise.vectors.ready, vectors: vectorsLoaded ? vectors : null, avatarId: avatar.id, preferredId })
+        ? landingPlan({ readyCount: exercise.vectors.ready, vectors: vectorsLoaded ? vectors : null, avatarId: avatar.id, preferredId, problems })
         : null,
-    [exercise, avatar, vectors, vectorsLoaded, preferredId],
+    [exercise, avatar, vectors, vectorsLoaded, preferredId, problems],
   );
 
   useEffect(() => {
@@ -50,6 +56,8 @@ export function useExerciseLanding(input: {
     opening.current = key;
     onEditPoses(plan.vector)
       .catch((err: unknown) => {
+        // A problem with the clip itself is said in the Poses tab, which now shows the clip as it is.
+        if (problemOf(useClipProblems.getState().problems, plan.vector)) return;
         toast.error(err instanceof Error ? err.message : "Could not open the clip", `Clip #${plan.vector.seq}`);
         const now = useStudioStore.getState();
         if (now.exerciseId === exercise.id && now.poseEdit?.exerciseId !== exercise.id) openDraft();

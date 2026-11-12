@@ -21,6 +21,8 @@ import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise, StudioS
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import type { GuideFocus } from "@/lib/studio/load-state";
 import { cn } from "@/lib/utils";
+import { ClipProblemNote } from "./clip-problem-note";
+import { useClipProblem } from "./hooks/use-clip-problems";
 import { ErrorState } from "./load-states";
 import { PickExerciseGuide } from "./pick-exercise-guide";
 import { Chip, Field, IconButton, M3Button, NumberField, Section, Select, StatusDot, TextArea } from "./ui";
@@ -128,12 +130,15 @@ function VectorRow({
   selected,
   busy,
   onSelect,
+  onEdit,
   onAction,
 }: {
   vector: MovementVector;
   selected: boolean;
   busy: boolean;
   onSelect: () => void;
+  /** The edit control: a pose clip opens in the editor, a capture as key poses. */
+  onEdit: () => void;
   onAction: (action: VectorAction, payload?: File | string) => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -142,6 +147,8 @@ function VectorRow({
   const ready = vector.status === "ready";
   const running = vector.status === "processing";
   const queued = vector.status === "pending";
+  // A file found not to load, or a .json without poses: said on the row, and no edit control that leads nowhere.
+  const problem = useClipProblem(vector);
   return (
     <li
       className={cn(
@@ -172,6 +179,7 @@ function VectorRow({
           <p className="mt-1 text-[11px] leading-snug text-(--m3-on-surface-variant)">
             {vector.error ? vector.error : vector.prompt}
           </p>
+          {ready && problem ? <ClipProblemNote problem={problem} className="mt-1" /> : null}
           <div className="mt-1.5 flex flex-wrap gap-1 text-[10px] text-(--m3-on-surface-variant)">
             <span>{vector.avatar?.code ?? "avatar"}</span>
             <span>· {vector.format}</span>
@@ -218,6 +226,11 @@ function VectorRow({
             className="h-7 w-7"
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
+          </IconButton>
+        ) : null}
+        {ready && !problem ? (
+          <IconButton label={vector.format === "json" ? `Open the poses of #${vector.seq} in the editor` : `Edit capture #${vector.seq} as key poses (the capture stays as it is)`} onClick={onEdit} disabled={busy} className="h-7 w-7" data-vector-edit={vector.id}>
+            <PenLine className="h-3.5 w-3.5" />
           </IconButton>
         ) : null}
         {queued ? (
@@ -293,6 +306,7 @@ export function InspectorPanel({
   onVectorAction,
   onUploadClip,
   onOpenVector,
+  onEditVector,
 }: {
   exercise: StudioExercise | null;
   avatar: BaseAvatar | null;
@@ -314,6 +328,8 @@ export function InspectorPanel({
   onUploadClip: (file: File, items: EquipmentItem[]) => Promise<void>;
   /** A row was picked: a ready pose clip opens in the editor, another ready clip plays, a queued row is selected. */
   onOpenVector: (vector: MovementVector) => void;
+  /** The edit control of a ready row: a pose clip opens in the editor, a capture as key poses. */
+  onEditVector: (vector: MovementVector) => void;
 }) {
   const sockets = useMemo(() => avatar?.sockets ?? [], [avatar]);
   const socketIds = useMemo(() => sockets.map((s) => s.id), [sockets]);
@@ -568,6 +584,7 @@ export function InspectorPanel({
                   selected={vector.id === vectorId}
                   busy={busyVectorId === vector.id}
                   onSelect={() => onOpenVector(vector)}
+                  onEdit={() => onEditVector(vector)}
                   onAction={(action, payload) => void onVectorAction(vector, action, payload)}
                 />
               ))}

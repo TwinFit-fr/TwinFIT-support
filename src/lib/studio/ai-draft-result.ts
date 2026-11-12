@@ -164,6 +164,8 @@ function editedPoses(edit: EditLike, ex: TemplateExercise): number[] {
  * clip) or names the user typed; otherwise any edit, or a saved clip.
  */
 export function handMadeWork(edit: EditLike, ex: TemplateExercise | null): boolean {
+  // Key poses read from a capture are the capture's work: an AI answer waits as a suggestion.
+  if (edit.origin.kind === "capture") return true;
   if (templated(ex)) return hasManualEdits(edit, ex) || typedNames(edit, ex);
   return edit.edited || edit.origin.kind === "clip";
 }

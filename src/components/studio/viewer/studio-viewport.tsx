@@ -1,10 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Box, Crosshair, Dumbbell, Grid3x3, MonitorOff, Sparkles } from "lucide-react";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import type { BodyIssue } from "@/lib/studio/body-issues";
+import { stageProblemText, unreadableClip } from "@/lib/studio/clip-problems";
 import { debugEnabled } from "@/lib/studio/load-state";
 import { togglePlayback } from "@/lib/studio/playback";
 import { editingStatus } from "@/lib/studio/pose-origin";
@@ -13,6 +14,7 @@ import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
 import { EmptyState, IconButton } from "../ui";
 import { useMovementClip } from "./movement-clip";
+import { useClipProblems } from "../hooks/use-clip-problems";
 import { AiDraftChip } from "../ai-draft";
 import { IssueGlyph } from "../issue-glyph";
 import { StudioLoader } from "../load-states";
@@ -139,7 +141,7 @@ function Hud({
         : clipState.loading
           ? "Loading clip…"
           : clipState.error
-            ? `Clip error: ${clipState.error}`
+            ? clipState.error
             : `Playing #${scene.vectorSeq}${scene.vectorFps ? ` · ${scene.vectorFps} fps` : ""}`;
   return (
     // Leaves room on the right for the axis gizmo and the rig editor button under it.
@@ -169,6 +171,8 @@ function Hud({
               ? editingSaved
                 ? "bg-(--m3-success)"
                 : "bg-(--m3-warning)"
+              : clipState.error
+              ? "bg-(--m3-error)"
               : scene.vectorStatus === "ready"
               ? "bg-(--m3-success)"
               : scene.vectorId
@@ -231,6 +235,14 @@ export const StudioViewport = memo(function StudioViewport() {
   // A pose clip that cannot be solved on this rig: reported by the canvas, shown while that clip is selected.
   const [clipSolveError, setClipSolveError] = useState<{ key: string | null; message: string } | null>(null);
   const onClipError = useCallback((message: string) => setClipSolveError({ key: scene.clipUrl, message }), [scene.clipUrl]);
+  // A clip that did not load or does not fit the rig, in words (never the loader's own message); the row and the Poses tab say it too.
+  const solveError = clipSolveError && clipSolveError.key === scene.clipUrl ? clipSolveError.message : null;
+  const rawError = clipState.error ?? solveError;
+  const loadFailed = Boolean(clipState.error);
+  const problem = useMemo(() => (rawError ? unreadableClip(rawError, scene.clipFormat, scene.vectorSeq, loadFailed ? "load" : "solve") : null), [rawError, scene.clipFormat, scene.vectorSeq, loadFailed]);
+  useEffect(() => {
+    if (problem && scene.vectorId && scene.clipUrl) useClipProblems.getState().report(scene.vectorId, scene.clipUrl, problem);
+  }, [problem, scene.vectorId, scene.clipUrl]);
   const webgl = useWebGLSupport();
   // Where the pose editor puts its mode bar: above the view toolbar.
   const [barsHost, setBarsHost] = useState<HTMLDivElement | null>(null);
@@ -289,7 +301,7 @@ export const StudioViewport = memo(function StudioViewport() {
       ) : null}
       <Hud
         scene={scene}
-        clipState={clipSolveError && clipSolveError.key === scene.clipUrl ? { ...clipState, error: clipSolveError.message } : clipState}
+        clipState={{ ...clipState, error: problem ? stageProblemText(problem) : null }}
         info={info}
         legendRef={setLegendHost}
       />

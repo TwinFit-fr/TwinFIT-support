@@ -161,6 +161,21 @@ const FailingStretches = memo(function FailingStretches({ stretches, scale, pend
   );
 });
 
+/**
+ * A capture that only plays: one tick per frame along the lane, every frame a pose of its own
+ * (what "Edit as key poses" reduces to a few).
+ */
+const FrameComb = memo(function FrameComb({ frames, scale }: { frames: number; scale: Scale }) {
+  const last = Math.max(1, frames - 1);
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-1/2 h-5 -translate-y-1/2" aria-hidden="true" data-frame-comb={frames}>
+      {Array.from({ length: frames }, (_, f) => (
+        <div key={f} className="absolute inset-y-0 w-px rounded-full bg-(--m3-primary)/55" style={{ left: scale.x((f / last) * scale.duration) }} />
+      ))}
+    </div>
+  );
+});
+
 /** The two keys an in-between blends, lit on the rail. */
 function BlendSpan({ model, time, scale }: { model: TimelineModel; time: number; scale: Scale }) {
   const { from, to } = spanAt(model.keys, time);
@@ -176,7 +191,7 @@ function BlendSpan({ model, time, scale }: { model: TimelineModel; time: number;
  * arrows move a frame (Shift: ten), Page Up / Page Down jump to the next / previous key, Home and
  * End go to the start and the end.
  */
-export function TimelineTrack({ model }: { model: TimelineModel }) {
+export function TimelineTrack({ model, frames = null }: { model: TimelineModel; frames?: number | null }) {
   const area = useRef<HTMLDivElement>(null);
   const handle = useRef<HTMLDivElement>(null);
   const scrubbing = useRef<number | null>(null);
@@ -257,6 +272,7 @@ export function TimelineTrack({ model }: { model: TimelineModel }) {
             {width > 0 ? (
               <>
                 <LaneGrid scale={scale} />
+                {frames ? <FrameComb frames={frames} scale={scale} /> : null}
                 {inBetween ? <BlendSpan model={model} time={time} scale={scale} /> : null}
                 <KeyMarkers keys={model.keys} labels={model.labels} keyframe={model.keyframe} scale={scale} checks={checks} />
               </>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { isCaptureFormat } from "@/lib/studio/capture-convert";
 import { guideFocus, stageBlocksEditing, stageNote } from "@/lib/studio/load-state";
 import { defaultEquipmentItems } from "@/lib/studio/prompt";
 import { useStudioStore } from "@/lib/studio/store";
@@ -12,6 +13,8 @@ import { AvatarManageDialog } from "./avatar-manage-dialog";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { EquipmentDialog } from "./equipment-dialog";
 import { useAiDraftLifecycle } from "./hooks/use-ai-draft";
+import { requestCaptureEdit, useCaptureEditDriver } from "./hooks/use-capture-edit";
+import { problemOf, useClipProblem, useClipProblems } from "./hooks/use-clip-problems";
 import { useExerciseLanding } from "./hooks/use-exercise-landing";
 import { useOneClickMannequin } from "./hooks/use-mannequin";
 import { usePoseSave } from "./hooks/use-pose-save";
@@ -108,6 +111,26 @@ export function StudioWorkspace() {
   const startFromTemplate = () => {
     if (exercise && avatar) poses.onOpenDraft(defaultDraft(templateExerciseOf(exercise)), defaultEquipmentItems(exercise, avatar.sockets));
   };
+
+  // A capture asked to open as key poses lands in the editor on the Poses tab once it is read.
+  const showPoses = useCallback(() => setTab("poses"), [setTab]);
+  useCaptureEditDriver({ exercise, avatar, onOpened: showPoses });
+  /** "Edit as key poses" on a capture: it plays on the stage (if it was not already), then becomes key poses in the editor. */
+  const editCapture = (vector: MovementVector) => {
+    if (!exercise || !avatar || vector.status !== "ready" || problemOf(useClipProblems.getState().problems, vector)) return;
+    void guard("clip").then((ok) => {
+      if (!ok) return;
+      if (useStudioStore.getState().poseEdit) stopPoseEdit();
+      setVector(vector.id);
+      requestCaptureEdit(vector, exercise.id, avatar.id);
+      setTab("poses");
+    });
+  };
+  /** The edit control of a row: a pose clip opens in the editor, a capture as key poses. */
+  const editVector = (vector: MovementVector) => (isCaptureFormat(vector.format) ? editCapture(vector) : openVector(vector));
+  // The capture the stage plays, while no poses are open: the timeline offers to make it key poses.
+  const stageProblem = useClipProblem(data.vector);
+  const playingCapture = !poseEditing && !stageProblem && data.vector?.status === "ready" && isCaptureFormat(data.vector.format) ? data.vector : null;
 
   /** A row of Clips & queue: a ready pose clip opens in the editor, another ready clip plays, a queued row is selected. */
   const openVector = (vector: MovementVector) => {
@@ -222,7 +245,7 @@ export function StudioWorkspace() {
         stageSide={<JobsSlot />}
         stageSideOpen={jobsOpen}
         onStageSideClose={() => setJobsOpen(false)}
-        dock={rigOpen ? undefined : timelineShown && stage.kind === "ready" ? <TimelineDock /> : dockPreview ? <DockPreview /> : undefined}
+        dock={rigOpen ? undefined : timelineShown && stage.kind === "ready" ? <TimelineDock capture={playingCapture} onEditCapture={editCapture} /> : dockPreview ? <DockPreview /> : undefined}
         left={<CatalogSidebar exercises={exercises} state={data.catalogState} error={data.catalogError} onRetry={mutateCatalog} />}
         center={
           // Until an avatar can be drawn the stage says why (loading, failed, first run), never "no avatar" too early.
@@ -264,7 +287,7 @@ export function StudioWorkspace() {
                 ) : clipsFailed && plan?.kind === "wait" ? (
                   <ErrorState className="py-10" title="The clips of this exercise did not load." error={clipsFailed} onRetry={() => mutateVectors()} />
                 ) : (
-                  <PosesPlaceholder plan={plan} onStartFromTemplate={startFromTemplate} />
+                  <PosesPlaceholder plan={plan} onStartFromTemplate={startFromTemplate} onEditCapture={editCapture} onOpenClips={() => setTab("clips")} />
                 )}
               </div>
             ) : null}
@@ -296,6 +319,7 @@ export function StudioWorkspace() {
                 onVectorAction={actions.onVectorAction}
                 onUploadClip={actions.onUploadClip}
                 onOpenVector={openVector}
+                onEditVector={editVector}
               />
             </div>
           </>
