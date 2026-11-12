@@ -7,8 +7,6 @@ import type { BodyReport } from "./body-issues";
 import type { PoseIssue } from "./pose-validate";
 import type { ActiveEquipmentModels, AvatarSocket, EquipmentItem, EquipmentPlacement, VectorFormat, VectorStatus } from "./types";
 
-export type CameraPreset = "front" | "three-quarter" | "side";
-
 /**
  * What one undo step restores: everything the clip is made of, not just the angles, plus where
  * it came from. The meta holds the draft's flags (template, one side working, airborne) that
@@ -186,9 +184,6 @@ export type StudioState = {
   showEquipment: boolean;
   /** Clean motion-capture clips on load: ground and lock the feet, remove drift, close the loop. */
   cleanMocap: boolean;
-  cameraPreset: CameraPreset;
-  /** Bumped by "Reset view" so the camera rig re-applies the preset. */
-  viewNonce: number;
   edit: EditState;
   poseEdit: PoseEditState | null;
   /** World position of the pinnable points of the pose the editor holds (from the canvas). */
@@ -221,8 +216,6 @@ export type StudioState = {
   toggleGrid: () => void;
   toggleEquipment: () => void;
   toggleCleanMocap: () => void;
-  setCameraPreset: (preset: CameraPreset) => void;
-  resetView: () => void;
   setEdit: (edit: Partial<EditState>) => void;
   setModelBones: (bones: string[]) => void;
   /** The result of the body checks on the poses as they are now, with where they fail (clears poseChecksPending). */
@@ -293,8 +286,6 @@ export const useStudioStore = create<StudioState>((set) => ({
   showGrid: true,
   showEquipment: true,
   cleanMocap: true,
-  cameraPreset: "three-quarter",
-  viewNonce: 0,
   edit: NO_EDIT,
   poseEdit: null,
   poseProbe: {},
@@ -328,8 +319,6 @@ export const useStudioStore = create<StudioState>((set) => ({
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   toggleEquipment: () => set((s) => ({ showEquipment: !s.showEquipment })),
   toggleCleanMocap: () => set((s) => ({ cleanMocap: !s.cleanMocap })),
-  setCameraPreset: (cameraPreset) => set((s) => ({ cameraPreset, viewNonce: s.viewNonce + 1 })),
-  resetView: () => set((s) => ({ viewNonce: s.viewNonce + 1 })),
   setEdit: (edit) => set((s) => ({ edit: { ...s.edit, ...edit } })),
   setModelBones: (modelBones) => set((s) => (sameJson(s.modelBones, modelBones) ? s : { modelBones })),
   setPoseChecks: (poseIssues, bodyReport) =>

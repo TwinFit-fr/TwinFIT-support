@@ -2,24 +2,16 @@
 
 import dynamic from "next/dynamic";
 import { memo, useCallback, useEffect, useState } from "react";
-import {
-  Box,
-  Crosshair,
-  Dumbbell,
-  Grid3x3,
-  MonitorOff,
-  RotateCcw,
-  Sparkles,
-} from "lucide-react";
+import { Box, Crosshair, Dumbbell, Grid3x3, MonitorOff, Sparkles } from "lucide-react";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import type { BodyIssue } from "@/lib/studio/body-issues";
 import { debugEnabled } from "@/lib/studio/load-state";
 import { togglePlayback } from "@/lib/studio/playback";
 import { editingStatus } from "@/lib/studio/pose-origin";
-import { useStudioStore, type CameraPreset, type SceneSource } from "@/lib/studio/store";
+import { useStudioStore, type SceneSource } from "@/lib/studio/store";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
-import { EmptyState, IconButton, Segmented } from "../ui";
+import { EmptyState, IconButton } from "../ui";
 import { useMovementClip } from "./movement-clip";
 import { AiDraftChip } from "../ai-draft";
 import { IssueGlyph } from "../issue-glyph";
@@ -27,7 +19,9 @@ import { StudioLoader } from "../load-states";
 import { InBetweenNote } from "./in-between-note";
 import { BodyCheckMarks } from "./body-check-marks";
 import { PosePointsLayer } from "./pose-points-layer";
+import { ReferenceCard } from "./reference-card";
 import { useCanvasCommits } from "./render-stats";
+import { VIEW_SHORTCUTS, ViewControls } from "./view-controls";
 import type { ModelInfo } from "./studio-canvas";
 
 const StudioCanvas = dynamic(() => import("./studio-canvas"), {
@@ -73,39 +67,25 @@ function useWebGLSupport(): boolean | null {
   return supported;
 }
 
-const PRESETS: { value: CameraPreset; label: string; title: string }[] = [
-  { value: "front", label: "Front", title: "Front (1)" },
-  { value: "three-quarter", label: "¾", title: "Three-quarter (2)" },
-  { value: "side", label: "Side", title: "Side (3)" },
-];
-/** View controls: a floating glass toolbar, state in the store. Playback lives in the timeline dock; Space plays and pauses anywhere. */
+/** View controls: a floating glass toolbar. Playback lives in the timeline dock; Space plays and pauses anywhere. */
 function Toolbar() {
-  const preset = useStudioStore((s) => s.cameraPreset);
-  const setPreset = useStudioStore((s) => s.setCameraPreset);
   const showGrid = useStudioStore((s) => s.showGrid);
   const toggleGrid = useStudioStore((s) => s.toggleGrid);
   const showEquipment = useStudioStore((s) => s.showEquipment);
   const toggleEquipment = useStudioStore((s) => s.toggleEquipment);
   const cleanMocap = useStudioStore((s) => s.cleanMocap);
   const toggleCleanMocap = useStudioStore((s) => s.toggleCleanMocap);
-  const resetView = useStudioStore((s) => s.resetView);
 
   useShortcuts({
     " ": togglePlayback,
-    "1": () => setPreset("front"),
-    "2": () => setPreset("three-quarter"),
-    "3": () => setPreset("side"),
+    ...VIEW_SHORTCUTS,
     g: toggleGrid,
     e: toggleEquipment,
-    r: resetView,
   });
 
   return (
-    <div className="studio-glass pointer-events-auto flex items-center gap-1 rounded-full p-1.5 shadow-2xl">
-      <Segmented size="sm" value={preset} options={PRESETS} onChange={setPreset} className="border-transparent" />
-      <IconButton label="Reset view (R)" onClick={resetView}>
-        <RotateCcw className="h-4 w-4" />
-      </IconButton>
+    <div className="studio-glass pointer-events-auto flex items-center gap-1 rounded-full p-1.5 shadow-2xl" role="group" aria-label="Stage view">
+      <ViewControls />
       <span className="mx-1 h-5 w-px bg-(--m3-outline-variant)" />
       <IconButton label="Grid (G)" onClick={toggleGrid} active={showGrid}>
         <Grid3x3 className="h-4 w-4" />
@@ -290,6 +270,8 @@ export const StudioViewport = memo(function StudioViewport() {
         onError={onError}
         onClipError={onClipError}
       />
+      {/* Under the body points: a press on a point over the card always reaches the point. */}
+      <ReferenceCard />
       <PosePointsLayer statusHost={barsHost} legendHost={legendHost} />
       <BodyCheckMarks />
       {modelError ? (

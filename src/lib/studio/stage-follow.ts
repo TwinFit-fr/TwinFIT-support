@@ -1,0 +1,59 @@
+/**
+ * When an exercise opens, the stage camera follows the body for a few seconds: its poses or its
+ * clip arrive a moment after the exercise is picked. This decides, from the body's box sampled
+ * every few frames, when to frame it and which box. Pure, for node:test.
+ *
+ * A held pose (the pose editor, paused) is framed once it stops changing, and again if it settles
+ * somewhere else (the draft's poses replaced the first body). A moving body (a clip playing) is
+ * framed at once and then only grows to everything it reached, so the camera never pumps in and
+ * out with the movement.
+ */
+
+import type { Vec3 } from "./stage-camera.ts";
+
+export type Bounds = { min: Vec3; max: Vec3 };
+
+export type FollowState = {
+  /** The last sampled box, and for how many samples in a row it has not moved. */
+  last: Bounds | null;
+  stable: number;
+  /** The box the camera framed last; null before the first framing. */
+  framed: Bounds | null;
+};
+
+/** Metres: a box that moves less than STILL between samples is still; one that differs by DIFFERS from what was framed is framed again. */
+export const STILL_M = 0.03;
+export const DIFFERS_M = 0.1;
+export const STABLE_SAMPLES = 2;
+
+export const START_FOLLOW: FollowState = { last: null, stable: 0, framed: null };
+
+const close = (a: Bounds, b: Bounds, tolerance: number) => [0, 1, 2].every((i) => Math.abs(a.min[i] - b.min[i]) <= tolerance && Math.abs(a.max[i] - b.max[i]) <= tolerance);
+
+export function unionOf(a: Bounds, b: Bounds): Bounds {
+  return {
+    min: [Math.min(a.min[0], b.min[0]), Math.min(a.min[1], b.min[1]), Math.min(a.min[2], b.min[2])],
+    max: [Math.max(a.max[0], b.max[0]), Math.max(a.max[1], b.max[1]), Math.max(a.max[2], b.max[2])],
+  };
+}
+
+/** Does `b` reach more than `by` metres past `a` on any side? */
+export function outgrows(a: Bounds, b: Bounds, by = DIFFERS_M): boolean {
+  return [0, 1, 2].some((i) => b.min[i] < a.min[i] - by || b.max[i] > a.max[i] + by);
+}
+
+/** One sample: the next state, and the box to frame now (null: leave the camera). */
+export function followStep(state: FollowState, box: Bounds, moving: boolean): { state: FollowState; frame: Bounds | null } {
+  const stable = state.last && close(state.last, box, STILL_M) ? state.stable + 1 : 0;
+  const next: FollowState = { last: box, stable, framed: state.framed };
+  if (moving) {
+    if (!state.framed) return { state: { ...next, framed: box }, frame: box };
+    if (outgrows(state.framed, box)) {
+      const grown = unionOf(state.framed, box);
+      return { state: { ...next, framed: grown }, frame: grown };
+    }
+    return { state: next, frame: null };
+  }
+  if (stable >= STABLE_SAMPLES && (!state.framed || !close(state.framed, box, DIFFERS_M))) return { state: { ...next, framed: box }, frame: box };
+  return { state: next, frame: null };
+}
