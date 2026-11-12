@@ -3,6 +3,8 @@ import { POINT_IDS } from "./pose-points.ts";
 import { describe, it } from "node:test";
 import {
   lyingView,
+  openingView,
+  framingDiffers,
   pointsInside,
   CAMERA_VIEWS,
   PART_POINTS,
@@ -300,5 +302,33 @@ describe("body points under an overlay", () => {
     assert.deepEqual(pointsInside(pts, [{ left: 0, top: 0, right: 50, bottom: 50 }]), ["a"]);
     assert.deepEqual(pointsInside(pts, [{ left: 105, top: 0, right: 150, bottom: 150 }]), []);
     assert.deepEqual(pointsInside(pts, [{ left: 105, top: 0, right: 150, bottom: 150 }], 6), ["b"]);
+  });
+});
+
+describe("the opening view of an exercise", () => {
+  const standing = { min: [-0.35, 0, -0.2] as Vec3, max: [0.35, 1.8, 0.2] as Vec3 };
+  const bench = { min: [-0.3, 0.3, -0.9] as Vec3, max: [0.3, 1.7, 0.9] as Vec3 };
+  const flat = { min: [-0.3, 0, -0.9] as Vec3, max: [0.3, 0.5, 0.9] as Vec3 };
+  it("opens a standing body in the default view whatever came before", () => {
+    assert.equal(openingView("standing", standing.min, standing.max), "three-quarter");
+    assert.equal(openingView(null, standing.min, standing.max), "three-quarter");
+    assert.equal(openingView("seated", bench.min, bench.max), "three-quarter");
+  });
+  it("opens a supine bench press from the side although its box is not flat", () => {
+    assert.equal(lyingView(bench.min, bench.max, null), null);
+    assert.equal(openingView("supine", bench.min, bench.max), "left");
+    assert.equal(openingView("prone", flat.min, flat.max), "left");
+  });
+  it("uses the box rule without an orientation", () => {
+    assert.equal(openingView(null, flat.min, flat.max), "left");
+  });
+});
+
+describe("when the framing differs", () => {
+  const a: CameraPose = { target: [0, 1, 0], azimuth: 0, polar: 1.5, distance: 5, offset: { x: 10, y: 20 } };
+  it("ignores small differences and sees big ones", () => {
+    assert.equal(framingDiffers(a, { ...a, distance: 5.1, offset: { x: 14, y: 24 } }), false);
+    assert.equal(framingDiffers(a, { ...a, distance: 7 }), true);
+    assert.equal(framingDiffers(a, { ...a, offset: { x: 10, y: 40 } }), true);
   });
 });

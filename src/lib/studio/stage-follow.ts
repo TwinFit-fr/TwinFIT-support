@@ -69,3 +69,11 @@ export function watchSize(prev: SizeWatch | null, width: number, height: number,
   const watch = same ? prev : { width, height, since: now };
   return { watch, settled: now - watch.since >= SIZE_SETTLE_MS };
 }
+
+/** The follow outlives the last change of the stage's overlays by this long (ms): the body is checked against the free area again. */
+export const OVERLAY_SETTLE_MS = 1500;
+
+/** The overlays' rectangles as text, to tell when their layout changed. */
+export function obstacleSignature(boxes: readonly { left: number; top: number; right: number; bottom: number }[]): string {
+  return boxes.map((b) => [b.left, b.top, b.right, b.bottom].map(Math.round).join(",")).join(";");
+}

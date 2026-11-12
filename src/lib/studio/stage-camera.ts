@@ -101,6 +101,24 @@ export function lyingView(min: Vec3, max: Vec3, current: CameraViewId | null): C
   return current && profile.includes(current) ? null : profile[0];
 }
 
+/**
+ * The view a newly opened exercise starts from, from the body alone (never from where the camera
+ * happens to be): a lying pose (supine, prone, side-lying) from its profile, a standing, seated or
+ * kneeling one from the default view. Without a pose orientation, the box rule (lyingView), else the default view.
+ */
+export function openingView(orientation: string | null, min: Vec3, max: Vec3): CameraViewId {
+  if (orientation === "supine" || orientation === "prone" || orientation === "side_lying") {
+    return max[2] - min[2] >= max[0] - min[0] ? "left" : "front";
+  }
+  if (orientation) return DEFAULT_VIEW;
+  return lyingView(min, max, null) ?? DEFAULT_VIEW;
+}
+
+/** Do two cameras frame the body differently enough to frame again? (distance by more than 5 %, or the screen offset by more than 8 px) */
+export function framingDiffers(a: CameraPose, b: CameraPose, ratio = 0.05, px = 8): boolean {
+  return Math.abs(Math.log(a.distance / b.distance)) > Math.log(1 + ratio) || Math.abs(a.offset.x - b.offset.x) > px || Math.abs(a.offset.y - b.offset.y) > px;
+}
+
 /** Ids of the screen points that lie inside any box grown by `pad` pixels. */
 export function pointsInside(points: readonly { id: string; x: number; y: number }[], boxes: readonly Box[], pad = 0): string[] {
   return points.filter((p) => boxes.some((b) => p.x > b.left - pad && p.x < b.right + pad && p.y > b.top - pad && p.y < b.bottom + pad)).map((p) => p.id);
