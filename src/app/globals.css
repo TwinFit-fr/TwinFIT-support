@@ -161,6 +161,26 @@ body {
     }
   }
 
+  /* A running job without a percentage (the AI drafting poses): a segment sliding along its track. */
+  @keyframes studio-indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
+  .studio-indeterminate {
+    animation: studio-indeterminate 1.4s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .studio-indeterminate {
+      animation: none;
+      width: 100%;
+      opacity: 0.45;
+    }
+  }
+
   /* Workspace panes: they slide open and closed, but follow a separator drag instantly. A closed
      pane stays mounted (its state survives) and is hidden once the slide is over. */
   .studio-pane {
@@ -175,7 +195,8 @@ body {
       height var(--studio-motion) ease,
       visibility 0s linear var(--studio-motion);
   }
-  .studio-shell[data-resizing] .studio-pane {
+  .studio-shell[data-resizing] .studio-pane,
+  .studio-pane[data-instant] {
     transition: none;
   }
   .studio-shell[data-resizing] {

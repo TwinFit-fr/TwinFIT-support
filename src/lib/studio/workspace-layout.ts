@@ -34,6 +34,13 @@ export const LAYOUT_TOKENS = {
   /** The stage never gets narrower than this while side panes are docked. */
   stageMinWidth: 440,
   /**
+   * The panel that opens beside the stage on demand (the jobs tray): its width there, and the
+   * least width it gets when it takes the catalog's place instead.
+   */
+  sidePanel: { width: 360, coverMin: 240 },
+  /** The side panel docks beside the stage only while the stage keeps at least this much. */
+  stageMinBesideSidePanel: 480,
+  /**
    * Share of the window the stage is given back when a layout arranged in a larger window is
    * fitted to a smaller one (as far as the pane minimums allow).
    */
@@ -237,4 +244,19 @@ export function separatorKey(
 export function dragResult(size: number, startSize: number, limits: { min: number; max: number }): PaneState {
   if (size < limits.min - LAYOUT_TOKENS.collapseSnap) return { size: startSize, collapsed: true };
   return { size: Math.round(clamp(size, limits.min, limits.max)), collapsed: false };
+}
+
+export type SidePanelPlacement = { place: "beside" | "cover"; width: number };
+
+/**
+ * Where the on-demand side panel goes, so it never covers the stage: beside it while the stage
+ * keeps `stageMinBesideSidePanel`, else in the catalog's place at the catalog's width (at least
+ * `sidePanel.coverMin`), the catalog hidden underneath. Widths are of the docked side panes (0 when
+ * closed or floating), so the answer does not depend on where the panel itself sits.
+ */
+export function sidePanelPlacement(bodyWidth: number, dockedLeft: number, dockedRight: number): SidePanelPlacement {
+  const { sidePanel, stageMinBesideSidePanel } = LAYOUT_TOKENS;
+  const centre = bodyWidth - dockedLeft - dockedRight;
+  if (centre - sidePanel.width >= stageMinBesideSidePanel) return { place: "beside", width: sidePanel.width };
+  return { place: "cover", width: Math.max(dockedLeft, sidePanel.coverMin) };
 }

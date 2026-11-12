@@ -1,4 +1,4 @@
-import type { EquipmentKind, EquipmentPlacement } from "./types";
+import type { EquipmentKind, EquipmentPlacement, MeshyCredits, StudioEquipment } from "./types";
 
 export function equipmentKey(kind: EquipmentKind, code: string): string {
   return `${kind}:${code}`;
@@ -15,3 +15,7 @@ export function placementOf(kind: EquipmentKind, params: Record<string, unknown>
     Array.isArray(params.rotation) && params.rotation.length === 3 ? (params.rotation as [number, number, number]) : undefined;
   return { size_m: size, offset, rotation };
 }
+
+/** The equipment list (models, Meshy balance): one SWR key shared by the workspace, the dialog and the paid confirmation. */
+export const EQUIPMENT_KEY = "/api/studio/equipment";
+export type EquipmentResponse = { equipment: StudioEquipment[]; credits: MeshyCredits | null; configured: boolean };

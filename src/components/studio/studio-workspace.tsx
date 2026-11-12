@@ -5,6 +5,7 @@ import { guideFocus, stageBlocksEditing, stageNote } from "@/lib/studio/load-sta
 import { defaultEquipmentItems } from "@/lib/studio/prompt";
 import { useStudioStore } from "@/lib/studio/store";
 import { defaultDraft, templateExerciseOf } from "@/lib/studio/template-draft";
+import type { StudioJob } from "@/lib/studio/jobs";
 import type { BaseAvatar, MovementVector } from "@/lib/studio/types";
 import { AvatarDialog } from "./avatar-dialog";
 import { AvatarManageDialog } from "./avatar-manage-dialog";
@@ -20,6 +21,7 @@ import { useStudioData } from "./hooks/use-studio-data";
 import { useVectorActions } from "./hooks/use-vector-actions";
 import { useWorkerDriver } from "./hooks/use-worker-driver";
 import { InspectorPanel } from "./inspector-panel";
+import { JobsCenter, JobsSlot, useJobsTray } from "./jobs/jobs-center";
 import { ErrorState, StudioLoader } from "./load-states";
 import { PoseEditor } from "./pose-editor";
 import { PosesPlaceholder } from "./poses-placeholder";
@@ -29,18 +31,24 @@ import { SettingsDialog } from "./settings-dialog";
 import { DockPreview, useDockPreview } from "./shell/dock-preview";
 import { StageStartHint } from "./shell/stage-start-hint";
 import { StudioShell } from "./shell/studio-shell";
+import { ToolDivider } from "./shell/tool-button";
 import { PanelStatusNote, StageFallback } from "./stage-states";
+import { StudioConfirmHost } from "./studio-confirm";
 import { TimelineDock } from "./timeline/timeline-dock";
 import { useTimelineShown } from "./timeline/use-timeline";
 import { CurrentExercise, TopbarTools } from "./topbar-tools";
 import { StudioViewport } from "./viewer/studio-viewport";
 
-/** The right pane's tab, back on Poses whenever another exercise is picked (adjusted during render, not in an effect). */
+/**
+ * The right pane's tab, back on Poses whenever another exercise is picked (adjusted during render,
+ * not in an effect). `setTabFor` picks the tab another exercise opens on (the jobs tray's "Show in queue").
+ */
 function useRightTab(exerciseId: string | null) {
   const [state, setState] = useState<{ tab: RightTab; exerciseId: string | null }>({ tab: "poses", exerciseId });
   if (state.exerciseId !== exerciseId) setState({ tab: "poses", exerciseId });
   const setTab = useCallback((tab: RightTab) => setState((s) => ({ ...s, tab })), []);
-  return [state.exerciseId === exerciseId ? state.tab : "poses", setTab] as const;
+  const setTabFor = useCallback((tab: RightTab, forExercise: string) => setState({ tab, exerciseId: forExercise }), []);
+  return [state.exerciseId === exerciseId ? state.tab : "poses", setTab, setTabFor] as const;
 }
 
 /**
@@ -54,9 +62,13 @@ export function StudioWorkspace() {
   const { exercises, avatars, settings, vectors, vectorsLoaded, exercise, avatar, stage, vectorsLoading, equipmentCodes, supportCodes, queuedAnywhere, mutateVectors, mutateCatalog, mutateAvatars } = data;
   const setAvatar = useStudioStore((s) => s.setAvatar);
   const setVector = useStudioStore((s) => s.setVector);
+  const selectExercise = useStudioStore((s) => s.selectExercise);
+  const setJobsOpen = useJobsTray((s) => s.setOpen);
+  // The shell places the open tray (beside the stage, or in the catalog's place); a toggle re-renders the shell only for that.
+  const jobsOpen = useJobsTray((s) => s.open);
   const stopPoseEdit = useStudioStore((s) => s.stopPoseEdit);
   const poseEditing = useStudioStore((s) => Boolean(s.poseEdit));
-  const [tab, setTab] = useRightTab(exercise?.id ?? null);
+  const [tab, setTab, setTabFor] = useRightTab(exercise?.id ?? null);
   const guard = useSelectionGuard();
   const dockPreview = useDockPreview();
   // The timeline takes the dock while a pose draft or a clip is open; with nothing open the dock takes no space.
@@ -66,7 +78,7 @@ export function StudioWorkspace() {
 
   // The pipeline runs from here while any exercise has queued rows; a tick that claimed a row refreshes the lists.
   const hasPendingHere = vectors.some((v) => v.status === "pending");
-  useWorkerDriver(
+  const queue = useWorkerDriver(
     queuedAnywhere > 0 || hasPendingHere,
     useCallback(
       (claimed) => {
@@ -82,7 +94,13 @@ export function StudioWorkspace() {
   useAiDraftLifecycle();
   // The exercise's template, for its settings in the editor and for drags in Exercise mode.
   useTemplateExerciseSync(exercise);
-  const actions = useVectorActions({ exercise, avatar, refresh, onEditPoses: poses.onEditPoses });
+  const actions = useVectorActions({
+    exercise,
+    avatar,
+    defaultModel: typeof settings?.pipeline.model === "string" ? settings.pipeline.model : null,
+    refresh,
+    onEditPoses: poses.onEditPoses,
+  });
   // Picking an exercise lands on editable poses (its clip, or the instant template draft).
   const plan = useExerciseLanding({ exercise, avatar, vectors, vectorsLoaded, active: tab === "poses", onEditPoses: poses.onEditPoses, onOpenDraft: poses.onOpenDraft });
   const startFromTemplate = () => {
@@ -114,13 +132,18 @@ export function StudioWorkspace() {
   const [equipmentDialog, setEquipmentDialog] = useState(false);
   const [settingsDialog, setSettingsDialog] = useState(false);
 
+  // A new avatar goes on the stage through the unsaved-work guard; a build that started shows in the jobs tray.
   const onAvatarCreated = useCallback(
     (created: BaseAvatar) => {
       setAvatarDialog(false);
       void mutateAvatars();
-      if (created.status === "ready") setAvatar(created.id);
+      if (created.status === "ready") {
+        void guard("avatar").then((ok) => {
+          if (ok) setAvatar(created.id);
+        });
+      } else setJobsOpen(true);
     },
-    [mutateAvatars, setAvatar],
+    [mutateAvatars, setAvatar, guard, setJobsOpen],
   );
   // First run: one click on the stage makes the free in-browser mannequin; the side panel says where it is.
   const mannequin = useOneClickMannequin({ hasDefault: avatars.some((a) => a.is_default), onCreated: onAvatarCreated });
@@ -138,25 +161,65 @@ export function StudioWorkspace() {
     });
   };
 
+  /** A job of the tray: a finished clip opens in the editor, any other row shows in its exercise's queue. */
+  const openGeneration = (job: StudioJob) => {
+    const { exerciseId, vectorId } = job;
+    if (!exerciseId || !vectorId) return;
+    if (exerciseId === exercise?.id) {
+      const row = vectors.find((v) => v.id === vectorId);
+      if (row?.status === "ready") return openVector(row);
+      setVector(vectorId);
+      return setTab("clips");
+    }
+    void guard("exercise").then((ok) => {
+      if (!ok) return;
+      selectExercise(exerciseId);
+      setVector(vectorId);
+      // A finished clip lands in the editor (the landing opens the chosen clip); the rest show in the queue.
+      setTabFor(job.state === "done" ? "poses" : "clips", exerciseId);
+    });
+  };
+
   return (
     <>
       <StudioShell
         title={<CurrentExercise exercise={exercise} catalog={data.catalogState} editingShown={!blocked} />}
         rightTitle="Animation"
         tools={
-          <TopbarTools
-            avatars={avatars}
-            avatarsState={data.avatarsState}
-            selected={avatar}
-            settingsState={data.settingsState}
-            onRetrySettings={() => void data.mutateSettings()}
-            onSelectAvatar={chooseAvatar}
-            onAddAvatar={() => setAvatarDialog(true)}
-            onManageAvatars={() => setManageDialog(true)}
-            onEquipment={() => setEquipmentDialog(true)}
-            onSettings={() => setSettingsDialog(true)}
-          />
+          <>
+            <JobsCenter
+              exercises={exercises}
+              exerciseId={exercise?.id ?? null}
+              vectors={vectors}
+              avatars={avatars}
+              equipment={data.equipment}
+              currentAvatarId={avatar?.id ?? null}
+              defaultModel={typeof settings?.pipeline.model === "string" ? settings.pipeline.model : null}
+              ready={data.avatarsState !== "loading" && data.equipmentLoaded}
+              queue={queue}
+              onOpenGeneration={openGeneration}
+              onUseAvatar={chooseAvatar}
+              onOpenEquipment={() => setEquipmentDialog(true)}
+              onChanged={(kind) => void (kind === "generation" ? refresh() : kind === "avatar" ? mutateAvatars() : data.mutateEquipment())}
+            />
+            <ToolDivider />
+            <TopbarTools
+              avatars={avatars}
+              avatarsState={data.avatarsState}
+              selected={avatar}
+              settingsState={data.settingsState}
+              onRetrySettings={() => void data.mutateSettings()}
+              onSelectAvatar={chooseAvatar}
+              onAddAvatar={() => setAvatarDialog(true)}
+              onManageAvatars={() => setManageDialog(true)}
+              onEquipment={() => setEquipmentDialog(true)}
+              onSettings={() => setSettingsDialog(true)}
+            />
+          </>
         }
+        stageSide={<JobsSlot />}
+        stageSideOpen={jobsOpen}
+        onStageSideClose={() => setJobsOpen(false)}
         dock={timelineShown && stage.kind === "ready" ? <TimelineDock /> : dockPreview ? <DockPreview /> : undefined}
         left={<CatalogSidebar exercises={exercises} state={data.catalogState} error={data.catalogError} onRetry={mutateCatalog} />}
         center={
@@ -231,6 +294,7 @@ export function StudioWorkspace() {
           </>
         }
       />
+      <StudioConfirmHost />
       {equipmentDialog ? <EquipmentDialog onClose={() => setEquipmentDialog(false)} onChanged={() => void data.mutateEquipment()} /> : null}
       {settingsDialog && settings ? <SettingsDialog settings={settings} onClose={() => setSettingsDialog(false)} onSaved={() => void data.mutateSettings()} /> : null}
       {manageDialog ? (

@@ -1,20 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAccessToken } from "@nhost/react";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
-import { useToast } from "@/components/ui/toast";
 import { setStudioAccessToken } from "@/lib/studio/asset-auth";
-import { equipmentKey, placementOf } from "@/lib/studio/equipment";
+import { EQUIPMENT_KEY, equipmentKey, placementOf, type EquipmentResponse } from "@/lib/studio/equipment";
+import { avatarsPollMs, equipmentPollMs, vectorsPollMs } from "@/lib/studio/jobs";
 import { loadState, stageState } from "@/lib/studio/load-state";
 import { EMPTY_SCENE, useStudioStore, type SceneSource } from "@/lib/studio/store";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
 import type { ActiveEquipmentModels, BaseAvatar, MovementVector, StudioExercise, StudioSettings } from "@/lib/studio/types";
-import { isQueued } from "@/lib/studio/types";
-import { EQUIPMENT_KEY, type EquipmentResponse } from "../equipment-dialog";
-
-const QUEUE_POLL_MS = 3000;
 
 /** The scene slice for an avatar and the clip the viewer should play. URLs come from the file ids (stable across environments). */
 function sceneFor(avatar: BaseAvatar | null, vector: MovementVector | null): SceneSource {
@@ -43,7 +39,6 @@ function sceneFor(avatar: BaseAvatar | null, vector: MovementVector | null): Sce
  */
 export function useStudioData() {
   const token = useAccessToken();
-  const toast = useToast();
   const searchParams = useSearchParams();
   const exerciseId = useStudioStore((s) => s.exerciseId);
   const avatarId = useStudioStore((s) => s.avatarId);
@@ -60,13 +55,16 @@ export function useStudioData() {
   }, [token]);
 
   const { data: catalog, error: catalogError, mutate: mutateCatalog } = useStaffSWR<{ exercises: StudioExercise[] }>("/api/studio/exercises");
-  // Polls while an avatar is being generated: the list route advances the Meshy job.
+  // The workspace is where background jobs advance, whatever dialog is open or closed: the avatars
+  // and equipment list routes advance their Meshy jobs, so each list polls while one of its jobs runs.
   const { data: avatarData, error: avatarsError, mutate: mutateAvatars } = useStaffSWR<{ avatars: BaseAvatar[] }>("/api/studio/avatars", {
-    refreshInterval: (latest) => (latest?.avatars.some((a) => a.status === "pending" || a.status === "processing") ? 5000 : 0),
+    refreshInterval: (latest) => avatarsPollMs(latest?.avatars),
   });
   const { data: settingsData, error: settingsError, mutate: mutateSettings } = useStaffSWR<{ settings: StudioSettings }>("/api/studio/settings");
-  // Same key as the equipment dialog: one cache, one poll while a Meshy task runs.
-  const { data: equipmentData, mutate: mutateEquipment } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY);
+  // Same key as the equipment dialog: one cache, and this one poll (the dialog has none of its own).
+  const { data: equipmentData, mutate: mutateEquipment } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY, {
+    refreshInterval: (latest) => equipmentPollMs(latest?.equipment),
+  });
 
   const exercises = useMemo(() => catalog?.exercises ?? [], [catalog]);
   const avatars = useMemo(() => avatarData?.avatars ?? [], [avatarData]);
@@ -86,7 +84,7 @@ export function useStudioData() {
     isLoading: vectorsLoading,
     mutate: mutateVectors,
   } = useStaffSWR<{ vectors: MovementVector[] }>(exerciseId ? `/api/studio/vectors?exercise=${exerciseId}` : null, {
-    refreshInterval: (latest) => (latest?.vectors.some((v) => isQueued(v.status)) ? QUEUE_POLL_MS : 0),
+    refreshInterval: (latest) => vectorsPollMs(latest?.vectors),
     // Another exercise's rows are never this one's answer: while the new list loads (or fails) there is none.
     keepPreviousData: false,
   });
@@ -137,21 +135,8 @@ export function useStudioData() {
     if (!avatarId && avatar) setAvatar(avatar.id);
   }, [avatarId, avatar, setAvatar]);
 
-  // Tell the user when a generated avatar arrives (or fails) and switch to it.
-  const seenStatus = useRef<Record<string, string>>({});
-  useEffect(() => {
-    for (const a of avatars) {
-      const before = seenStatus.current[a.id];
-      seenStatus.current[a.id] = a.status;
-      if (!before || before === a.status || a.provider !== "meshy") continue;
-      if (a.status === "ready") {
-        toast.success(`${a.name} is ready (${Object.keys((a.params?.bones as object) ?? {}).length} bones recognised)`, "Avatar generated");
-        setAvatar(a.id);
-      } else if (a.status === "error") {
-        toast.error(a.error ?? "Generation failed", `${a.name} failed`);
-      }
-    }
-  }, [avatars, toast, setAvatar]);
+  // A generated avatar that arrives never replaces the one on the stage: the jobs tray announces
+  // it and offers "Use this avatar", which goes through the unsaved-work guard.
 
   const equipmentCodes = useMemo(
     () => [...new Set(exercises.map((e) => e.equipment?.code).filter((c): c is string => Boolean(c) && c !== "NONE"))].sort(),
@@ -176,6 +161,8 @@ export function useStudioData() {
     avatars,
     settings,
     equipment: equipmentData?.equipment ?? [],
+    /** The equipment list has answered (the jobs tray announces nothing before every list is in). */
+    equipmentLoaded: equipmentData !== undefined,
     vectors,
     /** The selected exercise's clips have arrived (an empty list is an answer too). */
     vectorsLoaded: vectorData !== undefined && !vectorsLoading,

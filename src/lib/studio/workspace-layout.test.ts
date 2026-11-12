@@ -14,6 +14,7 @@ import {
   scaledSize,
   separatorKey,
   serializeLayout,
+  sidePanelPlacement,
 } from "./workspace-layout.ts";
 
 const { panes, stageMinWidth } = LAYOUT_TOKENS;
@@ -212,5 +213,29 @@ describe("end of a drag", () => {
 
   it("collapses a pane dragged well below its minimum and keeps its size to reopen", () => {
     assert.deepEqual(dragResult(20, 320, limits), { size: 320, collapsed: true });
+  });
+});
+
+describe("side panel placement", () => {
+  it("docks beside the stage while the stage keeps its room", () => {
+    // 1440: catalog 258, properties 320 leave 862; the stage keeps 502 beside a 360 panel.
+    assert.deepEqual(sidePanelPlacement(1440, 258, 320), { place: "beside", width: 360 });
+    assert.deepEqual(sidePanelPlacement(1920, 345, 420), { place: "beside", width: 360 });
+  });
+
+  it("takes the catalog's place when beside would squeeze the stage", () => {
+    // 1280 and 1024 with both panes docked: the stage would keep 360 and 104. In the catalog's
+    // place at the catalog's width, the stage keeps exactly the size it had.
+    assert.deepEqual(sidePanelPlacement(1280, 240, 320), { place: "cover", width: 240 });
+    assert.deepEqual(sidePanelPlacement(1024, 240, 320), { place: "cover", width: 240 });
+    // A wide catalog is covered at its own width.
+    assert.deepEqual(sidePanelPlacement(1280, 340, 320), { place: "cover", width: 340 });
+    // The catalog closed: a column of the least width.
+    assert.deepEqual(sidePanelPlacement(1024, 0, 320), { place: "cover", width: 240 });
+  });
+
+  it("decides from the docked panes only, so a floating window answers the same either way", () => {
+    assert.deepEqual(sidePanelPlacement(900, 0, 0), { place: "beside", width: 360 });
+    assert.deepEqual(sidePanelPlacement(800, 0, 0), { place: "cover", width: 240 });
   });
 });

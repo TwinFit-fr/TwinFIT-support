@@ -7,7 +7,7 @@ import { ArrowLeft, Box, PanelLeft, PanelRight } from "lucide-react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { useLayoutStore } from "@/lib/studio/layout-store";
-import { LAYOUT_TOKENS, clamp, fitSidePanes, floatingSize, maxSizeNow, scaledSize } from "@/lib/studio/workspace-layout";
+import { LAYOUT_TOKENS, clamp, fitSidePanes, floatingSize, maxSizeNow, scaledSize, sidePanelPlacement } from "@/lib/studio/workspace-layout";
 import { PaneSplitter } from "./pane-splitter";
 import { SidePane } from "./side-pane";
 import { ToolButton, ToolDivider } from "./tool-button";
@@ -31,6 +31,9 @@ export function StudioShell({
   center,
   right,
   dock,
+  stageSide,
+  stageSideOpen = false,
+  onStageSideClose,
   leftLabel = "Catalog",
   rightLabel = "Inspector",
   rightTitle,
@@ -45,6 +48,15 @@ export function StudioShell({
   right: React.ReactNode;
   /** Under the stage; nothing (and no space) when absent. */
   dock?: React.ReactNode;
+  /**
+   * An on-demand side panel (the jobs tray). Open, it docks beside the stage and its dock while
+   * the stage keeps its room, else it takes the catalog's place: it never covers the stage.
+   * Closed, it takes no room.
+   */
+  stageSide?: React.ReactNode;
+  stageSideOpen?: boolean;
+  /** Close the side panel (the catalog toggle does it when the panel holds the catalog's place). */
+  onStageSideClose?: () => void;
   leftLabel?: string;
   rightLabel?: string;
   /** Heading shown at the top of the right pane (defaults to its label), e.g. the editor in use. */
@@ -70,6 +82,12 @@ export function StudioShell({
   const rightWidth = floating ? floatingSize("right", layout.right.size, bodyWidth) : fit.right || scaledSize("right", layout.right.size, layout.at, bodyWidth);
   const leftMax = maxSizeNow("left", bodyWidth, floating ? 0 : fit.right, floating);
   const rightMax = maxSizeNow("right", bodyWidth, floating ? 0 : fit.left, floating);
+  const side = sidePanelPlacement(bodyWidth, !floating && leftOpen ? leftWidth : 0, !floating && rightOpen ? rightWidth : 0);
+  const sideOpen = Boolean(stageSide) && stageSideOpen;
+  // The panel holds the catalog's place: the catalog stays mounted, closed underneath.
+  const covered = sideOpen && side.place === "cover";
+  // In the place of a docked catalog of the same width, the stage keeps its size (no refit needed).
+  const sideResizesStage = !(covered && !floating && leftOpen && side.width === leftWidth);
   const dockOpen = Boolean(dock) && !layout.dock.collapsed;
   const dockMax = maxSizeNow("dock", column.height || 600, 0, false);
   const dockHeight = clamp(layout.dock.size, panes.dock.min, dockMax);
@@ -77,6 +95,14 @@ export function StudioShell({
   const leftToggle = useRef<HTMLButtonElement>(null);
   const rightToggle = useRef<HTMLButtonElement>(null);
   const toggle = (pane: "left" | "right") => {
+    // The catalog toggle while the side panel holds its place: the panel closes, the catalog shows.
+    if (pane === "left" && covered) {
+      onStageSideClose?.();
+      if (leftOpen) return;
+      if (floating) layout.setFloating("left");
+      else layout.togglePane("left");
+      return;
+    }
     const wasOpen = pane === "left" ? leftOpen : rightOpen;
     // Focus inside a pane that closes would be lost: it moves to the pane's toggle in the top bar.
     if (wasOpen && document.activeElement?.closest(`#${pane === "left" ? LEFT_ID : RIGHT_ID}`)) (pane === "left" ? leftToggle : rightToggle).current?.focus();
@@ -122,8 +148,8 @@ export function StudioShell({
           <ToolDivider />
           <ToolButton
             ref={leftToggle}
-            label={`${leftOpen ? "Hide" : "Show"} the ${leftLabel.toLowerCase()} ( [ )`}
-            active={leftOpen}
+            label={`${leftOpen && !covered ? "Hide" : "Show"} the ${leftLabel.toLowerCase()} ( [ )`}
+            active={leftOpen && !covered}
             onClick={() => toggle("left")}
             aria-controls={LEFT_ID}
             aria-keyshortcuts="["
@@ -158,12 +184,17 @@ export function StudioShell({
       </header>
 
       <div ref={body} className="relative flex min-h-0 min-w-0 flex-1">
-        <SidePane id={LEFT_ID} side="left" label={leftLabel} open={leftOpen} width={leftWidth} contentWidth={leftWidth} floating={floating} onClose={() => toggle("left")}>
+        {covered ? (
+          <div data-side-panel="cover" data-resizes-stage={sideResizesStage} style={{ width: side.width }} className="flex min-h-0 shrink-0 border-r border-(--m3-outline-variant)">
+            {stageSide}
+          </div>
+        ) : null}
+        <SidePane id={LEFT_ID} side="left" label={leftLabel} open={leftOpen && !covered} width={leftWidth} contentWidth={leftWidth} floating={floating} instant={side.place === "cover"} onClose={() => toggle("left")}>
           {left}
         </SidePane>
-        <main ref={stageColumn} className="relative flex min-w-0 flex-1 flex-col">
+        <main ref={stageColumn} className="@container/centre relative flex min-w-0 flex-1">
           {/* The side splitters sit inside the landmark: zero-width, on the column's own edges. */}
-          {!floating || leftOpen ? (
+          {(!floating || leftOpen) && !covered ? (
             <PaneSplitter
               pane="left"
               label={`Resize the ${leftLabel.toLowerCase()}`}
@@ -187,30 +218,39 @@ export function StudioShell({
               style={{ position: "absolute", insetBlock: 0, right: floating ? rightWidth : 0, zIndex: floating ? 35 : undefined }}
             />
           ) : null}
-          <div className="studio-stage relative isolate min-h-0 min-w-0 flex-1 bg-(--m3-surface-dim)">{center}</div>
-          {/* The dock slot is always in the page; empty, it is hidden and takes no space. */}
-          {dock ? (
-            <PaneSplitter pane="dock" label={`Resize the ${dockLabel.toLowerCase()}`} controls={DOCK_ID} grow="ArrowUp" size={dockHeight} max={dockMax} open={dockOpen} />
-          ) : null}
-          <section
-            id={DOCK_ID}
-            aria-label={dockLabel}
-            data-dock={dock ? (dockOpen ? "open" : "collapsed") : "empty"}
-            data-open={dockOpen}
-            hidden={!dock}
-            inert={!dockOpen}
-            style={{ height: dockOpen ? dockHeight : 0 }}
-            className="studio-pane flex min-h-0 shrink-0 flex-col overflow-hidden border-t border-(--m3-outline-variant) bg-(--m3-surface-container-low) data-[open=false]:border-t-0"
-          >
-            {dock}
-          </section>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="studio-stage relative isolate min-h-0 min-w-0 flex-1 bg-(--m3-surface-dim)">{center}</div>
+            {/* The dock slot is always in the page; empty, it is hidden and takes no space. */}
+            {dock ? (
+              <PaneSplitter pane="dock" label={`Resize the ${dockLabel.toLowerCase()}`} controls={DOCK_ID} grow="ArrowUp" size={dockHeight} max={dockMax} open={dockOpen} />
+            ) : null}
+            <section
+              id={DOCK_ID}
+              aria-label={dockLabel}
+              data-dock={dock ? (dockOpen ? "open" : "collapsed") : "empty"}
+              data-open={dockOpen}
+              hidden={!dock}
+              inert={!dockOpen}
+              style={{ height: dockOpen ? dockHeight : 0 }}
+              className="studio-pane flex min-h-0 shrink-0 flex-col overflow-hidden border-t border-(--m3-outline-variant) bg-(--m3-surface-container-low) data-[open=false]:border-t-0"
+            >
+              {dock}
+            </section>
+          </div>
+          {covered ? null : sideOpen ? (
+            <div data-side-panel="beside" data-resizes-stage="true" style={{ width: side.width }} className="flex min-h-0 shrink-0 border-l border-(--m3-outline-variant)">
+              {stageSide}
+            </div>
+          ) : (
+            stageSide
+          )}
         </main>
 
         <SidePane id={RIGHT_ID} side="right" label={rightLabel} title={rightTitle} open={rightOpen} width={rightWidth} contentWidth={rightWidth} floating={floating} onClose={() => toggle("right")}>
           {right}
         </SidePane>
 
-        {floating && (leftOpen || rightOpen) ? (
+        {floating && ((leftOpen && !covered) || rightOpen) ? (
           <div aria-hidden className="absolute inset-0 z-20 bg-(--m3-scrim)" onClick={() => layout.setFloating(null)} />
         ) : null}
       </div>
