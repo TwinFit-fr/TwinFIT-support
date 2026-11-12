@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { CheckCircle2, ChevronDown, Coins, ImagePlus, Loader2, Sparkles, Trash2, Upload, Wand2, X } from "lucide-react";
+import { Boxes, CheckCircle2, ChevronDown, Coins, ImagePlus, Loader2, Sparkles, Trash2, Upload, Wand2 } from "lucide-react";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
-import { Modal } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { EQUIPMENT_KEY, placementOf, type EquipmentResponse } from "@/lib/studio/equipment";
@@ -16,8 +15,8 @@ import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
 import { AuthImage } from "./auth-image";
 import { usePaidConfirm } from "./studio-confirm";
+import { StudioDialog } from "./studio-dialog";
 import { Chip, IconButton, M3Button, NumberField, Segmented, StatusDot, TextInput } from "./ui";
-
 
 type Filter = "all" | EquipmentKind;
 
@@ -41,18 +40,17 @@ function ModelRow({
   onAction: (model: EquipmentModel, action: "activate" | "deactivate" | "delete") => void;
 }) {
   return (
-    <li className="flex items-center gap-2 rounded-lg bg-(--m3-surface-container-high) px-2 py-1.5 text-[11px]">
+    <li className="flex flex-wrap items-center gap-2 rounded-lg bg-(--m3-surface-container-high) px-2 py-1.5 text-[12px]">
       <StatusDot status={model.status} />
       <span className="h-7 w-7 shrink-0 overflow-hidden rounded-md bg-(--m3-surface-container-highest)">
         <AuthImage src={modelThumb(model)} alt="" />
       </span>
       <span className="min-w-0 flex-1 truncate text-(--m3-on-surface-variant)">
         {VECTOR_STATUS_LABEL[model.status]} · {model.provider} · {relativeTime(model.inserted_at)}
-        {model.error ? ` · ${model.error}` : ""}
       </span>
       {model.active ? (
-        <Chip tone="success" className="h-5 px-1.5 text-[10px]">
-          in use
+        <Chip tone="success" className="h-6 px-1.5">
+          In use
         </Chip>
       ) : null}
       {model.status === "ready" ? (
@@ -67,10 +65,11 @@ function ModelRow({
         </IconButton>
       ) : null}
       {!model.active ? (
-        <IconButton label="Delete" disabled={busy} onClick={() => onAction(model, "delete")} className="h-6 w-6">
+        <IconButton label="Delete this model" disabled={busy} onClick={() => onAction(model, "delete")} className="h-6 w-6">
           <Trash2 className="h-3 w-3" />
         </IconButton>
       ) : null}
+      {model.error ? <p className="basis-full whitespace-pre-wrap break-words pl-4 text-(--m3-error)">{model.error}</p> : null}
     </li>
   );
 }
@@ -100,7 +99,7 @@ function EquipmentCard({
   const processing = model?.status === "processing" || model?.status === "pending";
 
   return (
-    <li className="flex flex-col gap-2.5 rounded-2xl border border-(--m3-outline-variant) bg-(--m3-surface-container-low) p-3">
+    <li data-equipment-card={entry.code} className="flex flex-col gap-2.5 rounded-(--studio-radius-lg) border border-(--m3-outline-variant) bg-(--m3-surface-container-low) p-3">
       <div className="flex items-start gap-3">
         <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-(--m3-surface-container-highest)" title="Reference image (default style)">
           <AuthImage src={entry.reference_image_url} alt={`${entry.name} reference`} />
@@ -108,19 +107,19 @@ function EquipmentCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-sm font-semibold tracking-tight">{entry.name}</h3>
-            <Chip tone={entry.kind === "load" ? "primary" : "neutral"} className="h-5 px-1.5 text-[10px]">
-              {entry.kind}
+            <Chip tone={entry.kind === "load" ? "primary" : "neutral"} className="h-6 px-1.5">
+              {entry.kind === "load" ? "Load" : "Support"}
             </Chip>
           </div>
-          <div className="mt-0.5 font-mono text-[10px] text-(--m3-on-surface-variant)">{entry.code}</div>
-          <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-(--m3-on-surface-variant)">
+          <div className="mt-0.5 font-mono text-[12px] text-(--m3-on-surface-variant)">{entry.code}</div>
+          <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-(--m3-on-surface-variant)">
             {model ? (
               <>
                 <StatusDot status={model.status} />
                 <span>{VECTOR_STATUS_LABEL[model.status]}</span>
                 {model.active ? (
-                  <Chip tone="success" className="h-5 px-1.5 text-[10px]">
-                    in use
+                  <Chip tone="success" className="h-6 px-1.5">
+                    In use
                   </Chip>
                 ) : null}
                 {processing ? <span className="tabular-nums">{model.progress}%</span> : null}
@@ -130,11 +129,18 @@ function EquipmentCard({
             )}
           </div>
           {processing ? (
-            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-(--m3-surface-container-highest)">
-              <div className="studio-pulse h-full rounded-full bg-(--m3-primary) transition-[width]" style={{ width: `${Math.max(4, model?.progress ?? 0)}%` }} />
+            <div
+              role="progressbar"
+              aria-label={`${entry.name} model`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={model?.progress ?? 0}
+              className="mt-1.5 h-1 overflow-hidden rounded-full bg-(--m3-surface-container-highest)"
+            >
+              <div className="studio-pulse h-full rounded-full bg-(--m3-primary) motion-safe:transition-[width]" style={{ width: `${Math.max(4, model?.progress ?? 0)}%` }} />
             </div>
           ) : null}
-          {model?.status === "error" ? <p className="mt-1 line-clamp-2 text-[11px] text-(--m3-error)">{model.error}</p> : null}
+          {model?.status === "error" && model.error ? <p className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-snug text-(--m3-error)">{model.error}</p> : null}
         </div>
         <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-(--m3-surface-container-highest)" title="Generated model">
           <AuthImage src={modelThumb(model)} alt={model ? `${entry.name} model` : ""} />
@@ -165,6 +171,8 @@ function EquipmentCard({
           type="file"
           accept="image/png,image/jpeg,image/webp"
           className="hidden"
+          tabIndex={-1}
+          aria-hidden
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = "";
@@ -179,6 +187,8 @@ function EquipmentCard({
           type="file"
           accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
           className="hidden"
+          tabIndex={-1}
+          aria-hidden
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = "";
@@ -188,7 +198,7 @@ function EquipmentCard({
         {model?.status === "ready" ? (
           <>
             <IconButton
-              label={model.active ? "Stop using this model (back to the proxy)" : "Use this model in the viewer"}
+              label={model.active ? "Stop using this model (back to the placeholder shape)" : "Use this model in the viewer"}
               active={model.active}
               disabled={busy}
               onClick={() => onAction(model, model.active ? "deactivate" : "activate")}
@@ -196,9 +206,10 @@ function EquipmentCard({
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
             </IconButton>
-            <label className="ml-auto flex items-center gap-1 text-[10px] text-(--m3-on-surface-variant)" title="Longest dimension the viewer scales the model to">
-              size
+            <label className="ml-auto flex items-center gap-1.5 text-[12px] text-(--m3-on-surface-variant)" title="Longest dimension the viewer scales the model to">
+              Size
               <NumberField
+                decimalPoint
                 aria-label={`Size of the ${entry.name} model in metres`}
                 min={0.01}
                 max={10}
@@ -208,7 +219,7 @@ function EquipmentCard({
                 onCommit={(value) => {
                   if (value > 0 && placement && value !== placement.size_m) onSize(model, value);
                 }}
-                className="h-7 w-20 px-2 py-0 text-[11px]"
+                className="h-7 w-20 px-2 py-0 text-[12px]"
               />
               m
             </label>
@@ -223,8 +234,8 @@ function EquipmentCard({
 
       {entry.models.length > 1 ? (
         <div>
-          <button type="button" onClick={() => setHistory((v) => !v)} className="flex cursor-pointer items-center gap-1 text-[11px] text-(--m3-primary)">
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", history && "rotate-180")} />
+          <button type="button" aria-expanded={history} onClick={() => setHistory((v) => !v)} className="flex cursor-pointer items-center gap-1 rounded-sm text-[12px] text-(--m3-primary) outline-none focus-visible:ring-2 focus-visible:ring-(--m3-primary)/70">
+            <ChevronDown aria-hidden className={cn("h-3.5 w-3.5 motion-safe:transition-transform", history && "rotate-180")} />
             {entry.models.length} models
           </button>
           {history ? (
@@ -255,6 +266,7 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
   const [hint, setHint] = useState("");
   const [busyCodes, setBusyCodes] = useState<Set<string>>(new Set());
   const [bulkRunning, setBulkRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Same key as the workspace, which owns the poll: this dialog only reads and refreshes after an action.
   const { data, mutate, isLoading } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY);
@@ -270,10 +282,11 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
 
   const withBusy = async (key: string, fn: () => Promise<void>) => {
     setBusyCodes((s) => new Set(s).add(key));
+    setError(null);
     try {
       await fn();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "The action failed");
+      setError(`${key.split(":")[1]}: ${err instanceof Error ? err.message : "the action failed."}`);
     } finally {
       setBusyCodes((s) => {
         const next = new Set(s);
@@ -303,6 +316,8 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
     const ok = await paidConfirm(equipmentBuildRequest({ names: missing.map((e) => e.name) }));
     if (!ok) return;
     setBulkRunning(true);
+    setError(null);
+    const failures: string[] = [];
     try {
       for (const entry of missing) {
         try {
@@ -311,10 +326,11 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
             body: JSON.stringify({ kind: entry.kind, code: entry.code, prompt: hint.trim() || null }),
           });
         } catch (err) {
-          toast.error(`${entry.name}: ${err instanceof Error ? err.message : "failed"}`);
+          failures.push(`${entry.name}: ${err instanceof Error ? err.message : "failed"}`);
         }
         await mutate();
       }
+      if (failures.length) setError(`${failures.length} of ${missing.length} did not start.\n${failures.join("\n")}`);
       onChanged();
     } finally {
       setBulkRunning(false);
@@ -337,7 +353,7 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
       if (kind === "delete") {
         const ok = await confirm({
           title: `Delete this ${model.name} model?`,
-          description: "The row and its files in 3d-workspace are removed.",
+          description: "The model and its files are removed from storage.",
           confirmLabel: "Delete",
           variant: "danger",
         });
@@ -346,7 +362,7 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
         toast.success(`${model.name}: model deleted`);
       } else {
         await staffFetch(`${EQUIPMENT_KEY}/${model.id}`, { method: "PATCH", body: JSON.stringify({ action: kind }) });
-        toast.success(kind === "activate" ? `${model.name}: the viewer now draws this model` : `${model.name}: back to the proxy`);
+        toast.success(kind === "activate" ? `${model.name}: the viewer now draws this model` : `${model.name}: back to the placeholder shape`);
       }
       await refresh();
     });
@@ -364,85 +380,74 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
   const credits = data?.credits ?? null;
 
   return (
-    <Modal
+    <StudioDialog
+      data-equipment-dialog=""
+      size="lg"
+      title="Equipment models"
+      icon={<Boxes />}
+      subtitle="3D models of the catalog equipment, made with Meshy from the style's reference image. Equipment without a model in use is drawn as a placeholder shape."
+      headerExtra={
+        credits ? (
+          <Chip tone="primary" title={`${credits.monthly_credits} monthly + ${credits.permanent_credits} permanent`}>
+            <Coins aria-hidden className="h-3.5 w-3.5" /> {credits.balance} credits
+          </Chip>
+        ) : !configured ? (
+          <Chip tone="warning">Meshy is not set up</Chip>
+        ) : null
+      }
       onClose={onClose}
-      labelledBy="equipment-dialog-title"
-      dismissible={!bulkRunning}
-      className="studio-root w-[860px] max-w-[calc(100vw-2rem)] rounded-3xl border border-(--m3-outline-variant) bg-(--m3-surface-container) p-0 text-(--m3-on-surface) shadow-2xl backdrop:bg-(--m3-scrim)"
+      dirty={Boolean(hint.trim())}
+      busy={bulkRunning}
+      error={error}
+      onDismissError={() => setError(null)}
+      cancelLabel="Close"
+      footerNote="Builds keep going in Jobs after this dialog closes."
+      toolbar={
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented
+            label="Show"
+            value={filter}
+            onChange={setFilter}
+            size="sm"
+            options={[
+              { value: "all", label: `All ${equipment.length}` },
+              { value: "load", label: `Load ${equipment.filter((e) => e.kind === "load").length}` },
+              { value: "support", label: `Support ${equipment.filter((e) => e.kind === "support").length}` },
+            ]}
+          />
+          <TextInput
+            value={hint}
+            onChange={(e) => setHint(e.target.value)}
+            aria-label="Texture hint for the next generations"
+            placeholder="Texture hint for the next generations (optional)"
+            className="h-8 min-w-[240px] flex-1 py-0 text-[13px]"
+          />
+          <M3Button size="sm" variant="filled" disabled={!configured || !missing.length || bulkRunning} busy={bulkRunning} onClick={generateMissing}>
+            <Sparkles aria-hidden className="h-3.5 w-3.5" /> Generate missing ({missing.length})
+          </M3Button>
+        </div>
+      }
     >
-      <div className="flex items-center justify-between gap-4 border-b border-(--m3-outline-variant) px-5 py-4">
-        <div>
-          <h2 id="equipment-dialog-title" className="text-base font-semibold tracking-tight">
-            Equipment models
-          </h2>
-          <p className="mt-0.5 text-[11px] text-(--m3-on-surface-variant)">
-            Image-to-3D with Meshy from the reference image of the default style. The viewer draws the model in use; the rest fall back to proxies.
-          </p>
+      {isLoading && !equipment.length ? (
+        <div role="status" className="flex items-center justify-center gap-2 py-10 text-[13px] text-(--m3-on-surface-variant)">
+          <Loader2 aria-hidden className="h-4 w-4 motion-safe:animate-spin" /> Loading the equipment…
         </div>
-        <div className="flex items-center gap-2">
-          {credits ? (
-            <Chip tone="primary" title={`${credits.monthly_credits} monthly + ${credits.permanent_credits} permanent`}>
-              <Coins className="h-3.5 w-3.5" /> {credits.balance} credits
-            </Chip>
-          ) : !configured ? (
-            <Chip tone="warning">MESHY_API_KEY missing</Chip>
-          ) : null}
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={bulkRunning}
-            aria-label="Close"
-            className="studio-state flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-(--m3-on-surface-variant)"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 border-b border-(--m3-outline-variant) px-5 py-3">
-        <Segmented
-          value={filter}
-          onChange={setFilter}
-          size="sm"
-          options={[
-            { value: "all", label: `All ${equipment.length}` },
-            { value: "load", label: `Load ${equipment.filter((e) => e.kind === "load").length}` },
-            { value: "support", label: `Support ${equipment.filter((e) => e.kind === "support").length}` },
-          ]}
-        />
-        <TextInput
-          value={hint}
-          onChange={(e) => setHint(e.target.value)}
-          placeholder="Texture hint for the next generations (optional; the catalog description is used otherwise)"
-          className="h-8 min-w-[280px] flex-1 py-0 text-xs"
-        />
-        <M3Button size="sm" variant="filled" disabled={!configured || !missing.length || bulkRunning} busy={bulkRunning} onClick={generateMissing}>
-          <Sparkles className="h-3.5 w-3.5" /> Generate missing ({missing.length})
-        </M3Button>
-      </div>
-
-      <div className="studio-scroll max-h-[66vh] overflow-y-auto px-5 py-4">
-        {isLoading && !equipment.length ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-xs text-(--m3-on-surface-variant)">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading the equipment…
-          </div>
-        ) : (
-          <ul className="grid grid-cols-2 gap-3">
-            {visible.map((entry) => (
-              <EquipmentCard
-                key={`${entry.kind}:${entry.code}`}
-                entry={entry}
-                busy={busyCodes.has(`${entry.kind}:${entry.code}`)}
-                canGenerate={configured}
-                onGenerate={generate}
-                onUpload={upload}
-                onAction={action}
-                onSize={setSize}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
-    </Modal>
+      ) : (
+        <ul className="grid grid-cols-2 gap-3">
+          {visible.map((entry) => (
+            <EquipmentCard
+              key={`${entry.kind}:${entry.code}`}
+              entry={entry}
+              busy={busyCodes.has(`${entry.kind}:${entry.code}`)}
+              canGenerate={configured}
+              onGenerate={generate}
+              onUpload={upload}
+              onAction={action}
+              onSize={setSize}
+            />
+          ))}
+        </ul>
+      )}
+    </StudioDialog>
   );
 }

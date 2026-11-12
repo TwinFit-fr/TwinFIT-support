@@ -6,16 +6,16 @@ import { readCapped } from "@/lib/studio/meshy";
 import { createAvatar, listAvatars } from "@/lib/studio/queries";
 import { routeError } from "@/lib/studio/route-error";
 import { fetchPublicUrl } from "@/lib/studio/safe-fetch";
-import { MAX_MODEL_BYTES, codeSchema, imageDataUrlSchema, socketsSchema } from "@/lib/studio/schemas";
+import { MAX_MODEL_BYTES, avatarHeightSchema, avatarNameSchema, codeSchema, imageDataUrlSchema, modelUrlSchema, socketsSchema } from "@/lib/studio/schemas";
 import { deleteStudioFile, uploadStudioFile } from "@/lib/studio/storage";
 import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
 
 const fieldsSchema = z.object({
   code: codeSchema,
-  name: z.string().trim().min(1).max(120),
+  name: avatarNameSchema,
   subject: z.enum(AVATAR_SUBJECTS as [string, ...string[]]),
   rig: z.enum(AVATAR_RIGS as [string, ...string[]]),
-  height_m: z.number().min(0.5).max(2.5).nullable(),
+  height_m: avatarHeightSchema.nullable(),
   sockets: socketsSchema,
   is_default: z.boolean(),
   /** upload (a file or URL) or mannequin (built in the browser); default upload. */
@@ -26,7 +26,7 @@ const fieldsSchema = z.object({
 type Fields = z.infer<typeof fieldsSchema>;
 
 const urlBodySchema = z.object({
-  url: z.string().url().refine((u) => u.startsWith("https://"), "only https URLs"),
+  url: modelUrlSchema,
   fields: fieldsSchema,
 });
 
@@ -34,9 +34,9 @@ const urlBodySchema = z.object({
 const styleBodySchema = z.object({
   mode: z.literal("style"),
   code: codeSchema,
-  name: z.string().trim().min(1).max(120),
+  name: avatarNameSchema,
   subject: z.enum(["man", "woman"]),
-  height_m: z.number().min(0.5).max(2.5),
+  height_m: avatarHeightSchema,
   is_default: z.boolean(),
   image_data_url: imageDataUrlSchema.nullable().optional(),
 });

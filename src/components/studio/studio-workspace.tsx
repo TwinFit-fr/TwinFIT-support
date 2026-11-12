@@ -315,7 +315,7 @@ export function StudioWorkspace() {
         />
       ) : null}
       {avatarDialog ? (
-        <AvatarDialog hasDefault={avatars.some((a) => a.is_default)} onClose={() => setAvatarDialog(false)} onCreated={onAvatarCreated} />
+        <AvatarDialog hasDefault={avatars.some((a) => a.is_default)} takenCodes={avatars.map((a) => a.code)} onClose={() => setAvatarDialog(false)} onCreated={onAvatarCreated} />
       ) : null}
     </>
   );

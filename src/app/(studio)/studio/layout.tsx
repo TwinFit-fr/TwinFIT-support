@@ -13,8 +13,9 @@ export const dynamic = "force-dynamic";
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   return (
     <StaffGuard fallback={<StudioBootSkeleton />}>
-      <ToastProvider>
-        <ConfirmProvider>
+      {/* The Studio's dark toasts and confirmations, drawn above its dialogs; the rest of Support keeps the light ones. */}
+      <ToastProvider theme="studio">
+        <ConfirmProvider theme="studio">
           <div className="studio-root h-dvh w-screen overflow-hidden antialiased">{children}</div>
         </ConfirmProvider>
       </ToastProvider>
