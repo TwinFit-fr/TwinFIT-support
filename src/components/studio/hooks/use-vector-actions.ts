@@ -4,18 +4,28 @@ import { useCallback, useState } from "react";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
+import { generationRequest } from "@/lib/studio/paid-actions";
 import { useStudioStore } from "@/lib/studio/store";
 import type { BaseAvatar, EquipmentItem, MovementVector, StudioExercise } from "@/lib/studio/types";
 import type { GenerateInput, VectorAction } from "../inspector-panel";
+import { useJobsTray } from "../jobs/jobs-tray-store";
+import { usePaidConfirm } from "../studio-confirm";
 
-/** Enqueue, upload, activate, requeue, stop, edit and delete movement vectors of the open exercise. */
+/**
+ * Enqueue, upload, activate, requeue, stop, edit and delete movement vectors of the open exercise.
+ * Enqueueing and requeueing spend OpenAI usage once the queue runs them: both ask first in the
+ * shared paid confirmation, and Cancel sends nothing.
+ */
 export function useVectorActions(input: {
   exercise: StudioExercise | null;
   avatar: BaseAvatar | null;
+  /** The pipeline model of the Studio settings, named in the confirmation when the form sets none. */
+  defaultModel?: string | null;
   refresh: () => Promise<unknown>;
   onEditPoses: (vector: MovementVector) => Promise<void>;
 }) {
-  const { exercise, avatar, refresh, onEditPoses } = input;
+  const { exercise, avatar, defaultModel, refresh, onEditPoses } = input;
+  const paidConfirm = usePaidConfirm();
   const staffFetch = useStaffFetch();
   const toast = useToast();
   const confirm = useConfirm();
@@ -26,6 +36,8 @@ export function useVectorActions(input: {
   const onGenerate = useCallback(
     async (request: GenerateInput) => {
       if (!exercise || !avatar) return;
+      const ok = await paidConfirm(generationRequest({ exercise: exercise.display_name, avatar: avatar.name, model: request.params.model ?? defaultModel }));
+      if (!ok) return;
       setGenerating(true);
       try {
         const body = (await staffFetch("/api/studio/vectors", {
@@ -40,14 +52,16 @@ export function useVectorActions(input: {
         })) as { vector: MovementVector };
         await refresh();
         setVector(body.vector.id);
-        toast.success(`${exercise.display_name} queued as #${body.vector.seq}`, "Generation requested");
+        toast.success(`${exercise.display_name} is #${body.vector.seq} in the queue: follow it in Jobs.`, "Movement queued");
+        // The tray is where it runs, finishes or fails: show it.
+        useJobsTray.getState().setOpen(true);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Could not enqueue the generation");
       } finally {
         setGenerating(false);
       }
     },
-    [exercise, avatar, staffFetch, refresh, setVector, toast],
+    [exercise, avatar, defaultModel, paidConfirm, staffFetch, refresh, setVector, toast],
   );
 
   // A finished clip from elsewhere as a new ready row of this exercise.
@@ -112,6 +126,11 @@ export function useVectorActions(input: {
           await staffFetch(`/api/studio/vectors/${target.id}`, { method: "PATCH", body: JSON.stringify({ action: "edit", prompt: payload.trim() }) });
           toast.success(`#${target.seq}: prompt updated`);
         } else {
+          if (action === "requeue") {
+            const model = typeof target.params?.model === "string" ? target.params.model : defaultModel;
+            const ok = await paidConfirm(generationRequest({ exercise: exercise?.display_name ?? "this exercise", avatar: avatar?.name ?? "the avatar", model, retry: true, seq: target.seq }));
+            if (!ok) return;
+          }
           await staffFetch(`/api/studio/vectors/${target.id}`, { method: "PATCH", body: JSON.stringify({ action }) });
           if (action === "activate") setVector(target.id);
           toast.success(
@@ -129,7 +148,7 @@ export function useVectorActions(input: {
         setBusyVectorId(null);
       }
     },
-    [confirm, staffFetch, setVector, toast, refresh, onEditPoses],
+    [confirm, paidConfirm, exercise, avatar, defaultModel, staffFetch, setVector, toast, refresh, onEditPoses],
   );
 
   return { onGenerate, onUploadClip, onVectorAction, generating, busyVectorId };

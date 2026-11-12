@@ -6,21 +6,18 @@ import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { Modal } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
-import { placementOf } from "@/lib/studio/equipment";
+import { EQUIPMENT_KEY, placementOf, type EquipmentResponse } from "@/lib/studio/equipment";
+import { MESHY_EQUIPMENT, equipmentBuildRequest } from "@/lib/studio/paid-actions";
 import { readAsDataUrl, relativeTime } from "@/lib/studio/format";
 import { MAX_IMAGE_BYTES } from "@/lib/studio/schemas";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
-import type { EquipmentKind, EquipmentModel, MeshyCredits, StudioEquipment } from "@/lib/studio/types";
+import type { EquipmentKind, EquipmentModel, StudioEquipment } from "@/lib/studio/types";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
 import { cn } from "@/lib/utils";
 import { AuthImage } from "./auth-image";
+import { usePaidConfirm } from "./studio-confirm";
 import { Chip, IconButton, M3Button, NumberField, Segmented, StatusDot, TextInput } from "./ui";
 
-export const EQUIPMENT_KEY = "/api/studio/equipment";
-export type EquipmentResponse = { equipment: StudioEquipment[]; credits: MeshyCredits | null; configured: boolean };
-
-const CREDITS_PER_MODEL = 30;
-const POLL_MS = 4000;
 
 type Filter = "all" | EquipmentKind;
 
@@ -151,7 +148,7 @@ function EquipmentCard({
           disabled={!canGenerate || !entry.reference_image_url || busy || processing}
           busy={busy && processing}
           onClick={() => onGenerate(entry)}
-          title={entry.reference_image_url ? `Image-to-3D from the reference image (~${CREDITS_PER_MODEL} credits)` : "No reference image in the default style"}
+          title={entry.reference_image_url ? `Image-to-3D from the reference image (about ${MESHY_EQUIPMENT.credits} credits; asks first)` : "No reference image in the default style"}
         >
           <Wand2 className="h-3.5 w-3.5" /> {model ? "Regenerate" : "Generate"}
         </M3Button>
@@ -245,21 +242,22 @@ function EquipmentCard({
 
 /**
  * The 3D model of every catalog implement and support: generate it with Meshy from the style
- * reference image, upload one, pick the one the viewer draws, scale it. Polls while a task runs.
+ * reference image, upload one, pick the one the viewer draws, scale it. Every Meshy start asks
+ * first (cost and time). The workspace polls the list while a task runs, so a build keeps
+ * advancing, and shows in the jobs tray, with this dialog closed.
  */
 export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const staffFetch = useStaffFetch();
   const toast = useToast();
   const confirm = useConfirm();
+  const paidConfirm = usePaidConfirm();
   const [filter, setFilter] = useState<Filter>("all");
   const [hint, setHint] = useState("");
   const [busyCodes, setBusyCodes] = useState<Set<string>>(new Set());
   const [bulkRunning, setBulkRunning] = useState(false);
 
-  const { data, mutate, isLoading } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY, {
-    refreshInterval: (latest) =>
-      latest?.equipment.some((e) => e.models.some((m) => m.status === "processing" || m.status === "pending")) ? POLL_MS : 0,
-  });
+  // Same key as the workspace, which owns the poll: this dialog only reads and refreshes after an action.
+  const { data, mutate, isLoading } = useStaffSWR<EquipmentResponse>(EQUIPMENT_KEY);
   const equipment = useMemo(() => data?.equipment ?? [], [data]);
   const visible = filter === "all" ? equipment : equipment.filter((e) => e.kind === filter);
   const missing = equipment.filter((e) => e.reference_image_url && !e.models.some((m) => m.status === "ready" || m.status === "processing" || m.status === "pending"));
@@ -285,24 +283,24 @@ export function EquipmentDialog({ onClose, onChanged }: { onClose: () => void; o
     }
   };
 
-  const generate = (entry: StudioEquipment, image?: File) =>
-    withBusy(`${entry.kind}:${entry.code}`, async () => {
+  const generate = async (entry: StudioEquipment, image?: File) => {
+    const current = primaryModel(entry);
+    const ok = await paidConfirm(equipmentBuildRequest({ names: [entry.name], customImage: image?.name ?? null, replacesReady: current?.status === "ready" }));
+    if (!ok) return;
+    await withBusy(`${entry.kind}:${entry.code}`, async () => {
       if (image && image.size > MAX_IMAGE_BYTES) throw new Error("The reference image must be under 20 MB");
       const image_data_url = image ? await readAsDataUrl(image) : null;
       await staffFetch(EQUIPMENT_KEY, {
         method: "POST",
         body: JSON.stringify({ kind: entry.kind, code: entry.code, prompt: hint.trim() || null, image_data_url }),
       });
-      toast.success(`${entry.name}: Meshy task started`, "Generating model");
+      toast.success(`${entry.name}: Meshy task started. Follow it in Jobs; it keeps going if you close this dialog.`, "Generating model");
       await refresh();
     });
+  };
 
   const generateMissing = async () => {
-    const ok = await confirm({
-      title: `Generate ${missing.length} missing model${missing.length === 1 ? "" : "s"}?`,
-      description: `One Meshy image-to-3D task per implement, about ${CREDITS_PER_MODEL} credits each (~${missing.length * CREDITS_PER_MODEL} credits). Tasks run in parallel on Meshy's side; this dialog polls until they finish.`,
-      confirmLabel: "Generate",
-    });
+    const ok = await paidConfirm(equipmentBuildRequest({ names: missing.map((e) => e.name) }));
     if (!ok) return;
     setBulkRunning(true);
     try {

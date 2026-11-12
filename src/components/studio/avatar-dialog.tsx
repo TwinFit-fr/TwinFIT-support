@@ -6,16 +6,18 @@ import { useStaffFetch } from "@/hooks/use-staff-fetch";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { readAsDataUrl } from "@/lib/studio/format";
+import { MESHY_AVATAR, avatarBuildRequest, shortEstimate } from "@/lib/studio/paid-actions";
 import { codeFromFileName, defaultSockets } from "@/lib/studio/prompt";
 import type { AvatarRig, AvatarSocket, AvatarSubject, BaseAvatar } from "@/lib/studio/types";
 import { AVATAR_RIGS, AVATAR_SUBJECTS } from "@/lib/studio/types";
 import { MANNEQUIN_DEFAULTS, postMannequin } from "./hooks/use-mannequin";
+import { usePaidConfirm } from "./studio-confirm";
 import { Field, M3Button, Segmented, Select, TextArea, TextInput } from "./ui";
 
 type Mode = "style" | "generate" | "upload" | "url";
 
-/** What the paid Meshy build costs, said on its tab and on its button. */
-const STYLE_COST = "about 35 credits, 3–5 min";
+/** What the paid Meshy build costs, said on its tab and on its button (the confirmation repeats it before anything is sent). */
+const STYLE_COST = shortEstimate(MESHY_AVATAR);
 
 // The free, instant mannequin comes first and is the default; the paid build says its cost where it is chosen.
 const MODES: { value: Mode; label: React.ReactNode; title: string }[] = [
@@ -26,10 +28,10 @@ const MODES: { value: Mode; label: React.ReactNode; title: string }[] = [
     value: "style",
     label: (
       <>
-        TwinFIT style <span className="font-normal opacity-80">· 35 cr · 3–5 min</span>
+        TwinFIT style <span className="font-normal opacity-80">· {STYLE_COST}</span>
       </>
     ),
-    title: `Build the catalog's character with Meshy from its reference image, auto-rigged (${STYLE_COST})`,
+    title: `Build the catalog's character with Meshy from its reference image, auto-rigged (about ${MESHY_AVATAR.credits} credits, ${MESHY_AVATAR.duration})`,
   },
 ];
 
@@ -61,6 +63,7 @@ export function AvatarDialog({
 }) {
   const staffFetch = useStaffFetch();
   const toast = useToast();
+  const paidConfirm = usePaidConfirm();
   const [mode, setMode] = useState<Mode>("generate");
   /** POST /api/studio/avatars: multipart (file + fields), `{url, fields}` or the style body; a 502 carries the provider's message. */
   const postAvatar = async (body: FormData | { url: string; fields: Fields } | StyleBody): Promise<BaseAvatar> => {
@@ -138,6 +141,8 @@ export function AvatarDialog({
   const submit = async () => {
     const fields = readFields();
     if (!fields) return;
+    // The paid build states what it does, its cost and its time first; Cancel sends nothing.
+    if (mode === "style" && subject !== "neutral" && !(await paidConfirm(avatarBuildRequest({ name: fields.name, subject, customImage: image?.name ?? null })))) return;
     setBusy(true);
     try {
       let avatar: BaseAvatar;
@@ -153,7 +158,7 @@ export function AvatarDialog({
           is_default: isDefault,
           image_data_url,
         });
-        toast.success(`${avatar.name}: Meshy is building it (about 3–5 minutes). It appears in the avatar menu when ready.`, "Avatar started");
+        toast.success(`${avatar.name}: Meshy is building it (${MESHY_AVATAR.duration}). Follow it in Jobs; your current avatar stays until you choose the new one.`, "Avatar started");
         onCreated(avatar);
         return;
       }
@@ -217,7 +222,7 @@ export function AvatarDialog({
               <p className="text-xs leading-relaxed text-(--m3-on-surface-variant)">
                 Takes the character reference image of the default style (Images → Styles) for the subject, asks Meshy for the model in a
                 T-pose with PBR textures, auto-rigs it and stores the rigged <code className="font-mono">.glb</code>. Sockets land on the
-                rig&apos;s own hand, back and hip bones. About 35 credits; 3 to 5 minutes. The avatar shows as “building” in the menu meanwhile.
+                rig&apos;s own hand, back and hip bones. About {MESHY_AVATAR.credits} credits; {MESHY_AVATAR.duration}. It runs in the background and shows in Jobs in the top bar.
               </p>
             </div>
             <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-(--m3-outline) px-3 py-2 text-xs transition-colors hover:border-(--m3-primary)">

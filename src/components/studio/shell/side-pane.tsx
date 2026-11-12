@@ -19,6 +19,7 @@ export function SidePane({
   width,
   contentWidth,
   floating,
+  instant = false,
   onClose,
   children,
 }: {
@@ -32,6 +33,8 @@ export function SidePane({
   contentWidth: number;
   /** Over the stage (narrow window) instead of beside it. */
   floating: boolean;
+  /** Open and close without sliding (when a side panel swaps places with it, the stage must not resize on the way). */
+  instant?: boolean;
   onClose: () => void;
   children: React.ReactNode;
 }) {
@@ -40,6 +43,7 @@ export function SidePane({
       id={id}
       aria-label={label}
       data-open={open}
+      data-instant={instant || undefined}
       inert={!open}
       style={{ width: open ? width : 0 }}
       className={cn(

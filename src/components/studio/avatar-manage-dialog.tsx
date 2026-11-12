@@ -7,10 +7,12 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { downloadStudioAsset } from "@/lib/studio/asset-auth";
+import { MESHY_AVATAR, avatarBuildRequest } from "@/lib/studio/paid-actions";
 import { relativeTime } from "@/lib/studio/format";
 import { studioAssetUrl } from "@/lib/studio/storage-url";
 import type { BaseAvatar } from "@/lib/studio/types";
 import { VECTOR_STATUS_LABEL } from "@/lib/studio/types";
+import { usePaidConfirm } from "./studio-confirm";
 import { Chip, IconButton, M3Button, NumberField, StatusDot, TextInput } from "./ui";
 
 function AvatarRow({ avatar, busy, onAction }: { avatar: BaseAvatar; busy: boolean; onAction: (action: "rename" | "height" | "default" | "retry" | "delete" | "download", value?: string | number) => void }) {
@@ -61,7 +63,7 @@ function AvatarRow({ avatar, busy, onAction }: { avatar: BaseAvatar; busy: boole
           </M3Button>
         ) : null}
         {avatar.status === "error" && avatar.provider === "meshy" ? (
-          <M3Button size="sm" variant="tonal" disabled={busy} onClick={() => onAction("retry")} title="Run the Meshy build again from the same reference image (about 35 credits)">
+          <M3Button size="sm" variant="tonal" disabled={busy} onClick={() => onAction("retry")} title={`Run the Meshy build again from the same reference image (about ${MESHY_AVATAR.credits} credits; asks first)`}>
             <RotateCw className="h-3.5 w-3.5" /> Retry build
           </M3Button>
         ) : null}
@@ -85,9 +87,11 @@ export function AvatarManageDialog({ avatars, onClose, onChanged }: { avatars: B
   const staffFetch = useStaffFetch();
   const toast = useToast();
   const confirm = useConfirm();
+  const paidConfirm = usePaidConfirm();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const act = async (avatar: BaseAvatar, action: "rename" | "height" | "default" | "retry" | "delete" | "download", value?: string | number) => {
+    if (action === "retry" && !(await paidConfirm(avatarBuildRequest({ name: avatar.name, subject: avatar.subject, retry: true })))) return;
     setBusyId(avatar.id);
     try {
       if (action === "download") {
@@ -114,7 +118,7 @@ export function AvatarManageDialog({ avatars, onClose, onChanged }: { avatars: B
         toast.success(`${avatar.name} is the default avatar`);
       } else if (action === "retry") {
         await staffFetch(`/api/studio/avatars/${avatar.id}`, { method: "PATCH", body: JSON.stringify({ action: "retry" }) });
-        toast.success(`${avatar.name}: Meshy is building it again`);
+        toast.success(`${avatar.name}: Meshy is building it again. Follow it in Jobs.`);
       }
       onChanged();
     } catch (err) {
