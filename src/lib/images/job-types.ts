@@ -25,6 +25,8 @@ export type FrameJobOptions = {
   skipInputs?: SkippableInput[];
   /** Keep the result as an inactive candidate instead of replacing the active frame. */
   candidate?: boolean;
+  /** No feet-baseline shift: the frame is aligned to its Start later. */
+  skipAlign?: boolean;
 } & ImageEditOptions;
 
 export type GenerationJob = {

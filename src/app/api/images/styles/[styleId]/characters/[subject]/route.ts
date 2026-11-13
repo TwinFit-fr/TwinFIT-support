@@ -6,7 +6,7 @@ import { editImage, generateImage } from "@/lib/images/openai";
 import { fillPromptTemplate } from "@/lib/images/prompt";
 import { getStyle, listImagePromptsForStyle } from "@/lib/images/queries";
 import {
-  LOGO_DIRECTIVE,
+  logoDirective,
   characterFileName,
   referenceSheetDirective,
 } from "@/lib/images/reference";
@@ -64,7 +64,7 @@ export async function POST(request: Request, context: Ctx) {
         referenceSheetDirective(subject),
       ];
       const logo = await loadLogoInput(token, style);
-      if (logo) prompt.push(LOGO_DIRECTIVE);
+      if (logo) prompt.push(logoDirective());
       const result = logo
         ? await editImage(prompt.join("\n\n"), style.params, [logo])
         : await generateImage(prompt.join("\n\n"), style.params);

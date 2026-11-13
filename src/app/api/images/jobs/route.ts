@@ -29,6 +29,7 @@ const jobSpec = z.object({
       referenceIds,
       skipInputs: z.array(z.enum(["character", "support", "logo"])).optional(),
       candidate: z.boolean().optional(),
+      skipAlign: z.boolean().optional(),
       ...edit,
     })
     .optional(),

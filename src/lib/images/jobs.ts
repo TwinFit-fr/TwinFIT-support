@@ -201,6 +201,7 @@ async function runJob(token: string, job: GenerationJob): Promise<Record<string,
     referenceIds: job.options.referenceIds,
     skipInputs: job.options.skipInputs,
     candidate: job.options.candidate,
+    skipAlign: job.options.skipAlign,
     guideImageId,
   });
   return { result_exercise_image_id: image.id };
