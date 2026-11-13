@@ -15,15 +15,7 @@ import {
 } from "@/lib/images/queries";
 import { alignFeetBaseline } from "@/lib/images/align";
 import { loadLogoInput } from "@/lib/images/logo";
-import {
-  EQUIPMENT_REFERENCE_DIRECTIVE,
-  LOGO_DIRECTIVE,
-  REFERENCE_USE_DIRECTIVE,
-  START_GUIDE_DIRECTIVE,
-  SUPPORT_REFERENCE_DIRECTIVE,
-  frameFileName,
-  libraryReferenceDirective,
-} from "@/lib/images/reference";
+import { frameDirectives, frameFileName } from "@/lib/images/reference";
 import { loadReferenceInputs, resolveRunReferences } from "@/lib/images/references";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
 import { MID_POSITION, targetPosition } from "@/lib/images/types";
@@ -47,6 +39,8 @@ export type FrameRequest = {
   skipInputs?: SkippableInput[];
   /** Keep it as an inactive candidate for its position; the active frame stays. */
   candidate?: boolean;
+  /** Leave the frame where the model drew it (no feet-baseline shift); a later step aligns it to the Start. */
+  skipAlign?: boolean;
 };
 
 /**
@@ -148,8 +142,11 @@ export async function generateExerciseFrame(
         { kind: "exercise", id: exercise.exo_id },
         body.referenceIds,
       );
+  // Mid/End keep the logo already printed on the Start: sending it again redraws it elsewhere.
   const logo =
-    style.logo_in_exercises && !skip.has("logo") ? await loadLogoInput(token, style) : null;
+    style.logo_in_exercises && !skip.has("logo") && !usableGuide
+      ? await loadLogoInput(token, style)
+      : null;
 
   // Input order: guide or character, support, equipment, library references, logo.
   const inputs = [];
@@ -178,30 +175,30 @@ export async function generateExerciseFrame(
       /* missing equipment ref must not block generation */
     }
   }
-  const firstReferenceInput = inputs.length + 1;
   inputs.push(...(await loadReferenceInputs(token, references)));
   if (logo) inputs.push(logo);
 
-  const directives = [
-    usableGuide ? START_GUIDE_DIRECTIVE : characterFileId ? REFERENCE_USE_DIRECTIVE : null,
-    supportSent ? SUPPORT_REFERENCE_DIRECTIVE : null,
-    equipmentSent ? EQUIPMENT_REFERENCE_DIRECTIVE : null,
-    ...references.map((reference, i) =>
-      libraryReferenceDirective(firstReferenceInput + i, reference),
-    ),
-    logo ? LOGO_DIRECTIVE : null,
-  ].filter(Boolean);
+  const directives = frameDirectives({
+    kind: usableGuide ? "edit" : "start",
+    primary: Boolean(primaryFileId),
+    support: supportSent,
+    equipment: equipmentSent,
+    references,
+    logo: Boolean(logo),
+  });
   const prompt = [basePrompt, ...directives].join("\n\n");
 
   const result = inputs.length
     ? await editImage(prompt, params, inputs, { useFidelity: Boolean(primaryFileId) })
     : await generateImage(prompt, params);
 
-  const aligned = await alignFeetBaseline(
-    result.bytes,
-    params.format as "png" | "webp" | "jpeg",
-    params.compression,
-  );
+  const aligned = body.skipAlign
+    ? { bytes: result.bytes, shiftPx: 0 }
+    : await alignFeetBaseline(
+        result.bytes,
+        params.format as "png" | "webp" | "jpeg",
+        params.compression,
+      );
 
   const extension = params.format === "jpeg" ? "jpg" : params.format;
   const uploaded = await uploadImageFile({
@@ -222,6 +219,7 @@ export async function generateExerciseFrame(
     guide_image_id: usableGuide?.id ?? null,
     logo_sent: Boolean(logo),
     feet_shift_px: aligned.shiftPx,
+    feet_aligned: !body.skipAlign,
     system_prompt_id: chosen.system.id,
     position_prompt_id: chosen.position.id,
     system_prompt_edited: systemOverride != null,
