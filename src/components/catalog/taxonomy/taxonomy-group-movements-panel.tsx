@@ -11,7 +11,7 @@ import {
   type MuscleSet,
 } from "@/components/catalog/muscle-set-editor";
 import { resolveLocalizedName, type LocalizedLookup } from "@/lib/catalog/locales";
-import type { LookupRowFull, MuscleGroupRow } from "./types";
+import type { LookupRowFull, MuscleGroupRow, StrengthPatternRow } from "./types";
 
 type PairRow = {
   key: string;
@@ -22,12 +22,21 @@ type PairRow = {
   muscles: MuscleSet;
   exerciseCount: number;
   inheritingCount: number;
+  /** Pair-level pattern: "inherit" (movement type's), "none" (isolation) or a pattern code. */
+  patternChoice: string;
+  /** Pattern code in force (the pair's when it overrides, else the movement type's); "" = isolation. */
+  effectivePattern: string;
+  movementPattern: string;
 };
+
+const INHERIT = "inherit";
+const ISOLATION = "none";
 
 type Props = {
   groups: MuscleGroupRow[];
   movements: LookupRowFull[];
   muscles: LookupRowFull[];
+  strengthPatterns: StrengthPatternRow[];
   onLink: (groupCode: string, movementCode: string) => Promise<void>;
   onUnlink: (groupCode: string, movementCode: string) => Promise<void>;
   /** Resolves null when saved, else the error; the editor stays open on error. */
@@ -35,6 +44,12 @@ type Props = {
     groupCode: string,
     movementCode: string,
     muscles: MuscleSet,
+  ) => Promise<string | null>;
+  /** `inherit` clears the pair's pattern, `none` = isolation, else a pattern code. Same contract. */
+  onSaveStrengthPattern: (
+    groupCode: string,
+    movementCode: string,
+    strengthPattern: string,
   ) => Promise<string | null>;
 };
 
@@ -50,9 +65,11 @@ export function TaxonomyGroupMovementsPanel({
   groups,
   movements,
   muscles,
+  strengthPatterns,
   onLink,
   onUnlink,
   onSaveMuscles,
+  onSaveStrengthPattern,
 }: Props) {
   const [filter, setFilter] = useState("");
   const confirm = useConfirm();
@@ -65,6 +82,8 @@ export function TaxonomyGroupMovementsPanel({
   const [draft, setDraft] = useState<MuscleSet>({ target: "", secondary: [] });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [patternRow, setPatternRow] = useState<PairRow | null>(null);
+  const [patternDraft, setPatternDraft] = useState(INHERIT);
 
   const muscleOptions = useMemo(
     (): MuscleOption[] =>
@@ -79,6 +98,10 @@ export function TaxonomyGroupMovementsPanel({
     const rows: PairRow[] = [];
     for (const group of groups) {
       for (const x of group.group_movement_types) {
+        const movementPattern =
+          movements.find((m) => m.code === x.movement_type.code)?.strength_pattern?.code ?? "";
+        const override = x.strength_pattern_override === true;
+        const pairPattern = x.strength_pattern?.code ?? "";
         rows.push({
           key: `${group.code}::${x.movement_type.code}`,
           groupCode: group.code,
@@ -91,6 +114,9 @@ export function TaxonomyGroupMovementsPanel({
           },
           exerciseCount: x.exercises?.length ?? 0,
           inheritingCount: (x.exercises ?? []).filter((e) => e.muscles_inherited).length,
+          patternChoice: override ? pairPattern || ISOLATION : INHERIT,
+          effectivePattern: override ? pairPattern : movementPattern,
+          movementPattern,
         });
       }
     }
@@ -98,7 +124,7 @@ export function TaxonomyGroupMovementsPanel({
       const g = a.groupCode.localeCompare(b.groupCode);
       return g !== 0 ? g : a.movementCode.localeCompare(b.movementCode);
     });
-  }, [groups]);
+  }, [groups, movements]);
 
   const linkedForGroup = useMemo(() => {
     const set = new Set<string>();
@@ -157,6 +183,28 @@ export function TaxonomyGroupMovementsPanel({
       const error = await onSaveMuscles(editing.groupCode, editing.movementCode, draft);
       setSaveError(error);
       if (!error) setEditing(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openPattern(row: PairRow) {
+    setPatternDraft(row.patternChoice);
+    setSaveError(null);
+    setPatternRow(row);
+  }
+
+  async function savePattern() {
+    if (!patternRow) return;
+    setSaving(true);
+    try {
+      const error = await onSaveStrengthPattern(
+        patternRow.groupCode,
+        patternRow.movementCode,
+        patternDraft,
+      );
+      setSaveError(error);
+      if (!error) setPatternRow(null);
     } finally {
       setSaving(false);
     }
@@ -258,6 +306,7 @@ export function TaxonomyGroupMovementsPanel({
               <th className="px-3 py-2 font-medium">Group</th>
               <th className="px-3 py-2 font-medium">Movement</th>
               <th className="px-3 py-2 font-medium">Muscles</th>
+              <th className="px-3 py-2 font-medium">Strength pattern</th>
               <th className="px-3 py-2 font-medium">Exercises</th>
               <th className="px-3 py-2 font-medium">Actions</th>
             </tr>
@@ -265,7 +314,7 @@ export function TaxonomyGroupMovementsPanel({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-zinc-500">
+                <td colSpan={6} className="px-3 py-6 text-zinc-500">
                   No group–movement pairs yet. Link one above.
                 </td>
               </tr>
@@ -286,6 +335,12 @@ export function TaxonomyGroupMovementsPanel({
                       <MuscleSetChips muscles={muscleOptions} value={row.muscles} />
                     </td>
                     <td className="px-3 py-2 text-xs text-zinc-600">
+                      <div className="font-mono">{row.effectivePattern || "Isolation"}</div>
+                      <div className="text-zinc-500">
+                        {row.patternChoice === INHERIT ? "from movement" : "pair override"}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-zinc-600">
                       {row.exerciseCount === 0
                         ? "None"
                         : `${row.inheritingCount} / ${row.exerciseCount} inherit`}
@@ -300,6 +355,15 @@ export function TaxonomyGroupMovementsPanel({
                           onClick={() => openMuscles(row)}
                         >
                           Muscles
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy}
+                          className="h-8 px-2 text-xs"
+                          onClick={() => openPattern(row)}
+                        >
+                          Pattern
                         </Button>
                         <Button
                           type="button"
@@ -319,6 +383,67 @@ export function TaxonomyGroupMovementsPanel({
           </tbody>
         </table>
       </div>
+
+      {patternRow && (
+        <Modal
+          onClose={() => setPatternRow(null)}
+          labelledBy="pair-pattern-title"
+          dismissible={!saving}
+          className="max-w-lg"
+        >
+          <div className="space-y-4 p-6">
+            <div>
+              <h2 id="pair-pattern-title" className="text-lg font-semibold">
+                {patternRow.groupName} + {patternRow.movementName}
+              </h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                Strength pattern of this pair (Strength Focus Fit, recovery horizon, Coach compound
+                lifts). By default the pair takes its movement type&apos;s pattern; override it for
+                exceptions such as Leg Press = SQUAT or Calf Press = isolation.
+              </p>
+            </div>
+            <label className="block text-xs font-medium text-zinc-600">
+              Strength pattern
+              <select
+                className={selectClass("mt-1 block w-full")}
+                value={patternDraft}
+                disabled={saving}
+                onChange={(e) => setPatternDraft(e.target.value)}
+              >
+                <option value={INHERIT}>
+                  Same as movement ({patternRow.movementPattern || "isolation"})
+                </option>
+                <option value={ISOLATION}>Isolation (no pattern)</option>
+                {strengthPatterns
+                  .filter((p) => p.active !== false || p.code === patternRow.patternChoice)
+                  .map((p) => (
+                    <option key={p.id} value={p.code}>
+                      {p.code} — {p.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={saving}
+                onClick={() => setPatternRow(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={saving || patternDraft === patternRow.patternChoice}
+                onClick={() => void savePattern()}
+              >
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {editing && (
         <Modal
