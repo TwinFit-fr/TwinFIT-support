@@ -151,6 +151,30 @@ export default function CatalogTaxonomyPage() {
     }
   }
 
+  async function savePairStrengthPattern(
+    muscleGroupCode: string,
+    movementTypeCode: string,
+    strengthPattern: string,
+  ): Promise<string | null> {
+    setMessage(null);
+    try {
+      await staffFetch("/api/catalog/taxonomy", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "pair_strength_pattern",
+          muscle_group_code: muscleGroupCode,
+          movement_type_code: movementTypeCode,
+          strength_pattern: strengthPattern,
+        }),
+      });
+      setMessage(`Saved strength pattern of ${muscleGroupCode} + ${movementTypeCode}`);
+      await load();
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Pair strength pattern update failed";
+    }
+  }
+
   async function applyRelations(
     muscleGroupCode: string,
     relationKind: "muscle" | "movement",
@@ -226,6 +250,7 @@ export default function CatalogTaxonomyPage() {
           groups={data.catalog_muscle_groups}
           movements={data.catalog_movement_types}
           muscles={data.catalog_muscles}
+          strengthPatterns={data.catalog_strength_patterns}
           onLink={async (groupCode, movementCode) => {
             await postRelation(groupCode, "movement", movementCode, "link");
             setMessage(`Linked ${groupCode} + ${movementCode}`);
@@ -235,6 +260,7 @@ export default function CatalogTaxonomyPage() {
             setMessage(`Unlinked ${groupCode} + ${movementCode}`);
           }}
           onSaveMuscles={savePairMuscles}
+          onSaveStrengthPattern={savePairStrengthPattern}
         />
       )}
 

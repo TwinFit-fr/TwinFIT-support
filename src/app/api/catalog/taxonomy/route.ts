@@ -5,6 +5,7 @@ import {
   manageRelation,
   setGroupMovementLabels,
   setPairMuscles,
+  setPairStrengthPattern,
   updateLookup,
   upsertLookup,
 } from "@/lib/catalog";
@@ -57,6 +58,10 @@ export async function POST(request: Request) {
     }
     if (kind === "pair_muscles") {
       await setPairMuscles(token, body);
+      return NextResponse.json({ ok: true });
+    }
+    if (kind === "pair_strength_pattern") {
+      await setPairStrengthPattern(token, body);
       return NextResponse.json({ ok: true });
     }
     if (kind === "update") {

@@ -10,6 +10,7 @@ export {
   manageRelation,
   setGroupMovementLabels,
   setPairMuscles,
+  setPairStrengthPattern,
   updateLookup,
   upsertLookup,
 } from "./lookups";

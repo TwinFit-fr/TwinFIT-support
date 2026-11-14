@@ -62,6 +62,16 @@ export type LookupRowFull = {
   localizations?: LocalizationRow[];
   /** Muscle groups: the body region they belong to. */
   body_region_id?: string;
+  /** Movement types: the strength pattern (null = isolation). */
+  strength_pattern?: { code: string; name: string } | null;
+};
+
+export type StrengthPatternRow = {
+  id: string;
+  code: string;
+  name: string;
+  sort_order?: number;
+  active?: boolean;
 };
 
 export type MuscleGroupRow = {
@@ -96,6 +106,9 @@ export type MuscleGroupRow = {
     /** Default muscles of the pair; inheriting exercises use them. */
     target_muscle?: { code: string; name: string } | null;
     secondary_muscles?: Array<{ muscle: { code: string; name: string } }>;
+    /** false = the pair takes its movement type's pattern; true = `strength_pattern` (null = isolation). */
+    strength_pattern_override?: boolean;
+    strength_pattern?: { code: string; name: string } | null;
     exercises?: Array<{ muscles_inherited: boolean }>;
   }>;
 };
@@ -105,6 +118,7 @@ export type TaxonomyData = {
   catalog_muscle_groups: MuscleGroupRow[];
   catalog_muscles: LookupRowFull[];
   catalog_movement_types: LookupRowFull[];
+  catalog_strength_patterns: StrengthPatternRow[];
   catalog_equipment: LookupRowFull[];
   catalog_support_equipment: LookupRowFull[];
   catalog_variations: LookupRowFull[];
