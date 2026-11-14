@@ -387,10 +387,6 @@ export default function SupportUserPage() {
                 <Field label="Strength" value={profile?.strength_level ?? "—"} />
                 <Field label="Endurance" value={profile?.endurance_level ?? "—"} />
                 <Field
-                  label="Notifications"
-                  value={profile?.notifications_enabled ? "Enabled" : "Disabled"}
-                />
-                <Field
                   label="Avatar"
                   value={
                     profile?.avatar_url ? (
