@@ -8,6 +8,7 @@ import {
   normalizeTaxonomy,
   type ExercisePayload,
 } from "./normalize";
+import { parsePairStrengthPattern } from "./pair-strength-pattern";
 
 export const LOOKUP_TABLES = [
   "catalog_body_regions",
@@ -639,6 +640,45 @@ export async function setPairMuscles(token: string, payload: PairMusclesPayload)
   );
 }
 
+export type PairStrengthPatternPayload = {
+  muscle_group_code?: unknown;
+  movement_type_code?: unknown;
+  /** `""` / `"inherit"` = the pair takes its movement type's pattern; `"none"` = isolation; else a pattern code. */
+  strength_pattern?: unknown;
+};
+
+/**
+ * Strength pattern of a group + movement pair (Metrics 18 / 19). Clearing it (inherit) makes the pair
+ * follow its movement type again; "none" makes the pair an isolation lift over a movement type with a
+ * pattern. Override and pattern are written together (the database check forbids a pattern without
+ * the override).
+ */
+export async function setPairStrengthPattern(token: string, payload: PairStrengthPatternPayload) {
+  const pair = await requirePair(token, payload.muscle_group_code, payload.movement_type_code);
+  const pattern = parsePairStrengthPattern(payload.strength_pattern);
+  let patternId: string | null = null;
+  if (pattern.code) {
+    const found = await staffGql<{ catalog_strength_patterns: LookupRef[] }>(
+      token,
+      `query($c: String!) { catalog_strength_patterns(where: { code: { _eq: $c } }, limit: 1) { id code } }`,
+      { c: pattern.code },
+    );
+    const row = found.catalog_strength_patterns[0];
+    if (!row) throw new Error(`Unknown strength pattern: ${pattern.code}`);
+    patternId = row.id;
+  }
+  await staffGql(
+    token,
+    `mutation($g: uuid!, $m: uuid!, $override: Boolean!, $pattern: uuid) {
+      update_catalog_muscle_group_movement_types_by_pk(
+        pk_columns: { muscle_group_id: $g, movement_type_id: $m }
+        _set: { strength_pattern_override: $override, strength_pattern_id: $pattern }
+      ) { muscle_group_id }
+    }`,
+    { g: pair.muscle_group_id, m: pair.movement_type_id, override: pattern.override, pattern: patternId },
+  );
+}
+
 export function fetchTaxonomy(token: string) {
   return staffGql(
     token,
@@ -655,6 +695,8 @@ export function fetchTaxonomy(token: string) {
           movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } }
           localizations(order_by: { locale: asc }) { locale display_name }
           target_muscle { code name }
+          strength_pattern_override
+          strength_pattern { code name }
           secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }
           exercises { muscles_inherited }
         }
@@ -665,7 +707,11 @@ export function fetchTaxonomy(token: string) {
       }
       catalog_movement_types(order_by: { sort_order: asc, code: asc }) {
         id code name sort_order active
+        strength_pattern { code name }
         localizations(order_by: { locale: asc }) { locale display_name }
+      }
+      catalog_strength_patterns(order_by: { sort_order: asc, code: asc }) {
+        id code name sort_order active
       }
       catalog_equipment(order_by: { sort_order: asc, code: asc }) {
         id code name description sort_order active
