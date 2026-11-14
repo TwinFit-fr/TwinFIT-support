@@ -39,7 +39,17 @@ function clampScale(value: number): number {
   return Math.max(SCALE_MIN, Math.min(SCALE_MAX, value));
 }
 
-export function FrameAlignEditor({
+export function FrameAlignEditor(props: FrameAlignEditorProps) {
+  const { open, subject, frames } = props;
+  if (!open) return null;
+  const frameKey = [...frames]
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    .map((f) => f.id)
+    .join(",");
+  return <FrameAlignEditorBody key={`${subject}|${frameKey}`} {...props} />;
+}
+
+function FrameAlignEditorBody({
   open,
   subject,
   frames,
@@ -52,8 +62,20 @@ export function FrameAlignEditor({
     [frames],
   );
 
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [guideId, setGuideId] = useState<string | null>(null);
+  // Initial selection and guide come from the frames; the wrapper remounts
+  // this component (key) whenever it opens or the frames/subject change.
+  const [initial] = useState(() => {
+    // Prefer adjusting a non-Start frame first; Start can still be selected.
+    const preferred =
+      sorted.find((f) => f.position !== 0)?.id ?? sorted[0]?.id ?? null;
+    const guide =
+      sorted.find((f) => f.id !== preferred && f.position === 0)?.id ??
+      sorted.find((f) => f.id !== preferred)?.id ??
+      null;
+    return { preferred, guide };
+  });
+  const [activeId, setActiveId] = useState<string | null>(initial.preferred);
+  const [guideId, setGuideId] = useState<string | null>(initial.guide);
   const [nudges, setNudges] = useState<Record<string, FrameNudge>>({});
   const [mode, setMode] = useState<"align" | "play">("align");
   const [playStep, setPlayStep] = useState(0);
@@ -70,24 +92,6 @@ export function FrameAlignEditor({
     width: number;
     height: number;
   } | null>(null);
-
-  const frameKey = sorted.map((f) => f.id).join(",");
-  useEffect(() => {
-    if (!open) return;
-    // Prefer adjusting a non-Start frame first; Start can still be selected.
-    const preferred =
-      sorted.find((f) => f.position !== 0)?.id ?? sorted[0]?.id ?? null;
-    const guide =
-      sorted.find((f) => f.id !== preferred && f.position === 0)?.id ??
-      sorted.find((f) => f.id !== preferred)?.id ??
-      null;
-    setActiveId(preferred);
-    setGuideId(guide);
-    setNudges(Object.fromEntries(sorted.map((f) => [f.id, { ...IDENTITY_NUDGE }])));
-    setMode("align");
-    setPlayStep(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, subject, frameKey]);
 
   const active = sorted.find((f) => f.id === activeId) ?? null;
   const guide = sorted.find((f) => f.id === guideId) ?? null;
