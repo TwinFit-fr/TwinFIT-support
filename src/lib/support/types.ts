@@ -75,7 +75,6 @@ export type SupportUserLookup = {
     hypertrophy_level: string | null;
     strength_level: string | null;
     endurance_level: string | null;
-    notifications_enabled: boolean | null;
     avatar_url: string | null;
     effective_subscription_tier: string;
     inserted_at: string;

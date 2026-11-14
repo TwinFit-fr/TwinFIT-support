@@ -288,7 +288,6 @@ export async function lookupUserById(
         hypertrophy_level
         strength_level
         endurance_level
-        notifications_enabled
         avatar_url
         effective_subscription_tier
         inserted_at
