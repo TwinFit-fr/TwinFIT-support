@@ -20,6 +20,7 @@ import {
   replacePendingUrls,
   type ChunkDraft,
 } from "@/lib/coach/chunk-doc";
+import { APP_IMAGE_HOSTS } from "@/lib/coach/image-hosts";
 import { isAllowedImageUrl } from "@/lib/coach/markdown";
 import {
   changedLocales,
@@ -66,12 +67,6 @@ type Props = {
 type Viewer = "premium" | "freemium";
 type Screen = "list" | "lesson";
 type NarrowTab = "preview" | "document" | "chunk";
-
-/** The app draws images from its own Storage only (`imageHosts` in CoachHost.kt); the preview does the same. */
-const APP_IMAGE_HOSTS: readonly string[] =
-  process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN && process.env.NEXT_PUBLIC_NHOST_REGION
-    ? [`${process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN}.storage.${process.env.NEXT_PUBLIC_NHOST_REGION}.nhost.run`]
-    : [];
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

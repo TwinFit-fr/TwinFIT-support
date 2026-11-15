@@ -45,7 +45,7 @@ export function altFromFileName(name: string): string {
 // ---- Folders -----------------------------------------------------------------------------------
 
 /** Top-level folders the library always offers. */
-export const ROOT_FOLDERS = ["lessons", "prompts", "shared"] as const;
+export const ROOT_FOLDERS = ["lessons", "prompts", "shared", "articles"] as const;
 
 /** `lessons/app_overview`: lower-case segments, up to four deep, no dots or leading slashes. */
 const FOLDER_PATTERN = /^[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*){0,3}$/;
@@ -56,8 +56,16 @@ export function isValidFolder(folder: string): boolean {
 
 /** The folder a suggestion's own uploads go to: `lessons/{slug}` or `prompts/{slug}`. */
 export function suggestionFolder(kind: SuggestionKind, slug: string): string {
-  const safeSlug = slug.toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^[^a-z0-9]+/, "") || "untitled";
-  return `${kind === "lesson" ? "lessons" : "prompts"}/${safeSlug}`;
+  return `${kind === "lesson" ? "lessons" : "prompts"}/${folderSlug(slug)}`;
+}
+
+/** The folder a News article's own uploads go to: `articles/{slug}`. */
+export function articleFolder(slug: string): string {
+  return `articles/${folderSlug(slug)}`;
+}
+
+function folderSlug(slug: string): string {
+  return slug.toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^[^a-z0-9]+/, "") || "untitled";
 }
 
 /** A file name safe for an object name: ASCII letters, digits, `.`, `_`, `-`; never empty or hidden. */

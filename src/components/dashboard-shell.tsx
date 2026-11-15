@@ -50,6 +50,7 @@ const coachSubNav: NavItem[] = [
   { href: "/coach/prompts", label: "Prompts" },
   { href: "/coach/tiers", label: "Tiers" },
   { href: "/coach/suggestions", label: "Suggestions" },
+  { href: "/coach/articles", label: "News" },
   { href: "/coach/knowledge", label: "Knowledge" },
   { href: "/coach/tool-calls", label: "Tool calls" },
 ];
