@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: [Sem
 ## [Unreleased]
 
 ### Added
+- Backend contract gate: Support probes `api-info` (through `GET /api/backend-compat`) with `X-TwinFIT-Client: support` and `X-TwinFIT-Contract: 3`, and shows a banner when the backend's contract range excludes Support (or the backend is older than Support). It never blocks the pages, and a failed probe shows nothing.
 - Coach lesson editor: the phone preview is the editor. An answer is a list of chunks (paragraph, heading, bullet, numbered item, code, rule, image) edited in place with the app's typography; `+` between chunks, a chunk toolbar and menu (kind, level, indent, emphasis, link, move, duplicate, delete), Enter / Backspace / Alt+↑↓ / Escape keys, and undo/redo for the whole draft. `answer_md` is still the stored format: chunks serialize back to the app's markdown subset, and markup the app does not support is kept as text with a warning.
 - Per-chunk languages: one chunk list for every locale, with a status per locale (translated, same as en, missing, stale since en changed), "copy from en", and `en` filling the chunks a locale lacks in the saved `answer_md`.
 - Image library for the `coach-media` bucket, grouped by folder (`lessons/{slug}`, `prompts/{slug}`, `shared`): pick an image for a chunk, upload into a folder, move between folders (the URL stays), delete unused files; lightbox with zoom; alt text per image and locale; preview-only alignment (the app has no alignment syntax, nothing is written).
