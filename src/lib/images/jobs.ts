@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { jwtSecondsLeft } from "@/lib/nhost/jwt";
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import { editExerciseFrame } from "./edit-image";
 import { generateExerciseFrame } from "./generate-frame";
@@ -57,7 +58,7 @@ export async function enqueueJobs(
   // One insert keeps the run's order (seq) and lets later rows depend on earlier ones.
   const data = await staffGql<{ insert_images_generation_jobs: { returning: GenerationJob[] } }>(
     token,
-    `mutation($objects: [images_generation_jobs_insert_input!]!) {
+    gql`mutation SupportImageJobsEnqueueJobs($objects: [images_generation_jobs_insert_input!]!) {
       insert_images_generation_jobs(objects: $objects) { returning { ${JOB_FIELDS} } }
     }`,
     { objects },
@@ -87,7 +88,7 @@ export async function listJobs(
   };
   const data = await staffGql<{ images_generation_jobs: GenerationJob[] }>(
     token,
-    `query($where: images_generation_jobs_bool_exp!) {
+    gql`query SupportImageJobsListJobs($where: images_generation_jobs_bool_exp!) {
       images_generation_jobs(where: $where, order_by: { seq: asc }) { ${JOB_FIELDS} }
     }`,
     { where },
@@ -101,7 +102,7 @@ export async function countPendingJobs(
 ): Promise<{ queued: number; running: number }> {
   const data = await staffGql<{ images_generation_jobs: { status: "queued" | "running" }[] }>(
     token,
-    `query { images_generation_jobs(where: { status: { _in: ["queued", "running"] } }) { status } }`,
+    gql`query SupportImageJobsCountPendingJobs { images_generation_jobs(where: { status: { _in: ["queued", "running"] } }) { status } }`,
   );
   const jobs = data.images_generation_jobs;
   return {
@@ -113,7 +114,7 @@ export async function countPendingJobs(
 async function updateJobs(token: string, where: object, set: object): Promise<number> {
   const data = await staffGql<{ update_images_generation_jobs: { affected_rows: number } }>(
     token,
-    `mutation($where: images_generation_jobs_bool_exp!, $set: images_generation_jobs_set_input!) {
+    gql`mutation SupportImageJobsUpdateJobs($where: images_generation_jobs_bool_exp!, $set: images_generation_jobs_set_input!) {
       update_images_generation_jobs(where: $where, _set: $set) { affected_rows }
     }`,
     { where, set },
@@ -143,7 +144,7 @@ export function cancelBatch(token: string, batchId: string): Promise<number> {
 export async function dismissBatch(token: string, batchId: string): Promise<number> {
   const data = await staffGql<{ delete_images_generation_jobs: { affected_rows: number } }>(
     token,
-    `mutation($batchId: uuid!) {
+    gql`mutation SupportImageJobsDismissBatch($batchId: uuid!) {
       delete_images_generation_jobs(
         where: { batch_id: { _eq: $batchId }, status: { _in: ["done", "error", "cancelled"] } }
       ) { affected_rows }
@@ -156,7 +157,7 @@ export async function dismissBatch(token: string, batchId: string): Promise<numb
 async function claimJob(token: string): Promise<GenerationJob | null> {
   const data = await staffGql<{ images_claim_generation_job: GenerationJob[] }>(
     token,
-    `mutation { images_claim_generation_job { ${JOB_FIELDS} } }`,
+    gql`mutation SupportImageJobsClaimJob { images_claim_generation_job { ${JOB_FIELDS} } }`,
   );
   return data.images_claim_generation_job[0] ?? null;
 }
@@ -166,7 +167,7 @@ async function resultOf(token: string, jobId: string): Promise<string | undefine
     images_generation_jobs_by_pk: { result_exercise_image_id: string | null } | null;
   }>(
     token,
-    `query($id: uuid!) { images_generation_jobs_by_pk(id: $id) { result_exercise_image_id } }`,
+    gql`query SupportImageJobsResultOf($id: uuid!) { images_generation_jobs_by_pk(id: $id) { result_exercise_image_id } }`,
     { id: jobId },
   );
   return data.images_generation_jobs_by_pk?.result_exercise_image_id ?? undefined;

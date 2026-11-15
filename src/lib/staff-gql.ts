@@ -1,4 +1,5 @@
 import { ClientError, GraphQLClient } from "graphql-request";
+import type { GqlDocument } from "@/lib/gql";
 import { resolveSupportHasuraRole } from "@/lib/nhost/jwt";
 
 function graphqlUrl(): string {
@@ -33,10 +34,13 @@ export function unwrapHasuraError(error: unknown): string {
   return String(error || "GraphQL request failed");
 }
 
-/** One request with the caller's JWT; never shared across requests. */
+/**
+ * One request with the caller's JWT; never shared across requests. The document comes from
+ * `gql` (a fixed, named operation), so Hasura's allow-list can know it.
+ */
 export async function staffGql<T = Record<string, unknown>>(
   accessToken: string,
-  query: string,
+  query: GqlDocument,
   variables?: Record<string, unknown>,
 ): Promise<T> {
   const client = new GraphQLClient(graphqlUrl(), {

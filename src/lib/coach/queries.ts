@@ -1,3 +1,4 @@
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import type {
   KnowledgeCard,
@@ -24,7 +25,7 @@ const CARD_FIELDS = `
 export async function listPromptVersions(token: string): Promise<PromptVersion[]> {
   const data = await staffGql<{ assistant_prompt_versions: PromptVersion[] }>(
     token,
-    `query {
+    gql`query SupportCoachListPromptVersions {
       assistant_prompt_versions(order_by: [{ prompt_key: asc }, { locale: asc }, { version: desc }]) {
         id prompt_key locale version body_md is_active created_by created_at
       }
@@ -39,7 +40,7 @@ export async function insertPromptVersion(
 ): Promise<PromptVersion> {
   const data = await staffGql<{ insert_assistant_prompt_versions_one: PromptVersion }>(
     token,
-    `mutation($object: assistant_prompt_versions_insert_input!) {
+    gql`mutation SupportCoachInsertPromptVersion($object: assistant_prompt_versions_insert_input!) {
       insert_assistant_prompt_versions_one(object: $object) {
         id prompt_key locale version body_md is_active created_by created_at
       }
@@ -63,7 +64,7 @@ export async function setPromptVersionActive(
 ): Promise<PromptVersion> {
   const data = await staffGql<{ update_assistant_prompt_versions_by_pk: PromptVersion | null }>(
     token,
-    `mutation($id: uuid!, $is_active: Boolean!) {
+    gql`mutation SupportCoachSetPromptVersionActive($id: uuid!, $is_active: Boolean!) {
       update_assistant_prompt_versions_by_pk(pk_columns: { id: $id }, _set: { is_active: $is_active }) {
         id prompt_key locale version body_md is_active created_by created_at
       }
@@ -79,7 +80,7 @@ export async function setPromptVersionActive(
 export async function listTierPolicies(token: string): Promise<TierPolicy[]> {
   const data = await staffGql<{ assistant_tier_policies: TierPolicy[] }>(
     token,
-    `query {
+    gql`query SupportCoachListTierPolicies {
       assistant_tier_policies(order_by: { tier_code: asc }) {
         tier_code monthly_token_limit weekly_token_limit hourly_burst_limit max_turn_tokens min_turn_tokens
         personal_data_enabled plan_builder_enabled max_tool_rounds updated_at
@@ -100,7 +101,7 @@ export async function updateTierCapabilities(
 ): Promise<TierPolicy> {
   const data = await staffGql<{ update_assistant_tier_policies_by_pk: TierPolicy | null }>(
     token,
-    `mutation($tier_code: String!, $set: assistant_tier_policies_set_input!) {
+    gql`mutation SupportCoachUpdateTierCapabilities($tier_code: String!, $set: assistant_tier_policies_set_input!) {
       update_assistant_tier_policies_by_pk(pk_columns: { tier_code: $tier_code }, _set: $set) {
         tier_code monthly_token_limit weekly_token_limit hourly_burst_limit max_turn_tokens min_turn_tokens
         personal_data_enabled plan_builder_enabled max_tool_rounds updated_at
@@ -117,7 +118,7 @@ export async function updateTierCapabilities(
 export async function listSuggestions(token: string): Promise<Suggestion[]> {
   const data = await staffGql<{ assistant_suggestions: Suggestion[] }>(
     token,
-    `query {
+    gql`query SupportCoachListSuggestions {
       assistant_suggestions(order_by: [{ kind: asc }, { sort_order: asc }, { slug: asc }]) {
         ${SUGGESTION_FIELDS}
       }
@@ -143,7 +144,7 @@ export async function createSuggestion(
 ): Promise<Suggestion> {
   const data = await staffGql<{ insert_assistant_suggestions_one: Suggestion }>(
     token,
-    `mutation($object: assistant_suggestions_insert_input!) {
+    gql`mutation SupportCoachCreateSuggestion($object: assistant_suggestions_insert_input!) {
       insert_assistant_suggestions_one(object: $object) {
         ${SUGGESTION_FIELDS}
       }
@@ -189,7 +190,7 @@ export async function updateSuggestion(
 ): Promise<Suggestion> {
   const data = await staffGql<{ update_assistant_suggestions_by_pk: Suggestion | null }>(
     token,
-    `mutation($id: uuid!, $set: assistant_suggestions_set_input!) {
+    gql`mutation SupportCoachUpdateSuggestion($id: uuid!, $set: assistant_suggestions_set_input!) {
       update_assistant_suggestions_by_pk(pk_columns: { id: $id }, _set: $set) {
         ${SUGGESTION_FIELDS}
       }
@@ -205,7 +206,7 @@ export async function updateSuggestion(
 export async function deleteSuggestion(token: string, id: string): Promise<void> {
   await staffGql(
     token,
-    `mutation($id: uuid!) { delete_assistant_suggestions_by_pk(id: $id) { id } }`,
+    gql`mutation SupportCoachDeleteSuggestion($id: uuid!) { delete_assistant_suggestions_by_pk(id: $id) { id } }`,
     { id },
   );
 }
@@ -221,7 +222,7 @@ export async function upsertSuggestionLocalization(
 ): Promise<void> {
   await staffGql(
     token,
-    `mutation($object: assistant_suggestion_localizations_insert_input!) {
+    gql`mutation SupportCoachUpsertSuggestionLocalization($object: assistant_suggestion_localizations_insert_input!) {
       insert_assistant_suggestion_localizations_one(
         object: $object
         on_conflict: {
@@ -241,7 +242,7 @@ export async function deleteSuggestionLocalization(
 ): Promise<void> {
   await staffGql(
     token,
-    `mutation($suggestion_id: uuid!, $locale: String!) {
+    gql`mutation SupportCoachDeleteSuggestionLocalization($suggestion_id: uuid!, $locale: String!) {
       delete_assistant_suggestion_localizations_by_pk(
         suggestion_id: $suggestion_id
         locale: $locale
@@ -254,7 +255,7 @@ export async function deleteSuggestionLocalization(
 export async function listKnowledgeSources(token: string): Promise<KnowledgeSource[]> {
   const data = await staffGql<{ assistant_knowledge_sources: KnowledgeSource[] }>(
     token,
-    `query {
+    gql`query SupportCoachListKnowledgeSources {
       assistant_knowledge_sources(order_by: { title: asc }) {
         id kind title authors year doi url license inserted_at updated_at
       }
@@ -280,7 +281,7 @@ export async function upsertKnowledgeSource(
     const { id, ...set } = input;
     const data = await staffGql<{ update_assistant_knowledge_sources_by_pk: KnowledgeSource | null }>(
       token,
-      `mutation($id: uuid!, $set: assistant_knowledge_sources_set_input!) {
+      gql`mutation SupportCoachUpdateKnowledgeSource($id: uuid!, $set: assistant_knowledge_sources_set_input!) {
         update_assistant_knowledge_sources_by_pk(pk_columns: { id: $id }, _set: $set) {
           id kind title authors year doi url license inserted_at updated_at
         }
@@ -292,7 +293,7 @@ export async function upsertKnowledgeSource(
   }
   const data = await staffGql<{ insert_assistant_knowledge_sources_one: KnowledgeSource }>(
     token,
-    `mutation($object: assistant_knowledge_sources_insert_input!) {
+    gql`mutation SupportCoachInsertKnowledgeSource($object: assistant_knowledge_sources_insert_input!) {
       insert_assistant_knowledge_sources_one(object: $object) {
         id kind title authors year doi url license inserted_at updated_at
       }
@@ -315,7 +316,7 @@ export async function upsertKnowledgeSource(
 export async function deleteKnowledgeSource(token: string, id: string): Promise<void> {
   await staffGql(
     token,
-    `mutation($id: uuid!) { delete_assistant_knowledge_sources_by_pk(id: $id) { id } }`,
+    gql`mutation SupportCoachDeleteKnowledgeSource($id: uuid!) { delete_assistant_knowledge_sources_by_pk(id: $id) { id } }`,
     { id },
   );
 }
@@ -323,7 +324,7 @@ export async function deleteKnowledgeSource(token: string, id: string): Promise<
 export async function listKnowledgeCards(token: string): Promise<KnowledgeCard[]> {
   const data = await staffGql<{ assistant_knowledge_cards: KnowledgeCard[] }>(
     token,
-    `query {
+    gql`query SupportCoachListKnowledgeCards {
       assistant_knowledge_cards(order_by: [{ status: asc }, { title: asc }]) {
         ${CARD_FIELDS}
       }
@@ -355,7 +356,7 @@ export async function upsertKnowledgeCard(
     void _sourceId;
     const data = await staffGql<{ update_assistant_knowledge_cards_by_pk: KnowledgeCard | null }>(
       token,
-      `mutation($id: uuid!, $set: assistant_knowledge_cards_set_input!) {
+      gql`mutation SupportCoachUpdateKnowledgeCard($id: uuid!, $set: assistant_knowledge_cards_set_input!) {
         update_assistant_knowledge_cards_by_pk(pk_columns: { id: $id }, _set: $set) {
           ${CARD_FIELDS}
         }
@@ -367,7 +368,7 @@ export async function upsertKnowledgeCard(
   }
   const data = await staffGql<{ insert_assistant_knowledge_cards_one: KnowledgeCard }>(
     token,
-    `mutation($object: assistant_knowledge_cards_insert_input!) {
+    gql`mutation SupportCoachInsertKnowledgeCard($object: assistant_knowledge_cards_insert_input!) {
       insert_assistant_knowledge_cards_one(object: $object) {
         ${CARD_FIELDS}
       }
@@ -395,7 +396,7 @@ export async function upsertKnowledgeCard(
 export async function deleteKnowledgeCard(token: string, id: string): Promise<void> {
   await staffGql(
     token,
-    `mutation($id: uuid!) { delete_assistant_knowledge_cards_by_pk(id: $id) { id } }`,
+    gql`mutation SupportCoachDeleteKnowledgeCard($id: uuid!) { delete_assistant_knowledge_cards_by_pk(id: $id) { id } }`,
     { id },
   );
 }
@@ -406,7 +407,7 @@ export async function getKnowledgeCard(
 ): Promise<KnowledgeCard | null> {
   const data = await staffGql<{ assistant_knowledge_cards_by_pk: KnowledgeCard | null }>(
     token,
-    `query($id: uuid!) {
+    gql`query SupportCoachGetKnowledgeCard($id: uuid!) {
       assistant_knowledge_cards_by_pk(id: $id) { ${CARD_FIELDS} }
     }`,
     { id },
@@ -428,7 +429,7 @@ export async function setCardEmbedding(
     }>;
   }>(
     token,
-    `mutation($id: uuid!, $e: jsonb!, $model: String!) {
+    gql`mutation SupportCoachSetCardEmbedding($id: uuid!, $e: jsonb!, $model: String!) {
       assistant_set_card_embedding(args: { p_card_id: $id, p_embedding: $e, p_model: $model }) {
         id embedded_hash content_hash
       }
@@ -463,7 +464,7 @@ export async function listTurnToolCalls(
   }
   const data = await staffGql<{ assistant_turn_tool_calls: TurnToolCall[] }>(
     token,
-    `query($where: assistant_turn_tool_calls_bool_exp!, $limit: Int!) {
+    gql`query SupportCoachListTurnToolCalls($where: assistant_turn_tool_calls_bool_exp!, $limit: Int!) {
       assistant_turn_tool_calls(
         where: $where
         order_by: { created_at: desc }
@@ -483,7 +484,7 @@ export async function listToolNames(token: string): Promise<string[]> {
     assistant_turn_tool_calls: Array<{ tool: string }>;
   }>(
     token,
-    `query {
+    gql`query SupportCoachListToolNames {
       assistant_turn_tool_calls(distinct_on: tool, order_by: { tool: asc }) { tool }
     }`,
   );

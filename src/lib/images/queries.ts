@@ -1,3 +1,4 @@
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
 import { exerciseDetails, type ExerciseTaxonomy } from "./prompt";
@@ -199,7 +200,7 @@ function normalizeStyle(row: ImageStyle): ImageStyle {
 export async function listStyles(token: string): Promise<ImageStyle[]> {
   const data = await staffGql<{ images_styles: ImageStyle[] }>(
     token,
-    `query {
+    gql`query SupportImagesListStyles {
       images_styles(order_by: [{ code: asc }]) { ${STYLE_FIELDS} }
     }`,
   );
@@ -209,7 +210,7 @@ export async function listStyles(token: string): Promise<ImageStyle[]> {
 export async function getStyle(token: string, styleId: string): Promise<ImageStyle | null> {
   const data = await staffGql<{ images_styles_by_pk: ImageStyle | null }>(
     token,
-    `query($id: uuid!) { images_styles_by_pk(id: $id) { ${STYLE_FIELDS} } }`,
+    gql`query SupportImagesGetStyle($id: uuid!) { images_styles_by_pk(id: $id) { ${STYLE_FIELDS} } }`,
     { id: styleId },
   );
   return data.images_styles_by_pk ? normalizeStyle(data.images_styles_by_pk) : null;
@@ -218,7 +219,7 @@ export async function getStyle(token: string, styleId: string): Promise<ImageSty
 export async function getStyleByCode(token: string, code: string): Promise<ImageStyle | null> {
   const data = await staffGql<{ images_styles: ImageStyle[] }>(
     token,
-    `query($code: String!) {
+    gql`query SupportImagesGetStyleByCode($code: String!) {
       images_styles(where: { code: { _eq: $code } }, limit: 1) { ${STYLE_FIELDS} }
     }`,
     { code },
@@ -230,7 +231,7 @@ export async function getStyleByCode(token: string, code: string): Promise<Image
 async function getDefaultStyle(token: string): Promise<ImageStyle | null> {
   const data = await staffGql<{ images_styles: ImageStyle[] }>(
     token,
-    `query {
+    gql`query SupportImagesGetDefaultStyle {
       images_styles(where: { is_default: { _eq: true } }, limit: 1) { ${STYLE_FIELDS} }
     }`,
   );
@@ -279,7 +280,7 @@ export async function createStyle(
 
   const data = await staffGql<{ insert_images_styles_one: ImageStyle }>(
     token,
-    `mutation($object: images_styles_insert_input!) {
+    gql`mutation SupportImagesInsertStyle($object: images_styles_insert_input!) {
       insert_images_styles_one(object: $object) { ${STYLE_FIELDS} }
     }`,
     {
@@ -305,7 +306,7 @@ export async function createStyle(
   }));
   await staffGql(
     token,
-    `mutation($objects: [images_prompts_insert_input!]!) {
+    gql`mutation SupportImagesCloneStylePrompts($objects: [images_prompts_insert_input!]!) {
       insert_images_prompts(objects: $objects) { affected_rows }
     }`,
     { objects: clones },
@@ -340,7 +341,7 @@ export async function updateStyle(
   if (set.is_default === true) {
     await staffGql(
       token,
-      `mutation($updatedAt: timestamptz!, $updatedBy: uuid) {
+      gql`mutation SupportImagesClearDefaultStyle($updatedAt: timestamptz!, $updatedBy: uuid) {
         update_images_styles(
           where: { is_default: { _eq: true } }
           _set: { is_default: false, updated_at: $updatedAt, updated_by: $updatedBy }
@@ -355,7 +356,7 @@ export async function updateStyle(
 
   const data = await staffGql<{ update_images_styles_by_pk: ImageStyle | null }>(
     token,
-    `mutation($id: uuid!, $set: images_styles_set_input!) {
+    gql`mutation SupportImagesUpdateStyle($id: uuid!, $set: images_styles_set_input!) {
       update_images_styles_by_pk(pk_columns: { id: $id }, _set: $set) { ${STYLE_FIELDS} }
     }`,
     {
@@ -381,7 +382,7 @@ export async function deleteStyle(token: string, styleId: string): Promise<void>
     images_exercise_images_aggregate: { aggregate: { count: number } | null };
   }>(
     token,
-    `query($styleId: uuid!) {
+    gql`query SupportImagesCountStyleImages($styleId: uuid!) {
       images_exercise_images_aggregate(where: { style_id: { _eq: $styleId } }) {
         aggregate { count }
       }
@@ -391,7 +392,7 @@ export async function deleteStyle(token: string, styleId: string): Promise<void>
   if ((data.images_exercise_images_aggregate.aggregate?.count ?? 0) > 0) {
     throw new Error("Cannot delete a style that still has frames");
   }
-  await staffGql(token, `mutation($id: uuid!) { delete_images_styles_by_pk(id: $id) { id } }`, {
+  await staffGql(token, gql`mutation SupportImagesDeleteStyle($id: uuid!) { delete_images_styles_by_pk(id: $id) { id } }`, {
     id: styleId,
   });
 }
@@ -405,7 +406,7 @@ export async function listImageExercises(
     images_exercise_options: { exo_id: number; two_frames: boolean }[];
   }>(
     token,
-    `query($styleId: uuid!) {
+    gql`query SupportImagesListImageExercises($styleId: uuid!) {
       images_exercise_options { exo_id two_frames }
       catalog_exercises(order_by: [{ exo_id: asc }]) {
         ${EXERCISE_FIELDS}
@@ -451,7 +452,7 @@ export async function getImageExercise(
     images_exercise_options_by_pk: { two_frames: boolean } | null;
   }>(
     token,
-    `query($exoId: Int!, $styleId: uuid!) {
+    gql`query SupportImagesGetImageExercise($exoId: Int!, $styleId: uuid!) {
       images_exercise_options_by_pk(exo_id: $exoId) { two_frames }
       catalog_exercises(where: { exo_id: { _eq: $exoId } }, limit: 1) {
         ${EXERCISE_FIELDS}
@@ -487,7 +488,7 @@ export async function getExerciseSummary(
 ): Promise<RawExercise | null> {
   const data = await staffGql<{ catalog_exercises: RawExercise[] }>(
     token,
-    `query($exoId: Int!) {
+    gql`query SupportImagesGetExerciseSummary($exoId: Int!) {
       catalog_exercises(where: { exo_id: { _eq: $exoId } }, limit: 1) {
         ${EXERCISE_FIELDS}
       }
@@ -504,7 +505,7 @@ export async function listImagePrompts(
   if (styleId) {
     const data = await staffGql<{ images_prompts: ImagePrompt[] }>(
       token,
-      `query($styleId: uuid!) {
+      gql`query SupportImagesListStylePrompts($styleId: uuid!) {
         images_prompts(
           where: { style_id: { _eq: $styleId } }
           order_by: [{ kind: asc }, { position: asc_nulls_first }]
@@ -516,7 +517,7 @@ export async function listImagePrompts(
   }
   const data = await staffGql<{ images_prompts: ImagePrompt[] }>(
     token,
-    `query {
+    gql`query SupportImagesListImagePrompts {
       images_prompts(order_by: [{ kind: asc }, { position: asc_nulls_first }]) {
         ${PROMPT_FIELDS}
       }
@@ -535,7 +536,7 @@ export async function listImagePromptsForStyle(
 export async function getImagePrompt(token: string, id: string): Promise<ImagePrompt | null> {
   const data = await staffGql<{ images_prompts_by_pk: ImagePrompt | null }>(
     token,
-    `query($id: uuid!) { images_prompts_by_pk(id: $id) { ${PROMPT_FIELDS} } }`,
+    gql`query SupportImagesGetImagePrompt($id: uuid!) { images_prompts_by_pk(id: $id) { ${PROMPT_FIELDS} } }`,
     { id },
   );
   return data.images_prompts_by_pk;
@@ -548,7 +549,7 @@ export async function updateImagePrompt(
 ): Promise<ImagePrompt> {
   const data = await staffGql<{ update_images_prompts_by_pk: ImagePrompt }>(
     token,
-    `mutation($id: uuid!, $set: images_prompts_set_input!) {
+    gql`mutation SupportImagesUpdateImagePrompt($id: uuid!, $set: images_prompts_set_input!) {
       update_images_prompts_by_pk(pk_columns: { id: $id }, _set: $set) { ${PROMPT_FIELDS} }
     }`,
     {
@@ -565,7 +566,7 @@ export async function updateImagePrompt(
 export async function loadSettings(token: string): Promise<ImageSettings> {
   const data = await staffGql<{ images_settings_by_pk: ImageSettings | null }>(
     token,
-    `query {
+    gql`query SupportImagesLoadSettings {
       images_settings_by_pk(id: true) {
         max_concurrency
         updated_at
@@ -586,7 +587,7 @@ export async function updateImageSettings(
 ): Promise<ImageSettings> {
   const data = await staffGql<{ update_images_settings_by_pk: ImageSettings | null }>(
     token,
-    `mutation($set: images_settings_set_input!) {
+    gql`mutation SupportImagesUpdateImageSettings($set: images_settings_set_input!) {
       update_images_settings_by_pk(pk_columns: { id: true }, _set: $set) {
         max_concurrency
         updated_at
@@ -626,7 +627,7 @@ export async function insertExerciseImage(
 ): Promise<ExerciseImage> {
   const data = await staffGql<{ insert_images_exercise_images_one: ExerciseImage }>(
     token,
-    `mutation($object: images_exercise_images_insert_input!) {
+    gql`mutation SupportImagesInsertExerciseImage($object: images_exercise_images_insert_input!) {
       insert_images_exercise_images_one(object: $object) { ${IMAGE_FIELDS} }
     }`,
     {
@@ -659,7 +660,7 @@ export async function isTwoFrameExercise(
     images_exercise_images_aggregate: { aggregate: { count: number } | null };
   }>(
     token,
-    `query($exoId: Int!, $styleWhere: images_exercise_images_bool_exp!) {
+    gql`query SupportImagesIsTwoFrameExercise($exoId: Int!, $styleWhere: images_exercise_images_bool_exp!) {
       images_exercise_options_by_pk(exo_id: $exoId) { two_frames }
       images_exercise_images_aggregate(where: $styleWhere) { aggregate { count } }
     }`,
@@ -687,7 +688,7 @@ export async function ensureTwoFramesDefault(
     images_exercise_images_aggregate: { aggregate: { count: number } | null };
   }>(
     token,
-    `query($exoId: Int!, $styleId: uuid!) {
+    gql`query SupportImagesEnsureTwoFramesDefault($exoId: Int!, $styleId: uuid!) {
       images_exercise_options_by_pk(exo_id: $exoId) { two_frames }
       images_exercise_images_aggregate(
         where: { exo_id: { _eq: $exoId }, style_id: { _eq: $styleId } }
@@ -710,7 +711,7 @@ export async function ensureTwoFramesDefault(
 export async function setTwoFrames(token: string, exoId: number, twoFrames: boolean) {
   await staffGql(
     token,
-    `mutation($object: images_exercise_options_insert_input!) {
+    gql`mutation SupportImagesUpsertExerciseOptions($object: images_exercise_options_insert_input!) {
       insert_images_exercise_options_one(
         object: $object
         on_conflict: {
@@ -732,7 +733,7 @@ export async function setTwoFrames(token: string, exoId: number, twoFrames: bool
     // Clear Mid for every style/subject of this exercise.
     await staffGql(
       token,
-      `mutation($exoId: Int!, $position: smallint!, $updatedAt: timestamptz!) {
+      gql`mutation SupportImagesClearMidFrames($exoId: Int!, $position: smallint!, $updatedAt: timestamptz!) {
         update_images_exercise_images(
           where: {
             exo_id: { _eq: $exoId }
@@ -756,7 +757,7 @@ export async function getActiveImageAtPosition(
 ): Promise<ExerciseImage | null> {
   const data = await staffGql<{ images_exercise_images: ExerciseImage[] }>(
     token,
-    `query($styleId: uuid!, $exoId: Int!, $subject: String!, $position: smallint!) {
+    gql`query SupportImagesGetActiveImageAtPosition($styleId: uuid!, $exoId: Int!, $subject: String!, $position: smallint!) {
       images_exercise_images(
         where: {
           style_id: { _eq: $styleId }
@@ -776,7 +777,7 @@ export async function getActiveImageAtPosition(
 export async function getExerciseImage(token: string, id: string): Promise<ExerciseImage | null> {
   const data = await staffGql<{ images_exercise_images_by_pk: ExerciseImage | null }>(
     token,
-    `query($id: uuid!) { images_exercise_images_by_pk(id: $id) { ${IMAGE_FIELDS} } }`,
+    gql`query SupportImagesGetExerciseImage($id: uuid!) { images_exercise_images_by_pk(id: $id) { ${IMAGE_FIELDS} } }`,
     { id },
   );
   return data.images_exercise_images_by_pk;
@@ -793,7 +794,7 @@ export async function updateExerciseImage(
 ): Promise<ExerciseImage> {
   const data = await staffGql<{ update_images_exercise_images_by_pk: ExerciseImage }>(
     token,
-    `mutation($id: uuid!, $set: images_exercise_images_set_input!) {
+    gql`mutation SupportImagesUpdateExerciseImage($id: uuid!, $set: images_exercise_images_set_input!) {
       update_images_exercise_images_by_pk(pk_columns: { id: $id }, _set: $set) { ${IMAGE_FIELDS} }
     }`,
     {
@@ -816,33 +817,47 @@ export async function clearActivePosition(
   position: number,
   exceptId?: string,
 ): Promise<void> {
-  const where = exceptId
-    ? `{
-        style_id: { _eq: $styleId }
-        exo_id: { _eq: $exoId }
-        subject: { _eq: $subject }
-        position: { _eq: $position }
-        active: { _eq: true }
-        id: { _neq: $exceptId }
-      }`
-    : `{
-        style_id: { _eq: $styleId }
-        exo_id: { _eq: $exoId }
-        subject: { _eq: $subject }
-        position: { _eq: $position }
-        active: { _eq: true }
-      }`;
-  const vars = exceptId
-    ? "$styleId: uuid!, $exoId: Int!, $subject: String!, $position: smallint!, $exceptId: uuid!, $updatedAt: timestamptz!"
-    : "$styleId: uuid!, $exoId: Int!, $subject: String!, $position: smallint!, $updatedAt: timestamptz!";
   await staffGql(
     token,
-    `mutation(${vars}) {
-      update_images_exercise_images(
-        where: ${where}
-        _set: { active: false, position: null, updated_at: $updatedAt }
-      ) { affected_rows }
-    }`,
+    exceptId
+      ? gql`mutation SupportImagesClearActivePositionExcept(
+          $styleId: uuid!
+          $exoId: Int!
+          $subject: String!
+          $position: smallint!
+          $exceptId: uuid!
+          $updatedAt: timestamptz!
+        ) {
+          update_images_exercise_images(
+            where: {
+              style_id: { _eq: $styleId }
+              exo_id: { _eq: $exoId }
+              subject: { _eq: $subject }
+              position: { _eq: $position }
+              active: { _eq: true }
+              id: { _neq: $exceptId }
+            }
+            _set: { active: false, position: null, updated_at: $updatedAt }
+          ) { affected_rows }
+        }`
+      : gql`mutation SupportImagesClearActivePosition(
+          $styleId: uuid!
+          $exoId: Int!
+          $subject: String!
+          $position: smallint!
+          $updatedAt: timestamptz!
+        ) {
+          update_images_exercise_images(
+            where: {
+              style_id: { _eq: $styleId }
+              exo_id: { _eq: $exoId }
+              subject: { _eq: $subject }
+              position: { _eq: $position }
+              active: { _eq: true }
+            }
+            _set: { active: false, position: null, updated_at: $updatedAt }
+          ) { affected_rows }
+        }`,
     {
       styleId,
       exoId,
@@ -857,7 +872,7 @@ export async function clearActivePosition(
 export async function deleteExerciseImageRow(token: string, id: string): Promise<void> {
   const data = await staffGql<{ delete_images_exercise_images_by_pk: { id: string } | null }>(
     token,
-    `mutation($id: uuid!) { delete_images_exercise_images_by_pk(id: $id) { id } }`,
+    gql`mutation SupportImagesDeleteExerciseImageRow($id: uuid!) { delete_images_exercise_images_by_pk(id: $id) { id } }`,
     { id },
   );
   if (!data.delete_images_exercise_images_by_pk) {
@@ -871,7 +886,7 @@ const POSE_FIELDS = "exo_id position pose status model updated_at updated_by";
 export async function listExercisePoses(token: string, exoId: number): Promise<ExercisePose[]> {
   const data = await staffGql<{ images_exercise_poses: ExercisePose[] }>(
     token,
-    `query($exoId: Int!) {
+    gql`query SupportImagesListExercisePoses($exoId: Int!) {
       images_exercise_poses(where: { exo_id: { _eq: $exoId } }, order_by: { position: asc }) {
         ${POSE_FIELDS}
       }
@@ -891,7 +906,7 @@ export async function upsertExercisePoses(
   const updatedBy = getUserIdFromToken(token);
   await staffGql(
     token,
-    `mutation($objects: [images_exercise_poses_insert_input!]!) {
+    gql`mutation SupportImagesUpsertExercisePoses($objects: [images_exercise_poses_insert_input!]!) {
       insert_images_exercise_poses(
         objects: $objects
         on_conflict: {
@@ -933,7 +948,7 @@ export async function listActiveEquipment(
     catalog_equipment: { id: string; code: string; name: string; description: string | null }[];
   }>(
     token,
-    `query {
+    gql`query SupportImagesListActiveEquipment {
       catalog_equipment(
         where: { active: { _eq: true } }
         order_by: [{ sort_order: asc }, { code: asc }]
@@ -955,7 +970,7 @@ export async function listActiveSupportEquipment(
     }[];
   }>(
     token,
-    `query {
+    gql`query SupportImagesListActiveSupportEquipment {
       catalog_support_equipment(
         where: { active: { _eq: true } }
         order_by: [{ sort_order: asc }, { code: asc }]

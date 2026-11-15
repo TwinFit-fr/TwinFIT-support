@@ -1,4 +1,5 @@
 import { deleteImageFile, uploadImageFile } from "./storage";
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import type { Subject } from "./types";
 
@@ -46,7 +47,7 @@ export async function upsertStyleCharacter(
 ): Promise<void> {
   await staffGql(
     token,
-    `mutation($object: images_style_characters_insert_input!) {
+    gql`mutation SupportImageStyleAssetsUpsertStyleCharacter($object: images_style_characters_insert_input!) {
       insert_images_style_characters_one(
         object: $object
         on_conflict: {
@@ -75,7 +76,7 @@ export async function deleteStyleCharacter(
     delete_images_style_characters_by_pk: { file_id: string } | null;
   }>(
     token,
-    `mutation($styleId: uuid!, $subject: String!) {
+    gql`mutation SupportImageStyleAssetsDeleteStyleCharacter($styleId: uuid!, $subject: String!) {
       delete_images_style_characters_by_pk(style_id: $styleId, subject: $subject) { file_id }
     }`,
     { styleId, subject },
@@ -94,7 +95,7 @@ export async function upsertStyleSupport(
 ): Promise<void> {
   await staffGql(
     token,
-    `mutation($object: images_style_supports_insert_input!) {
+    gql`mutation SupportImageStyleAssetsUpsertStyleSupport($object: images_style_supports_insert_input!) {
       insert_images_style_supports_one(
         object: $object
         on_conflict: {
@@ -124,7 +125,7 @@ export async function deleteStyleSupport(
     delete_images_style_supports_by_pk: { file_id: string } | null;
   }>(
     token,
-    `mutation($styleId: uuid!, $supportId: uuid!) {
+    gql`mutation SupportImageStyleAssetsDeleteStyleSupport($styleId: uuid!, $supportId: uuid!) {
       delete_images_style_supports_by_pk(style_id: $styleId, support_equipment_id: $supportId) {
         file_id
       }
@@ -142,7 +143,7 @@ export async function upsertStyleEquipment(
 ): Promise<void> {
   await staffGql(
     token,
-    `mutation($object: images_style_equipment_insert_input!) {
+    gql`mutation SupportImageStyleAssetsUpsertStyleEquipment($object: images_style_equipment_insert_input!) {
       insert_images_style_equipment_one(
         object: $object
         on_conflict: {
@@ -172,7 +173,7 @@ export async function deleteStyleEquipment(
     delete_images_style_equipment_by_pk: { file_id: string } | null;
   }>(
     token,
-    `mutation($styleId: uuid!, $equipmentId: uuid!) {
+    gql`mutation SupportImageStyleAssetsDeleteStyleEquipment($styleId: uuid!, $equipmentId: uuid!) {
       delete_images_style_equipment_by_pk(style_id: $styleId, equipment_id: $equipmentId) {
         file_id
       }

@@ -92,6 +92,22 @@ Catalog writes go straight to Hasura with the caller's JWT (`src/lib/catalog/`, 
 `src/lib/staff-gql.ts`). An exercise update is one GraphQL mutation, so Hasura applies it in a
 single transaction.
 
+## GraphQL operations (Hasura allow-list)
+
+The backend turns on Hasura's allow-list, which only accepts documents it knows. So every GraphQL
+document Support sends is a fixed, named operation written with the `gql` tag
+(`src/lib/gql.ts`), and `staffGql` only accepts such a document:
+
+- Names start with `Support` and are unique (`SupportCoachListPromptVersions`). One operation per
+  use: when a document varies (a table, an optional filter), write one operation per variant, as
+  `src/lib/catalog/lookup-operations.ts` does per taxonomy table. Never build a document from
+  strings. The only `${...}` allowed is a constant whose value is a string literal (a shared field
+  list); the compiler rejects anything else.
+- `graphql-manifest/support-current.json` lists them all, in the format the backend reads
+  (`client`, `version`, `operations: [{ name, query }]`). Add or change an operation, then run
+  `npm run graphql-manifest` and commit the result. `npm test` and `npm run build` fail when the
+  manifest is out of date (`npm run graphql-manifest:check`).
+
 ## Security notes
 
 - No Hasura admin secret in Support (local or production).
@@ -114,4 +130,7 @@ npm run dev      # development server (port 3000)
 npm run build    # production build
 npm run start    # serve production build
 npm run lint     # ESLint
+npm test         # unit tests (include the GraphQL manifest check)
+npm run graphql-manifest        # regenerate graphql-manifest/support-current.json
+npm run graphql-manifest:check  # fail if it is out of date
 ```

@@ -1,0 +1,838 @@
+{
+  "client": "support",
+  "version": "current",
+  "operations": [
+    {
+      "name": "SupportCatalogDeactivateExercise",
+      "query": "mutation SupportCatalogDeactivateExercise($id: uuid!) {\n      update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }\n    }"
+    },
+    {
+      "name": "SupportCatalogFetchByExoId",
+      "query": "query SupportCatalogFetchByExoId($exo_id: Int!) {\n      catalog_exercises(where: { exo_id: { _eq: $exo_id } }, limit: 1) {\n        id exo_id taxonomy_status active display_name\n      }\n    }"
+    },
+    {
+      "name": "SupportCatalogFindExerciseByName",
+      "query": "query SupportCatalogFindExerciseByName($name: String!) {\n      catalog_exercises(where: { active: { _eq: true }, display_name: { _ilike: $name } }, limit: 5) {\n        exo_id display_name\n      }\n    }"
+    },
+    {
+      "name": "SupportCatalogInsertExercise",
+      "query": "mutation SupportCatalogInsertExercise($o: catalog_exercises_insert_input!) {\n          insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }\n        }"
+    },
+    {
+      "name": "SupportCatalogInsertExerciseInherited",
+      "query": "mutation SupportCatalogInsertExerciseInherited($o: catalog_exercises_insert_input!, $exo_id: Int!) {\n          insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }\n          update_catalog_exercises(\n            where: { exo_id: { _eq: $exo_id } }\n            _set: { muscles_inherited: true }\n          ) { affected_rows }\n        }"
+    },
+    {
+      "name": "SupportCatalogNextExoId",
+      "query": "query SupportCatalogNextExoId { catalog_exercises(order_by: { exo_id: asc }) { exo_id } }"
+    },
+    {
+      "name": "SupportCatalogUpdateExercise",
+      "query": "mutation SupportCatalogUpdateExercise(\n            $id: uuid!\n            $set: catalog_exercises_set_input!\n            $localizations: [catalog_exercise_localizations_insert_input!]!\n          ) {\n            update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: $set) { id exo_id taxonomy_status }\n            insert_catalog_exercise_localizations(\n              objects: $localizations\n              on_conflict: {\n                constraint: exercise_localizations_exercise_id_locale_key\n                update_columns: [display_name, description]\n              }\n            ) { affected_rows }\n          }"
+    },
+    {
+      "name": "SupportCatalogUpdateExerciseInheritAtEnd",
+      "query": "mutation SupportCatalogUpdateExerciseInheritAtEnd(\n          $id: uuid!\n          $set: catalog_exercises_set_input!\n          $localizations: [catalog_exercise_localizations_insert_input!]!\n          $secondary: [catalog_exercise_secondary_muscles_insert_input!]!\n        ) {\n          update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: $set) { id exo_id taxonomy_status }\n          delete_catalog_exercise_secondary_muscles(where: { exercise_id: { _eq: $id } }) { affected_rows }\n          insert_catalog_exercise_secondary_muscles(objects: $secondary) { affected_rows }\n          insert_catalog_exercise_localizations(\n            objects: $localizations\n            on_conflict: {\n              constraint: exercise_localizations_exercise_id_locale_key\n              update_columns: [display_name, description]\n            }\n          ) { affected_rows }\n          inherit: update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { muscles_inherited: true }) { id }\n        }"
+    },
+    {
+      "name": "SupportCatalogUpdateExerciseSecondary",
+      "query": "mutation SupportCatalogUpdateExerciseSecondary(\n            $id: uuid!\n            $set: catalog_exercises_set_input!\n            $localizations: [catalog_exercise_localizations_insert_input!]!\n            $secondary: [catalog_exercise_secondary_muscles_insert_input!]!\n          ) {\n            update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: $set) { id exo_id taxonomy_status }\n            delete_catalog_exercise_secondary_muscles(where: { exercise_id: { _eq: $id } }) { affected_rows }\n            insert_catalog_exercise_secondary_muscles(objects: $secondary) { affected_rows }\n            insert_catalog_exercise_localizations(\n              objects: $localizations\n              on_conflict: {\n                constraint: exercise_localizations_exercise_id_locale_key\n                update_columns: [display_name, description]\n              }\n            ) { affected_rows }\n          }"
+    },
+    {
+      "name": "SupportCoachCreateSuggestion",
+      "query": "mutation SupportCoachCreateSuggestion($object: assistant_suggestions_insert_input!) {\n      insert_assistant_suggestions_one(object: $object) {\n        \n  id slug active requires_personal_data requires_plan_builder kind\n  unlocks_after section_slug sort_order created_at updated_at\n  localizations { suggestion_id locale text answer_md }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachDeleteKnowledgeCard",
+      "query": "mutation SupportCoachDeleteKnowledgeCard($id: uuid!) { delete_assistant_knowledge_cards_by_pk(id: $id) { id } }"
+    },
+    {
+      "name": "SupportCoachDeleteKnowledgeSource",
+      "query": "mutation SupportCoachDeleteKnowledgeSource($id: uuid!) { delete_assistant_knowledge_sources_by_pk(id: $id) { id } }"
+    },
+    {
+      "name": "SupportCoachDeleteSuggestion",
+      "query": "mutation SupportCoachDeleteSuggestion($id: uuid!) { delete_assistant_suggestions_by_pk(id: $id) { id } }"
+    },
+    {
+      "name": "SupportCoachDeleteSuggestionLocalization",
+      "query": "mutation SupportCoachDeleteSuggestionLocalization($suggestion_id: uuid!, $locale: String!) {\n      delete_assistant_suggestion_localizations_by_pk(\n        suggestion_id: $suggestion_id\n        locale: $locale\n      ) { suggestion_id }\n    }"
+    },
+    {
+      "name": "SupportCoachGetKnowledgeCard",
+      "query": "query SupportCoachGetKnowledgeCard($id: uuid!) {\n      assistant_knowledge_cards_by_pk(id: $id) { \n  id source_id topic locale title summary_md key_claims evidence_level\n  population practical_takeaway caveats tags status embedding_model\n  embedded_hash content_hash reviewed_by reviewed_at inserted_at updated_at\n  source { id title }\n }\n    }"
+    },
+    {
+      "name": "SupportCoachInsertKnowledgeCard",
+      "query": "mutation SupportCoachInsertKnowledgeCard($object: assistant_knowledge_cards_insert_input!) {\n      insert_assistant_knowledge_cards_one(object: $object) {\n        \n  id source_id topic locale title summary_md key_claims evidence_level\n  population practical_takeaway caveats tags status embedding_model\n  embedded_hash content_hash reviewed_by reviewed_at inserted_at updated_at\n  source { id title }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachInsertKnowledgeSource",
+      "query": "mutation SupportCoachInsertKnowledgeSource($object: assistant_knowledge_sources_insert_input!) {\n      insert_assistant_knowledge_sources_one(object: $object) {\n        id kind title authors year doi url license inserted_at updated_at\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachInsertPromptVersion",
+      "query": "mutation SupportCoachInsertPromptVersion($object: assistant_prompt_versions_insert_input!) {\n      insert_assistant_prompt_versions_one(object: $object) {\n        id prompt_key locale version body_md is_active created_by created_at\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachListKnowledgeCards",
+      "query": "query SupportCoachListKnowledgeCards {\n      assistant_knowledge_cards(order_by: [{ status: asc }, { title: asc }]) {\n        \n  id source_id topic locale title summary_md key_claims evidence_level\n  population practical_takeaway caveats tags status embedding_model\n  embedded_hash content_hash reviewed_by reviewed_at inserted_at updated_at\n  source { id title }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachListKnowledgeSources",
+      "query": "query SupportCoachListKnowledgeSources {\n      assistant_knowledge_sources(order_by: { title: asc }) {\n        id kind title authors year doi url license inserted_at updated_at\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachListPromptVersions",
+      "query": "query SupportCoachListPromptVersions {\n      assistant_prompt_versions(order_by: [{ prompt_key: asc }, { locale: asc }, { version: desc }]) {\n        id prompt_key locale version body_md is_active created_by created_at\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachListSuggestions",
+      "query": "query SupportCoachListSuggestions {\n      assistant_suggestions(order_by: [{ kind: asc }, { sort_order: asc }, { slug: asc }]) {\n        \n  id slug active requires_personal_data requires_plan_builder kind\n  unlocks_after section_slug sort_order created_at updated_at\n  localizations { suggestion_id locale text answer_md }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachListTierPolicies",
+      "query": "query SupportCoachListTierPolicies {\n      assistant_tier_policies(order_by: { tier_code: asc }) {\n        tier_code monthly_token_limit weekly_token_limit hourly_burst_limit max_turn_tokens min_turn_tokens\n        personal_data_enabled plan_builder_enabled max_tool_rounds updated_at\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachListToolNames",
+      "query": "query SupportCoachListToolNames {\n      assistant_turn_tool_calls(distinct_on: tool, order_by: { tool: asc }) { tool }\n    }"
+    },
+    {
+      "name": "SupportCoachListTurnToolCalls",
+      "query": "query SupportCoachListTurnToolCalls($where: assistant_turn_tool_calls_bool_exp!, $limit: Int!) {\n      assistant_turn_tool_calls(\n        where: $where\n        order_by: { created_at: desc }\n        limit: $limit\n      ) {\n        id turn_id position round tool arg_keys code_args query_chars result_chars\n        hits top_similarity zero_result error_code ms created_at\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachMedia",
+      "query": "query SupportCoachMedia($where: files_bool_exp!) {\n      files(where: $where, order_by: { name: asc }, limit: 5000) { id name mimeType size createdAt updatedAt }\n    }"
+    },
+    {
+      "name": "SupportCoachMediaFile",
+      "query": "query SupportCoachMediaFile($id: uuid!) {\n      file(id: $id) { id name mimeType size createdAt updatedAt bucketId }\n    }"
+    },
+    {
+      "name": "SupportCoachSetCardEmbedding",
+      "query": "mutation SupportCoachSetCardEmbedding($id: uuid!, $e: jsonb!, $model: String!) {\n      assistant_set_card_embedding(args: { p_card_id: $id, p_embedding: $e, p_model: $model }) {\n        id embedded_hash content_hash\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachSetPromptVersionActive",
+      "query": "mutation SupportCoachSetPromptVersionActive($id: uuid!, $is_active: Boolean!) {\n      update_assistant_prompt_versions_by_pk(pk_columns: { id: $id }, _set: { is_active: $is_active }) {\n        id prompt_key locale version body_md is_active created_by created_at\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachUpdateKnowledgeCard",
+      "query": "mutation SupportCoachUpdateKnowledgeCard($id: uuid!, $set: assistant_knowledge_cards_set_input!) {\n        update_assistant_knowledge_cards_by_pk(pk_columns: { id: $id }, _set: $set) {\n          \n  id source_id topic locale title summary_md key_claims evidence_level\n  population practical_takeaway caveats tags status embedding_model\n  embedded_hash content_hash reviewed_by reviewed_at inserted_at updated_at\n  source { id title }\n\n        }\n      }"
+    },
+    {
+      "name": "SupportCoachUpdateKnowledgeSource",
+      "query": "mutation SupportCoachUpdateKnowledgeSource($id: uuid!, $set: assistant_knowledge_sources_set_input!) {\n        update_assistant_knowledge_sources_by_pk(pk_columns: { id: $id }, _set: $set) {\n          id kind title authors year doi url license inserted_at updated_at\n        }\n      }"
+    },
+    {
+      "name": "SupportCoachUpdateSuggestion",
+      "query": "mutation SupportCoachUpdateSuggestion($id: uuid!, $set: assistant_suggestions_set_input!) {\n      update_assistant_suggestions_by_pk(pk_columns: { id: $id }, _set: $set) {\n        \n  id slug active requires_personal_data requires_plan_builder kind\n  unlocks_after section_slug sort_order created_at updated_at\n  localizations { suggestion_id locale text answer_md }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachUpdateTierCapabilities",
+      "query": "mutation SupportCoachUpdateTierCapabilities($tier_code: String!, $set: assistant_tier_policies_set_input!) {\n      update_assistant_tier_policies_by_pk(pk_columns: { tier_code: $tier_code }, _set: $set) {\n        tier_code monthly_token_limit weekly_token_limit hourly_burst_limit max_turn_tokens min_turn_tokens\n        personal_data_enabled plan_builder_enabled max_tool_rounds updated_at\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachUpsertSuggestionLocalization",
+      "query": "mutation SupportCoachUpsertSuggestionLocalization($object: assistant_suggestion_localizations_insert_input!) {\n      insert_assistant_suggestion_localizations_one(\n        object: $object\n        on_conflict: {\n          constraint: suggestion_localizations_pkey\n          update_columns: [text, answer_md]\n        }\n      ) { suggestion_id locale }\n    }"
+    },
+    {
+      "name": "SupportImageJobsClaimJob",
+      "query": "mutation SupportImageJobsClaimJob { images_claim_generation_job { \n  id seq batch_id style_id kind exo_id subject position options\n  depends_on status attempts max_attempts not_before error result_exercise_image_id\n  inserted_at started_at finished_at\n } }"
+    },
+    {
+      "name": "SupportImageJobsCountPendingJobs",
+      "query": "query SupportImageJobsCountPendingJobs { images_generation_jobs(where: { status: { _in: [\"queued\", \"running\"] } }) { status } }"
+    },
+    {
+      "name": "SupportImageJobsDismissBatch",
+      "query": "mutation SupportImageJobsDismissBatch($batchId: uuid!) {\n      delete_images_generation_jobs(\n        where: { batch_id: { _eq: $batchId }, status: { _in: [\"done\", \"error\", \"cancelled\"] } }\n      ) { affected_rows }\n    }"
+    },
+    {
+      "name": "SupportImageJobsEnqueueJobs",
+      "query": "mutation SupportImageJobsEnqueueJobs($objects: [images_generation_jobs_insert_input!]!) {\n      insert_images_generation_jobs(objects: $objects) { returning { \n  id seq batch_id style_id kind exo_id subject position options\n  depends_on status attempts max_attempts not_before error result_exercise_image_id\n  inserted_at started_at finished_at\n } }\n    }"
+    },
+    {
+      "name": "SupportImageJobsListJobs",
+      "query": "query SupportImageJobsListJobs($where: images_generation_jobs_bool_exp!) {\n      images_generation_jobs(where: $where, order_by: { seq: asc }) { \n  id seq batch_id style_id kind exo_id subject position options\n  depends_on status attempts max_attempts not_before error result_exercise_image_id\n  inserted_at started_at finished_at\n }\n    }"
+    },
+    {
+      "name": "SupportImageJobsResultOf",
+      "query": "query SupportImageJobsResultOf($id: uuid!) { images_generation_jobs_by_pk(id: $id) { result_exercise_image_id } }"
+    },
+    {
+      "name": "SupportImageJobsUpdateJobs",
+      "query": "mutation SupportImageJobsUpdateJobs($where: images_generation_jobs_bool_exp!, $set: images_generation_jobs_set_input!) {\n      update_images_generation_jobs(where: $where, _set: $set) { affected_rows }\n    }"
+    },
+    {
+      "name": "SupportImagePromptVersionsCurrentPromptVersions",
+      "query": "query SupportImagePromptVersionsCurrentPromptVersions($ids: [uuid!]!) {\n      images_prompt_versions(\n        where: { prompt_id: { _in: $ids } }\n        order_by: [{ prompt_id: asc }, { saved_at: desc }]\n        distinct_on: prompt_id\n      ) { id prompt_id saved_at }\n    }"
+    },
+    {
+      "name": "SupportImagePromptVersionsListPromptVersions",
+      "query": "query SupportImagePromptVersionsListPromptVersions($promptId: uuid!) {\n      images_prompt_versions(where: { prompt_id: { _eq: $promptId } }, order_by: { saved_at: desc }) {\n        id prompt_id content saved_at saved_by\n      }\n    }"
+    },
+    {
+      "name": "SupportImageReferencesCreateStyleReference",
+      "query": "mutation SupportImageReferencesCreateStyleReference($object: images_style_references_insert_input!) {\n      insert_images_style_references_one(object: $object) { \n  id\n  style_id\n  name\n  instruction\n  prompt\n  file_id\n  inserted_at\n  updated_at\n  links {\n    exo_id\n    muscle_id\n    muscle_group_id\n    body_region_id\n    exercise { display_name }\n    muscle { name }\n    muscle_group { name }\n    body_region { name }\n  }\n }\n    }"
+    },
+    {
+      "name": "SupportImageReferencesDeleteStyleReference",
+      "query": "mutation SupportImageReferencesDeleteStyleReference($id: uuid!) { delete_images_style_references_by_pk(id: $id) { file_id } }"
+    },
+    {
+      "name": "SupportImageReferencesGetStyleReference",
+      "query": "query SupportImageReferencesGetStyleReference($id: uuid!) { images_style_references_by_pk(id: $id) { \n  id\n  style_id\n  name\n  instruction\n  prompt\n  file_id\n  inserted_at\n  updated_at\n  links {\n    exo_id\n    muscle_id\n    muscle_group_id\n    body_region_id\n    exercise { display_name }\n    muscle { name }\n    muscle_group { name }\n    body_region { name }\n  }\n } }"
+    },
+    {
+      "name": "SupportImageReferencesListLinkedReferences",
+      "query": "query SupportImageReferencesListLinkedReferences($where: images_style_references_bool_exp!) {\n      images_style_references(where: $where, order_by: [{ name: asc }]) { \n  id\n  style_id\n  name\n  instruction\n  prompt\n  file_id\n  inserted_at\n  updated_at\n  links {\n    exo_id\n    muscle_id\n    muscle_group_id\n    body_region_id\n    exercise { display_name }\n    muscle { name }\n    muscle_group { name }\n    body_region { name }\n  }\n }\n    }"
+    },
+    {
+      "name": "SupportImageReferencesListStyleReferences",
+      "query": "query SupportImageReferencesListStyleReferences($styleId: uuid!) {\n      images_style_references(\n        where: { style_id: { _eq: $styleId } }\n        order_by: [{ name: asc }]\n      ) { \n  id\n  style_id\n  name\n  instruction\n  prompt\n  file_id\n  inserted_at\n  updated_at\n  links {\n    exo_id\n    muscle_id\n    muscle_group_id\n    body_region_id\n    exercise { display_name }\n    muscle { name }\n    muscle_group { name }\n    body_region { name }\n  }\n }\n    }"
+    },
+    {
+      "name": "SupportImageReferencesResolveRunReferences",
+      "query": "query SupportImageReferencesResolveRunReferences($styleId: uuid!, $ids: [uuid!]!) {\n        images_style_references(where: { style_id: { _eq: $styleId }, id: { _in: $ids } }) {\n          \n  id\n  style_id\n  name\n  instruction\n  prompt\n  file_id\n  inserted_at\n  updated_at\n  links {\n    exo_id\n    muscle_id\n    muscle_group_id\n    body_region_id\n    exercise { display_name }\n    muscle { name }\n    muscle_group { name }\n    body_region { name }\n  }\n\n        }\n      }"
+    },
+    {
+      "name": "SupportImageReferencesUpdateStyleReference",
+      "query": "mutation SupportImageReferencesUpdateStyleReference(\n      $id: uuid!\n      $set: images_style_references_set_input!\n      $replaceLinks: Boolean!\n      $links: [images_style_reference_links_insert_input!]!\n    ) {\n      update_images_style_references_by_pk(pk_columns: { id: $id }, _set: $set) { id }\n      delete_images_style_reference_links(where: { reference_id: { _eq: $id } })\n        @include(if: $replaceLinks) { affected_rows }\n      insert_images_style_reference_links(objects: $links) @include(if: $replaceLinks) {\n        affected_rows\n      }\n    }"
+    },
+    {
+      "name": "SupportImageStyleAssetsDeleteStyleCharacter",
+      "query": "mutation SupportImageStyleAssetsDeleteStyleCharacter($styleId: uuid!, $subject: String!) {\n      delete_images_style_characters_by_pk(style_id: $styleId, subject: $subject) { file_id }\n    }"
+    },
+    {
+      "name": "SupportImageStyleAssetsDeleteStyleEquipment",
+      "query": "mutation SupportImageStyleAssetsDeleteStyleEquipment($styleId: uuid!, $equipmentId: uuid!) {\n      delete_images_style_equipment_by_pk(style_id: $styleId, equipment_id: $equipmentId) {\n        file_id\n      }\n    }"
+    },
+    {
+      "name": "SupportImageStyleAssetsDeleteStyleSupport",
+      "query": "mutation SupportImageStyleAssetsDeleteStyleSupport($styleId: uuid!, $supportId: uuid!) {\n      delete_images_style_supports_by_pk(style_id: $styleId, support_equipment_id: $supportId) {\n        file_id\n      }\n    }"
+    },
+    {
+      "name": "SupportImageStyleAssetsUpsertStyleCharacter",
+      "query": "mutation SupportImageStyleAssetsUpsertStyleCharacter($object: images_style_characters_insert_input!) {\n      insert_images_style_characters_one(\n        object: $object\n        on_conflict: {\n          constraint: images_style_characters_pkey\n          update_columns: [file_id, updated_at]\n        }\n      ) { style_id }\n    }"
+    },
+    {
+      "name": "SupportImageStyleAssetsUpsertStyleEquipment",
+      "query": "mutation SupportImageStyleAssetsUpsertStyleEquipment($object: images_style_equipment_insert_input!) {\n      insert_images_style_equipment_one(\n        object: $object\n        on_conflict: {\n          constraint: images_style_equipment_pkey\n          update_columns: [file_id, image_url, updated_at]\n        }\n      ) { style_id }\n    }"
+    },
+    {
+      "name": "SupportImageStyleAssetsUpsertStyleSupport",
+      "query": "mutation SupportImageStyleAssetsUpsertStyleSupport($object: images_style_supports_insert_input!) {\n      insert_images_style_supports_one(\n        object: $object\n        on_conflict: {\n          constraint: images_style_supports_pkey\n          update_columns: [file_id, image_url, updated_at]\n        }\n      ) { style_id }\n    }"
+    },
+    {
+      "name": "SupportImagesClearActivePosition",
+      "query": "mutation SupportImagesClearActivePosition(\n          $styleId: uuid!\n          $exoId: Int!\n          $subject: String!\n          $position: smallint!\n          $updatedAt: timestamptz!\n        ) {\n          update_images_exercise_images(\n            where: {\n              style_id: { _eq: $styleId }\n              exo_id: { _eq: $exoId }\n              subject: { _eq: $subject }\n              position: { _eq: $position }\n              active: { _eq: true }\n            }\n            _set: { active: false, position: null, updated_at: $updatedAt }\n          ) { affected_rows }\n        }"
+    },
+    {
+      "name": "SupportImagesClearActivePositionExcept",
+      "query": "mutation SupportImagesClearActivePositionExcept(\n          $styleId: uuid!\n          $exoId: Int!\n          $subject: String!\n          $position: smallint!\n          $exceptId: uuid!\n          $updatedAt: timestamptz!\n        ) {\n          update_images_exercise_images(\n            where: {\n              style_id: { _eq: $styleId }\n              exo_id: { _eq: $exoId }\n              subject: { _eq: $subject }\n              position: { _eq: $position }\n              active: { _eq: true }\n              id: { _neq: $exceptId }\n            }\n            _set: { active: false, position: null, updated_at: $updatedAt }\n          ) { affected_rows }\n        }"
+    },
+    {
+      "name": "SupportImagesClearDefaultStyle",
+      "query": "mutation SupportImagesClearDefaultStyle($updatedAt: timestamptz!, $updatedBy: uuid) {\n        update_images_styles(\n          where: { is_default: { _eq: true } }\n          _set: { is_default: false, updated_at: $updatedAt, updated_by: $updatedBy }\n        ) { affected_rows }\n      }"
+    },
+    {
+      "name": "SupportImagesClearMidFrames",
+      "query": "mutation SupportImagesClearMidFrames($exoId: Int!, $position: smallint!, $updatedAt: timestamptz!) {\n        update_images_exercise_images(\n          where: {\n            exo_id: { _eq: $exoId }\n            position: { _eq: $position }\n            active: { _eq: true }\n          }\n          _set: { active: false, position: null, updated_at: $updatedAt }\n        ) { affected_rows }\n      }"
+    },
+    {
+      "name": "SupportImagesCloneStylePrompts",
+      "query": "mutation SupportImagesCloneStylePrompts($objects: [images_prompts_insert_input!]!) {\n      insert_images_prompts(objects: $objects) { affected_rows }\n    }"
+    },
+    {
+      "name": "SupportImagesCountStyleImages",
+      "query": "query SupportImagesCountStyleImages($styleId: uuid!) {\n      images_exercise_images_aggregate(where: { style_id: { _eq: $styleId } }) {\n        aggregate { count }\n      }\n    }"
+    },
+    {
+      "name": "SupportImagesDeleteExerciseImageRow",
+      "query": "mutation SupportImagesDeleteExerciseImageRow($id: uuid!) { delete_images_exercise_images_by_pk(id: $id) { id } }"
+    },
+    {
+      "name": "SupportImagesDeleteStyle",
+      "query": "mutation SupportImagesDeleteStyle($id: uuid!) { delete_images_styles_by_pk(id: $id) { id } }"
+    },
+    {
+      "name": "SupportImagesEnsureTwoFramesDefault",
+      "query": "query SupportImagesEnsureTwoFramesDefault($exoId: Int!, $styleId: uuid!) {\n      images_exercise_options_by_pk(exo_id: $exoId) { two_frames }\n      images_exercise_images_aggregate(\n        where: { exo_id: { _eq: $exoId }, style_id: { _eq: $styleId } }\n      ) { aggregate { count } }\n    }"
+    },
+    {
+      "name": "SupportImagesGetActiveImageAtPosition",
+      "query": "query SupportImagesGetActiveImageAtPosition($styleId: uuid!, $exoId: Int!, $subject: String!, $position: smallint!) {\n      images_exercise_images(\n        where: {\n          style_id: { _eq: $styleId }\n          exo_id: { _eq: $exoId }\n          subject: { _eq: $subject }\n          position: { _eq: $position }\n          active: { _eq: true }\n        }\n        limit: 1\n      ) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n }\n    }"
+    },
+    {
+      "name": "SupportImagesGetDefaultStyle",
+      "query": "query SupportImagesGetDefaultStyle {\n      images_styles(where: { is_default: { _eq: true } }, limit: 1) { \n  id\n  code\n  name\n  published\n  is_default\n  params\n  logo_file_id\n  logo_in_exercises\n  inserted_at\n  updated_at\n  updated_by\n  characters { subject file_id }\n  supports {\n    support_equipment_id\n    file_id\n    image_url\n    support_equipment { id code name description active }\n  }\n  equipment { equipment_id file_id image_url }\n }\n    }"
+    },
+    {
+      "name": "SupportImagesGetExerciseImage",
+      "query": "query SupportImagesGetExerciseImage($id: uuid!) { images_exercise_images_by_pk(id: $id) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n } }"
+    },
+    {
+      "name": "SupportImagesGetExerciseSummary",
+      "query": "query SupportImagesGetExerciseSummary($exoId: Int!) {\n      catalog_exercises(where: { exo_id: { _eq: $exoId } }, limit: 1) {\n        \n  id\n  exo_id\n  display_name\n  active\n  primary_muscle_group { id name }\n  equipment { id code name description }\n  support_equipment { id code name description }\n  position { code name }\n  grip { code name description }\n  variation { code name }\n  localizations { locale display_name description }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportImagesGetImageExercise",
+      "query": "query SupportImagesGetImageExercise($exoId: Int!, $styleId: uuid!) {\n      images_exercise_options_by_pk(exo_id: $exoId) { two_frames }\n      catalog_exercises(where: { exo_id: { _eq: $exoId } }, limit: 1) {\n        \n  id\n  exo_id\n  display_name\n  active\n  primary_muscle_group { id name }\n  equipment { id code name description }\n  support_equipment { id code name description }\n  position { code name }\n  grip { code name description }\n  variation { code name }\n  localizations { locale display_name description }\n\n      }\n      images_exercise_images(\n        where: { exo_id: { _eq: $exoId }, style_id: { _eq: $styleId } }\n        order_by: [{ active: desc }, { position: asc_nulls_last }, { created_at: desc }]\n      ) {\n        \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n\n      }\n    }"
+    },
+    {
+      "name": "SupportImagesGetImagePrompt",
+      "query": "query SupportImagesGetImagePrompt($id: uuid!) { images_prompts_by_pk(id: $id) { \n  id\n  style_id\n  kind\n  position\n  content\n  inserted_at\n  updated_at\n } }"
+    },
+    {
+      "name": "SupportImagesGetStyle",
+      "query": "query SupportImagesGetStyle($id: uuid!) { images_styles_by_pk(id: $id) { \n  id\n  code\n  name\n  published\n  is_default\n  params\n  logo_file_id\n  logo_in_exercises\n  inserted_at\n  updated_at\n  updated_by\n  characters { subject file_id }\n  supports {\n    support_equipment_id\n    file_id\n    image_url\n    support_equipment { id code name description active }\n  }\n  equipment { equipment_id file_id image_url }\n } }"
+    },
+    {
+      "name": "SupportImagesGetStyleByCode",
+      "query": "query SupportImagesGetStyleByCode($code: String!) {\n      images_styles(where: { code: { _eq: $code } }, limit: 1) { \n  id\n  code\n  name\n  published\n  is_default\n  params\n  logo_file_id\n  logo_in_exercises\n  inserted_at\n  updated_at\n  updated_by\n  characters { subject file_id }\n  supports {\n    support_equipment_id\n    file_id\n    image_url\n    support_equipment { id code name description active }\n  }\n  equipment { equipment_id file_id image_url }\n }\n    }"
+    },
+    {
+      "name": "SupportImagesInsertExerciseImage",
+      "query": "mutation SupportImagesInsertExerciseImage($object: images_exercise_images_insert_input!) {\n      insert_images_exercise_images_one(object: $object) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n }\n    }"
+    },
+    {
+      "name": "SupportImagesInsertStyle",
+      "query": "mutation SupportImagesInsertStyle($object: images_styles_insert_input!) {\n      insert_images_styles_one(object: $object) { \n  id\n  code\n  name\n  published\n  is_default\n  params\n  logo_file_id\n  logo_in_exercises\n  inserted_at\n  updated_at\n  updated_by\n  characters { subject file_id }\n  supports {\n    support_equipment_id\n    file_id\n    image_url\n    support_equipment { id code name description active }\n  }\n  equipment { equipment_id file_id image_url }\n }\n    }"
+    },
+    {
+      "name": "SupportImagesIsTwoFrameExercise",
+      "query": "query SupportImagesIsTwoFrameExercise($exoId: Int!, $styleWhere: images_exercise_images_bool_exp!) {\n      images_exercise_options_by_pk(exo_id: $exoId) { two_frames }\n      images_exercise_images_aggregate(where: $styleWhere) { aggregate { count } }\n    }"
+    },
+    {
+      "name": "SupportImagesListActiveEquipment",
+      "query": "query SupportImagesListActiveEquipment {\n      catalog_equipment(\n        where: { active: { _eq: true } }\n        order_by: [{ sort_order: asc }, { code: asc }]\n      ) { id code name description }\n    }"
+    },
+    {
+      "name": "SupportImagesListActiveSupportEquipment",
+      "query": "query SupportImagesListActiveSupportEquipment {\n      catalog_support_equipment(\n        where: { active: { _eq: true } }\n        order_by: [{ sort_order: asc }, { code: asc }]\n      ) { id code name description }\n    }"
+    },
+    {
+      "name": "SupportImagesListExercisePoses",
+      "query": "query SupportImagesListExercisePoses($exoId: Int!) {\n      images_exercise_poses(where: { exo_id: { _eq: $exoId } }, order_by: { position: asc }) {\n        exo_id position pose status model updated_at updated_by\n      }\n    }"
+    },
+    {
+      "name": "SupportImagesListImageExercises",
+      "query": "query SupportImagesListImageExercises($styleId: uuid!) {\n      images_exercise_options { exo_id two_frames }\n      catalog_exercises(order_by: [{ exo_id: asc }]) {\n        \n  id\n  exo_id\n  display_name\n  active\n  primary_muscle_group { id name }\n  equipment { id code name description }\n  support_equipment { id code name description }\n  position { code name }\n  grip { code name description }\n  variation { code name }\n  localizations { locale display_name description }\n\n      }\n      images_exercise_images(\n        where: { style_id: { _eq: $styleId } }\n        order_by: [{ created_at: desc }]\n      ) {\n        \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n\n      }\n    }"
+    },
+    {
+      "name": "SupportImagesListImagePrompts",
+      "query": "query SupportImagesListImagePrompts {\n      images_prompts(order_by: [{ kind: asc }, { position: asc_nulls_first }]) {\n        \n  id\n  style_id\n  kind\n  position\n  content\n  inserted_at\n  updated_at\n\n      }\n    }"
+    },
+    {
+      "name": "SupportImagesListStylePrompts",
+      "query": "query SupportImagesListStylePrompts($styleId: uuid!) {\n        images_prompts(\n          where: { style_id: { _eq: $styleId } }\n          order_by: [{ kind: asc }, { position: asc_nulls_first }]\n        ) { \n  id\n  style_id\n  kind\n  position\n  content\n  inserted_at\n  updated_at\n }\n      }"
+    },
+    {
+      "name": "SupportImagesListStyles",
+      "query": "query SupportImagesListStyles {\n      images_styles(order_by: [{ code: asc }]) { \n  id\n  code\n  name\n  published\n  is_default\n  params\n  logo_file_id\n  logo_in_exercises\n  inserted_at\n  updated_at\n  updated_by\n  characters { subject file_id }\n  supports {\n    support_equipment_id\n    file_id\n    image_url\n    support_equipment { id code name description active }\n  }\n  equipment { equipment_id file_id image_url }\n }\n    }"
+    },
+    {
+      "name": "SupportImagesLoadSettings",
+      "query": "query SupportImagesLoadSettings {\n      images_settings_by_pk(id: true) {\n        max_concurrency\n        updated_at\n        updated_by\n      }\n    }"
+    },
+    {
+      "name": "SupportImagesUpdateExerciseImage",
+      "query": "mutation SupportImagesUpdateExerciseImage($id: uuid!, $set: images_exercise_images_set_input!) {\n      update_images_exercise_images_by_pk(pk_columns: { id: $id }, _set: $set) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n }\n    }"
+    },
+    {
+      "name": "SupportImagesUpdateImagePrompt",
+      "query": "mutation SupportImagesUpdateImagePrompt($id: uuid!, $set: images_prompts_set_input!) {\n      update_images_prompts_by_pk(pk_columns: { id: $id }, _set: $set) { \n  id\n  style_id\n  kind\n  position\n  content\n  inserted_at\n  updated_at\n }\n    }"
+    },
+    {
+      "name": "SupportImagesUpdateImageSettings",
+      "query": "mutation SupportImagesUpdateImageSettings($set: images_settings_set_input!) {\n      update_images_settings_by_pk(pk_columns: { id: true }, _set: $set) {\n        max_concurrency\n        updated_at\n        updated_by\n      }\n    }"
+    },
+    {
+      "name": "SupportImagesUpdateStyle",
+      "query": "mutation SupportImagesUpdateStyle($id: uuid!, $set: images_styles_set_input!) {\n      update_images_styles_by_pk(pk_columns: { id: $id }, _set: $set) { \n  id\n  code\n  name\n  published\n  is_default\n  params\n  logo_file_id\n  logo_in_exercises\n  inserted_at\n  updated_at\n  updated_by\n  characters { subject file_id }\n  supports {\n    support_equipment_id\n    file_id\n    image_url\n    support_equipment { id code name description active }\n  }\n  equipment { equipment_id file_id image_url }\n }\n    }"
+    },
+    {
+      "name": "SupportImagesUpsertExerciseOptions",
+      "query": "mutation SupportImagesUpsertExerciseOptions($object: images_exercise_options_insert_input!) {\n      insert_images_exercise_options_one(\n        object: $object\n        on_conflict: {\n          constraint: exercise_options_pkey\n          update_columns: [two_frames, updated_at, updated_by]\n        }\n      ) { exo_id }\n    }"
+    },
+    {
+      "name": "SupportImagesUpsertExercisePoses",
+      "query": "mutation SupportImagesUpsertExercisePoses($objects: [images_exercise_poses_insert_input!]!) {\n      insert_images_exercise_poses(\n        objects: $objects\n        on_conflict: {\n          constraint: exercise_poses_pkey\n          update_columns: [pose, status, model, updated_at, updated_by]\n        }\n      ) { affected_rows }\n    }"
+    },
+    {
+      "name": "SupportLabFindSensorFile",
+      "query": "query SupportLabFindSensorFile($name: String!) {\n      files(\n        where: {\n          _and: [\n            { bucketId: { _eq: \"lab-sensor-samples\" } }\n            { name: { _eq: $name } }\n          ]\n        }\n        limit: 1\n      ) {\n        id\n        name\n        mimeType\n      }\n    }"
+    },
+    {
+      "name": "SupportLabGetSetStoragePath",
+      "query": "query SupportLabGetSetStoragePath($id: uuid!) {\n      lab_sets_by_pk(id: $id) {\n        id\n        storage_path\n        catalogExercise { display_name }\n      }\n    }"
+    },
+    {
+      "name": "SupportLabLinkCatalogExercise",
+      "query": "mutation SupportLabLinkCatalogExercise($object: lab_exercises_insert_input!) {\n      insert_lab_exercises_one(object: $object) {\n        \n  catalog_exo_id\n  active\n  sort_order\n  notes\n  catalogExercise {\n    exo_id\n    display_name\n  }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportLabListCatalogCandidates",
+      "query": "query SupportLabListCatalogCandidates {\n      catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {\n        exo_id\n        display_name\n        primary_muscle_group { code name }\n        equipment { code name }\n      }\n      lab_exercises {\n        catalog_exo_id\n      }\n    }"
+    },
+    {
+      "name": "SupportLabListLabExercises",
+      "query": "query SupportLabListLabExercises {\n      lab_exercises(order_by: [{ sort_order: asc }, { inserted_at: asc }]) {\n        \n  catalog_exo_id\n  active\n  sort_order\n  notes\n  catalogExercise {\n    exo_id\n    display_name\n  }\n\n        sets_aggregate {\n          aggregate { count }\n        }\n      }\n    }"
+    },
+    {
+      "name": "SupportLabListLabGlobalStats",
+      "query": "query SupportLabListLabGlobalStats {\n      globalByExercise: lab_sets(distinct_on: catalog_exo_id, order_by: [{ catalog_exo_id: asc }]) {\n        catalog_exo_id\n        catalogExercise { exo_id display_name }\n      }\n      counts: lab_sets {\n        catalog_exo_id\n      }\n      pool: lab_exercises {\n        \n  catalog_exo_id\n  active\n  sort_order\n  notes\n  catalogExercise {\n    exo_id\n    display_name\n  }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportLabListLabSetFilterOptions",
+      "query": "query SupportLabListLabSetFilterOptions {\n      collectors: lab_sets(distinct_on: user_id, order_by: [{ user_id: asc }]) {\n        user_id\n        user { id email }\n      }\n      exercises: lab_sets(distinct_on: catalog_exo_id, order_by: [{ catalog_exo_id: asc }]) {\n        catalog_exo_id\n        catalogExercise { exo_id display_name }\n      }\n    }"
+    },
+    {
+      "name": "SupportLabListLabSets",
+      "query": "query SupportLabListLabSets($where: lab_sets_bool_exp!, $limit: Int!, $offset: Int!) {\n      lab_sets(\n        where: $where\n        order_by: [{ inserted_at: desc }, { id: desc }]\n        limit: $limit\n        offset: $offset\n      ) {\n        id\n        user_id\n        catalog_exo_id\n        rep_count\n        weight_kg\n        started_at\n        ended_at\n        labeled_at\n        inserted_at\n        storage_path\n        catalogExercise { exo_id display_name }\n        user { id email }\n      }\n      lab_sets_aggregate(where: $where) {\n        aggregate { count }\n      }\n    }"
+    },
+    {
+      "name": "SupportLabListLabUserStats",
+      "query": "query SupportLabListLabUserStats {\n      lab_sets {\n        user_id\n        catalog_exo_id\n        catalogExercise { exo_id display_name }\n        user { id email }\n      }\n      pool: lab_exercises {\n        \n  catalog_exo_id\n  active\n  sort_order\n  notes\n  catalogExercise {\n    exo_id\n    display_name\n  }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportLabLoadProfilesByIds",
+      "query": "query SupportLabLoadProfilesByIds($ids: [uuid!]!) {\n      profiles(where: { id: { _in: $ids } }) {\n        id\n        username\n        display_name\n      }\n    }"
+    },
+    {
+      "name": "SupportLabUpdateLabExercise",
+      "query": "mutation SupportLabUpdateLabExercise($id: Int!, $patch: lab_exercises_set_input!) {\n      update_lab_exercises_by_pk(pk_columns: { catalog_exo_id: $id }, _set: $patch) {\n        \n  catalog_exo_id\n  active\n  sort_order\n  notes\n  catalogExercise {\n    exo_id\n    display_name\n  }\n\n      }\n    }"
+    },
+    {
+      "name": "SupportLookupUserByEmail",
+      "query": "query SupportLookupUserByEmail($email: citext!) {\n      users(where: { email: { _eq: $email } }, limit: 1) { id }\n    }"
+    },
+    {
+      "name": "SupportLookupUserByUsername",
+      "query": "query SupportLookupUserByUsername($username: citext!) {\n      profiles(where: { username: { _eq: $username } }, limit: 1) { id }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapActivateBase",
+      "query": "mutation SupportMuscleMapActivateBase($id: uuid!, $view: String!) {\n        update_muscle_map_bases(\n          where: { view: { _eq: $view }, active: { _eq: true }, id: { _neq: $id } }\n          _set: { active: false }\n        ) { affected_rows }\n        update_muscle_map_bases_by_pk(pk_columns: { id: $id }, _set: { active: true }) { id }\n      }"
+    },
+    {
+      "name": "SupportMuscleMapActivateMask",
+      "query": "mutation SupportMuscleMapActivateMask($id: uuid!, $base: uuid!, $muscle: uuid!) {\n          update_muscle_map_masks(\n            where: {\n              base_id: { _eq: $base }\n              muscle_id: { _eq: $muscle }\n              active: { _eq: true }\n              id: { _neq: $id }\n            }\n            _set: { active: false }\n          ) { affected_rows }\n          update_muscle_map_masks_by_pk(pk_columns: { id: $id }, _set: { active: true }) { id }\n        }"
+    },
+    {
+      "name": "SupportMuscleMapBoard",
+      "query": "query SupportMuscleMapBoard {\n      muscle_map_settings_by_pk(id: true) { \n  target_color secondary_color key_color generation base_prompt mask_prompt updated_at\n }\n      muscle_map_muscles { muscle_id view muscle { id code name description active } }\n      muscle_map_bases(order_by: { created_at: desc }) { \n  id view file_id image_url width height active model prompt params created_at\n }\n      muscle_map_masks(order_by: { created_at: desc }) { \n  id base_id muscle_id view file_id source_file_id image_url rect method active model prompt\n  params created_at\n }\n      catalog_muscles(order_by: { code: asc }) { id code name active }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapDeactivateBase",
+      "query": "mutation SupportMuscleMapDeactivateBase($id: uuid!) {\n      update_muscle_map_bases_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapDeactivateMask",
+      "query": "mutation SupportMuscleMapDeactivateMask($id: uuid!) {\n          update_muscle_map_masks_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }\n        }"
+    },
+    {
+      "name": "SupportMuscleMapDeleteBaseRow",
+      "query": "mutation SupportMuscleMapDeleteBaseRow($id: uuid!) {\n      delete_muscle_map_bases(where: { id: { _eq: $id }, active: { _eq: false } }) {\n        affected_rows\n      }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapDeleteMapMuscle",
+      "query": "mutation SupportMuscleMapDeleteMapMuscle($id: uuid!) { delete_muscle_map_muscles_by_pk(muscle_id: $id) { muscle_id } }"
+    },
+    {
+      "name": "SupportMuscleMapDeleteMaskRow",
+      "query": "mutation SupportMuscleMapDeleteMaskRow($id: uuid!) {\n      delete_muscle_map_masks(where: { id: { _eq: $id }, active: { _eq: false } }) {\n        affected_rows\n      }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapGetActiveBase",
+      "query": "query SupportMuscleMapGetActiveBase($view: String!) {\n      muscle_map_bases(where: { view: { _eq: $view }, active: { _eq: true } }, limit: 1) {\n        \n  id view file_id image_url width height active model prompt params created_at\n\n      }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapGetBase",
+      "query": "query SupportMuscleMapGetBase($id: uuid!) { muscle_map_bases_by_pk(id: $id) { \n  id view file_id image_url width height active model prompt params created_at\n } }"
+    },
+    {
+      "name": "SupportMuscleMapGetMapMuscle",
+      "query": "query SupportMuscleMapGetMapMuscle($id: uuid!) { muscle_map_muscles_by_pk(muscle_id: $id) { muscle_id view muscle { id code name description active } } }"
+    },
+    {
+      "name": "SupportMuscleMapGetMask",
+      "query": "query SupportMuscleMapGetMask($id: uuid!) { muscle_map_masks_by_pk(id: $id) { \n  id base_id muscle_id view file_id source_file_id image_url rect method active model prompt\n  params created_at\n } }"
+    },
+    {
+      "name": "SupportMuscleMapGetSettings",
+      "query": "query SupportMuscleMapGetSettings { muscle_map_settings_by_pk(id: true) { \n  target_color secondary_color key_color generation base_prompt mask_prompt updated_at\n } }"
+    },
+    {
+      "name": "SupportMuscleMapInsertActiveBase",
+      "query": "mutation SupportMuscleMapInsertActiveBase($view: String!, $o: muscle_map_bases_insert_input!) {\n      update_muscle_map_bases(\n        where: { view: { _eq: $view }, active: { _eq: true } }\n        _set: { active: false }\n      ) { affected_rows }\n      insert_muscle_map_bases_one(object: $o) { \n  id view file_id image_url width height active model prompt params created_at\n }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapInsertActiveMask",
+      "query": "mutation SupportMuscleMapInsertActiveMask($base: uuid!, $muscle: uuid!, $o: muscle_map_masks_insert_input!) {\n      update_muscle_map_masks(\n        where: { base_id: { _eq: $base }, muscle_id: { _eq: $muscle }, active: { _eq: true } }\n        _set: { active: false }\n      ) { affected_rows }\n      insert_muscle_map_masks_one(object: $o) { \n  id base_id muscle_id view file_id source_file_id image_url rect method active model prompt\n  params created_at\n }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapInsertMapMuscle",
+      "query": "mutation SupportMuscleMapInsertMapMuscle($o: muscle_map_muscles_insert_input!) {\n      insert_muscle_map_muscles_one(object: $o) { muscle_id }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapListMapMusclesOfView",
+      "query": "query SupportMuscleMapListMapMusclesOfView($view: String!) {\n      muscle_map_muscles(where: { view: { _eq: $view } }, order_by: { muscle: { code: asc } }) {\n        muscle_id view muscle { id code name description active }\n      }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapListMasksOfBase",
+      "query": "query SupportMuscleMapListMasksOfBase($base: uuid!, $active: [Boolean!]!) {\n      muscle_map_masks(where: { base_id: { _eq: $base }, active: { _in: $active } }) {\n        \n  id base_id muscle_id view file_id source_file_id image_url rect method active model prompt\n  params created_at\n\n      }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapPilot",
+      "query": "query SupportMuscleMapPilot {\n      catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {\n        exo_id display_name muscles_inherited primary_muscle_group_id\n        primary_muscle_group { code }\n        movement_type { code }\n        resolved_muscles(order_by: { sort_order: asc }) {\n          muscle_id role sort_order muscle { code name }\n        }\n      }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapUpdateMapMuscleView",
+      "query": "mutation SupportMuscleMapUpdateMapMuscleView($id: uuid!, $view: String!) {\n      update_muscle_map_muscles_by_pk(pk_columns: { muscle_id: $id }, _set: { view: $view }) {\n        muscle_id\n      }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapUpdateMaskFile",
+      "query": "mutation SupportMuscleMapUpdateMaskFile($id: uuid!, $set: muscle_map_masks_set_input!) {\n      update_muscle_map_masks_by_pk(pk_columns: { id: $id }, _set: $set) { \n  id base_id muscle_id view file_id source_file_id image_url rect method active model prompt\n  params created_at\n }\n    }"
+    },
+    {
+      "name": "SupportMuscleMapUpdateSettings",
+      "query": "mutation SupportMuscleMapUpdateSettings($set: muscle_map_settings_set_input!) {\n      update_muscle_map_settings_by_pk(pk_columns: { id: true }, _set: $set) { updated_at }\n    }"
+    },
+    {
+      "name": "SupportRenameCoachMedia",
+      "query": "mutation SupportRenameCoachMedia($id: uuid!, $name: String!) {\n      updateFile(pk_columns: { id: $id }, _set: { name: $name }) { id name mimeType size createdAt updatedAt }\n    }"
+    },
+    {
+      "name": "SupportSearchProfiles",
+      "query": "query SupportSearchProfiles($ids: [uuid!]!) {\n        profiles(where: { id: { _in: $ids } }) {\n          id\n          username\n          display_name\n          effective_subscription_tier\n        }\n      }"
+    },
+    {
+      "name": "SupportTaxonomyAdmin",
+      "query": "query SupportTaxonomyAdmin {\n      catalog_body_regions(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active body_region_id\n        localizations(order_by: { locale: asc }) { locale display_name }\n        group_muscles { role muscle { id code name description active localizations(order_by: { locale: asc }) { locale display_name } } }\n        group_movement_types {\n          movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } }\n          localizations(order_by: { locale: asc }) { locale display_name }\n          target_muscle { code name }\n          strength_pattern_override\n          strength_pattern { code name }\n          secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }\n          exercises { muscles_inherited }\n        }\n      }\n      catalog_muscles(order_by: { code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_movement_types(order_by: { sort_order: asc, code: asc }) {\n        id code name sort_order active\n        strength_pattern { code name }\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_strength_patterns(order_by: { sort_order: asc, code: asc }) {\n        id code name sort_order active\n      }\n      catalog_equipment(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_support_equipment(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_variations(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }\n      catalog_positions(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }\n      catalog_grips(order_by: { sort_order: asc, code: asc }) { id code name description sort_order active }\n      catalog_load_modalities(order_by: { sort_order: asc, code: asc }) {\n        id code name sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_logging_modes(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }\n    }"
+    },
+    {
+      "name": "SupportTaxonomyBodyRegionByCode",
+      "query": "query SupportTaxonomyBodyRegionByCode($code: String!) {\n      catalog_body_regions(where: { code: { _eq: $code } }, limit: 1) { id code }\n    }"
+    },
+    {
+      "name": "SupportTaxonomyFindBodyRegions",
+      "query": "query SupportTaxonomyFindBodyRegions($code: String!) {\n    catalog_body_regions(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindEquipment",
+      "query": "query SupportTaxonomyFindEquipment($code: String!) {\n    catalog_equipment(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindGrips",
+      "query": "query SupportTaxonomyFindGrips($code: String!) {\n    catalog_grips(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindLoadModalities",
+      "query": "query SupportTaxonomyFindLoadModalities($code: String!) {\n    catalog_load_modalities(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindLoggingModes",
+      "query": "query SupportTaxonomyFindLoggingModes($code: String!) {\n    catalog_logging_modes(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindMovementTypes",
+      "query": "query SupportTaxonomyFindMovementTypes($code: String!) {\n    catalog_movement_types(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindMuscleGroups",
+      "query": "query SupportTaxonomyFindMuscleGroups($code: String!) {\n    catalog_muscle_groups(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindMuscles",
+      "query": "query SupportTaxonomyFindMuscles($code: String!) {\n    catalog_muscles(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindPair",
+      "query": "query SupportTaxonomyFindPair($g: String!, $m: String!) {\n      catalog_muscle_group_movement_types(\n        where: { muscle_group: { code: { _eq: $g } }, movement_type: { code: { _eq: $m } } }\n        limit: 1\n      ) { muscle_group_id movement_type_id }\n    }"
+    },
+    {
+      "name": "SupportTaxonomyFindPositions",
+      "query": "query SupportTaxonomyFindPositions($code: String!) {\n    catalog_positions(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindSupportEquipment",
+      "query": "query SupportTaxonomyFindSupportEquipment($code: String!) {\n    catalog_support_equipment(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyFindVariations",
+      "query": "query SupportTaxonomyFindVariations($code: String!) {\n    catalog_variations(where: { code: { _eq: $code } }, limit: 1) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertBodyRegions",
+      "query": "mutation SupportTaxonomyInsertBodyRegions($o: catalog_body_regions_insert_input!) {\n    insert_catalog_body_regions_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertEquipment",
+      "query": "mutation SupportTaxonomyInsertEquipment($o: catalog_equipment_insert_input!) {\n    insert_catalog_equipment_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertGrips",
+      "query": "mutation SupportTaxonomyInsertGrips($o: catalog_grips_insert_input!) {\n    insert_catalog_grips_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertLoadModalities",
+      "query": "mutation SupportTaxonomyInsertLoadModalities($o: catalog_load_modalities_insert_input!) {\n    insert_catalog_load_modalities_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertLoggingModes",
+      "query": "mutation SupportTaxonomyInsertLoggingModes($o: catalog_logging_modes_insert_input!) {\n    insert_catalog_logging_modes_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertMovementTypes",
+      "query": "mutation SupportTaxonomyInsertMovementTypes($o: catalog_movement_types_insert_input!) {\n    insert_catalog_movement_types_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertMuscleGroups",
+      "query": "mutation SupportTaxonomyInsertMuscleGroups($o: catalog_muscle_groups_insert_input!) {\n    insert_catalog_muscle_groups_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertMuscles",
+      "query": "mutation SupportTaxonomyInsertMuscles($o: catalog_muscles_insert_input!) {\n    insert_catalog_muscles_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertPositions",
+      "query": "mutation SupportTaxonomyInsertPositions($o: catalog_positions_insert_input!) {\n    insert_catalog_positions_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertSupportEquipment",
+      "query": "mutation SupportTaxonomyInsertSupportEquipment($o: catalog_support_equipment_insert_input!) {\n    insert_catalog_support_equipment_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyInsertVariations",
+      "query": "mutation SupportTaxonomyInsertVariations($o: catalog_variations_insert_input!) {\n    insert_catalog_variations_one(object: $o) { id code }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyLinkMovement",
+      "query": "mutation SupportTaxonomyLinkMovement($mg: uuid!, $mt: uuid!) {\n          insert_catalog_muscle_group_movement_types(\n            objects: [{ muscle_group_id: $mg, movement_type_id: $mt }]\n            on_conflict: { constraint: muscle_group_movement_types_pkey, update_columns: [] }\n          ) { affected_rows }\n        }"
+    },
+    {
+      "name": "SupportTaxonomyLinkMuscle",
+      "query": "mutation SupportTaxonomyLinkMuscle($mg: uuid!, $m: uuid!, $role: String!) {\n          insert_catalog_muscle_group_muscles(\n            objects: [{ muscle_group_id: $mg, muscle_id: $m, role: $role }]\n            on_conflict: { constraint: muscle_group_muscles_pkey, update_columns: [role] }\n          ) { affected_rows }\n        }"
+    },
+    {
+      "name": "SupportTaxonomyMoveAndLinkMuscle",
+      "query": "mutation SupportTaxonomyMoveAndLinkMuscle($mg: uuid!, $m: uuid!, $role: String!) {\n          delete_catalog_muscle_group_muscles(\n            where: { muscle_id: { _eq: $m }, role: { _eq: \"target\" }, muscle_group_id: { _neq: $mg } }\n          ) { affected_rows }\n          insert_catalog_muscle_group_muscles(\n            objects: [{ muscle_group_id: $mg, muscle_id: $m, role: $role }]\n            on_conflict: { constraint: muscle_group_muscles_pkey, update_columns: [role] }\n          ) { affected_rows }\n        }"
+    },
+    {
+      "name": "SupportTaxonomyMusclesByCodes",
+      "query": "query SupportTaxonomyMusclesByCodes($codes: [String!]!) { catalog_muscles(where: { code: { _in: $codes } }) { id code } }"
+    },
+    {
+      "name": "SupportTaxonomyReadBodyRegions",
+      "query": "query SupportTaxonomyReadBodyRegions($id: uuid!) {\n    row: catalog_body_regions_by_pk(id: $id) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadEquipment",
+      "query": "query SupportTaxonomyReadEquipment($id: uuid!) {\n    row: catalog_equipment_by_pk(id: $id) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadGrips",
+      "query": "query SupportTaxonomyReadGrips($id: uuid!) {\n    row: catalog_grips_by_pk(id: $id) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadLoadModalities",
+      "query": "query SupportTaxonomyReadLoadModalities($id: uuid!) {\n    row: catalog_load_modalities_by_pk(id: $id) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadLoggingModes",
+      "query": "query SupportTaxonomyReadLoggingModes($id: uuid!) {\n    row: catalog_logging_modes_by_pk(id: $id) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadMovementTypes",
+      "query": "query SupportTaxonomyReadMovementTypes($id: uuid!) {\n    row: catalog_movement_types_by_pk(id: $id) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadMuscleGroups",
+      "query": "query SupportTaxonomyReadMuscleGroups($id: uuid!) {\n    row: catalog_muscle_groups_by_pk(id: $id) { id code name active sort_order description body_region_id }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadMuscles",
+      "query": "query SupportTaxonomyReadMuscles($id: uuid!) {\n    row: catalog_muscles_by_pk(id: $id) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadPositions",
+      "query": "query SupportTaxonomyReadPositions($id: uuid!) {\n    row: catalog_positions_by_pk(id: $id) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadSupportEquipment",
+      "query": "query SupportTaxonomyReadSupportEquipment($id: uuid!) {\n    row: catalog_support_equipment_by_pk(id: $id) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyReadVariations",
+      "query": "query SupportTaxonomyReadVariations($id: uuid!) {\n    row: catalog_variations_by_pk(id: $id) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetBodyRegionsEnglishLabel",
+      "query": "mutation SupportTaxonomySetBodyRegionsEnglishLabel($object: catalog_body_region_localizations_insert_input!) {\n    insert_catalog_body_region_localizations_one(\n      object: $object\n      on_conflict: { constraint: body_region_localizations_body_region_id_locale_key, update_columns: [display_name] }\n    ) { locale }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetBodyRegionsLabels",
+      "query": "mutation SupportTaxonomySetBodyRegionsLabels(\n    $objects: [catalog_body_region_localizations_insert_input!]!\n    $id: uuid!\n    $cleared: [String!]!\n  ) {\n    insert_catalog_body_region_localizations(\n      objects: $objects\n      on_conflict: { constraint: body_region_localizations_body_region_id_locale_key, update_columns: [display_name] }\n    ) { affected_rows }\n    delete_catalog_body_region_localizations(\n      where: { body_region_id: { _eq: $id }, locale: { _in: $cleared } }\n    ) { affected_rows }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetEquipmentEnglishLabel",
+      "query": "mutation SupportTaxonomySetEquipmentEnglishLabel($object: catalog_equipment_localizations_insert_input!) {\n    insert_catalog_equipment_localizations_one(\n      object: $object\n      on_conflict: { constraint: equipment_localizations_equipment_id_locale_key, update_columns: [display_name] }\n    ) { locale }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetEquipmentLabels",
+      "query": "mutation SupportTaxonomySetEquipmentLabels(\n    $objects: [catalog_equipment_localizations_insert_input!]!\n    $id: uuid!\n    $cleared: [String!]!\n  ) {\n    insert_catalog_equipment_localizations(\n      objects: $objects\n      on_conflict: { constraint: equipment_localizations_equipment_id_locale_key, update_columns: [display_name] }\n    ) { affected_rows }\n    delete_catalog_equipment_localizations(\n      where: { equipment_id: { _eq: $id }, locale: { _in: $cleared } }\n    ) { affected_rows }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetGroupMovementLabels",
+      "query": "mutation SupportTaxonomySetGroupMovementLabels(\n      $g: uuid!\n      $m: uuid!\n      $objects: [catalog_muscle_group_movement_type_localizations_insert_input!]!\n      $cleared: [String!]!\n    ) {\n      insert_catalog_muscle_group_movement_type_localizations(\n        objects: $objects\n        on_conflict: {\n          constraint: muscle_group_movement_type_localizations_pair_locale_key\n          update_columns: [display_name]\n        }\n      ) { affected_rows }\n      delete_catalog_muscle_group_movement_type_localizations(\n        where: { muscle_group_id: { _eq: $g }, movement_type_id: { _eq: $m }, locale: { _in: $cleared } }\n      ) { affected_rows }\n    }"
+    },
+    {
+      "name": "SupportTaxonomySetLoadModalitiesEnglishLabel",
+      "query": "mutation SupportTaxonomySetLoadModalitiesEnglishLabel($object: catalog_load_modality_localizations_insert_input!) {\n    insert_catalog_load_modality_localizations_one(\n      object: $object\n      on_conflict: { constraint: load_modality_localizations_load_modality_id_locale_key, update_columns: [display_name] }\n    ) { locale }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetLoadModalitiesLabels",
+      "query": "mutation SupportTaxonomySetLoadModalitiesLabels(\n    $objects: [catalog_load_modality_localizations_insert_input!]!\n    $id: uuid!\n    $cleared: [String!]!\n  ) {\n    insert_catalog_load_modality_localizations(\n      objects: $objects\n      on_conflict: { constraint: load_modality_localizations_load_modality_id_locale_key, update_columns: [display_name] }\n    ) { affected_rows }\n    delete_catalog_load_modality_localizations(\n      where: { load_modality_id: { _eq: $id }, locale: { _in: $cleared } }\n    ) { affected_rows }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetMovementTypesEnglishLabel",
+      "query": "mutation SupportTaxonomySetMovementTypesEnglishLabel($object: catalog_movement_type_localizations_insert_input!) {\n    insert_catalog_movement_type_localizations_one(\n      object: $object\n      on_conflict: { constraint: movement_type_localizations_movement_type_id_locale_key, update_columns: [display_name] }\n    ) { locale }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetMovementTypesLabels",
+      "query": "mutation SupportTaxonomySetMovementTypesLabels(\n    $objects: [catalog_movement_type_localizations_insert_input!]!\n    $id: uuid!\n    $cleared: [String!]!\n  ) {\n    insert_catalog_movement_type_localizations(\n      objects: $objects\n      on_conflict: { constraint: movement_type_localizations_movement_type_id_locale_key, update_columns: [display_name] }\n    ) { affected_rows }\n    delete_catalog_movement_type_localizations(\n      where: { movement_type_id: { _eq: $id }, locale: { _in: $cleared } }\n    ) { affected_rows }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetMuscleGroupsEnglishLabel",
+      "query": "mutation SupportTaxonomySetMuscleGroupsEnglishLabel($object: catalog_muscle_group_localizations_insert_input!) {\n    insert_catalog_muscle_group_localizations_one(\n      object: $object\n      on_conflict: { constraint: muscle_group_localizations_muscle_group_id_locale_key, update_columns: [display_name] }\n    ) { locale }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetMuscleGroupsLabels",
+      "query": "mutation SupportTaxonomySetMuscleGroupsLabels(\n    $objects: [catalog_muscle_group_localizations_insert_input!]!\n    $id: uuid!\n    $cleared: [String!]!\n  ) {\n    insert_catalog_muscle_group_localizations(\n      objects: $objects\n      on_conflict: { constraint: muscle_group_localizations_muscle_group_id_locale_key, update_columns: [display_name] }\n    ) { affected_rows }\n    delete_catalog_muscle_group_localizations(\n      where: { muscle_group_id: { _eq: $id }, locale: { _in: $cleared } }\n    ) { affected_rows }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetMusclesEnglishLabel",
+      "query": "mutation SupportTaxonomySetMusclesEnglishLabel($object: catalog_muscle_localizations_insert_input!) {\n    insert_catalog_muscle_localizations_one(\n      object: $object\n      on_conflict: { constraint: muscle_localizations_muscle_id_locale_key, update_columns: [display_name] }\n    ) { locale }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetMusclesLabels",
+      "query": "mutation SupportTaxonomySetMusclesLabels(\n    $objects: [catalog_muscle_localizations_insert_input!]!\n    $id: uuid!\n    $cleared: [String!]!\n  ) {\n    insert_catalog_muscle_localizations(\n      objects: $objects\n      on_conflict: { constraint: muscle_localizations_muscle_id_locale_key, update_columns: [display_name] }\n    ) { affected_rows }\n    delete_catalog_muscle_localizations(\n      where: { muscle_id: { _eq: $id }, locale: { _in: $cleared } }\n    ) { affected_rows }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetPairMuscles",
+      "query": "mutation SupportTaxonomySetPairMuscles(\n      $g: uuid!\n      $m: uuid!\n      $target: uuid!\n      $keep: [uuid!]!\n      $secondary: [catalog_muscle_group_movement_type_secondary_muscles_insert_input!]!\n    ) {\n      update_catalog_muscle_group_movement_types_by_pk(\n        pk_columns: { muscle_group_id: $g, movement_type_id: $m }\n        _set: { target_muscle_id: $target }\n      ) { muscle_group_id }\n      delete_catalog_muscle_group_movement_type_secondary_muscles(\n        where: {\n          muscle_group_id: { _eq: $g }\n          movement_type_id: { _eq: $m }\n          muscle_id: { _nin: $keep }\n        }\n      ) { affected_rows }\n      insert_catalog_muscle_group_movement_type_secondary_muscles(\n        objects: $secondary\n        on_conflict: {\n          constraint: muscle_group_movement_type_secondary_muscles_pkey\n          update_columns: [sort_order]\n        }\n      ) { affected_rows }\n    }"
+    },
+    {
+      "name": "SupportTaxonomySetPairStrengthPattern",
+      "query": "mutation SupportTaxonomySetPairStrengthPattern($g: uuid!, $m: uuid!, $override: Boolean!, $pattern: uuid) {\n      update_catalog_muscle_group_movement_types_by_pk(\n        pk_columns: { muscle_group_id: $g, movement_type_id: $m }\n        _set: { strength_pattern_override: $override, strength_pattern_id: $pattern }\n      ) { muscle_group_id }\n    }"
+    },
+    {
+      "name": "SupportTaxonomySetSupportEquipmentEnglishLabel",
+      "query": "mutation SupportTaxonomySetSupportEquipmentEnglishLabel($object: catalog_support_equipment_localizations_insert_input!) {\n    insert_catalog_support_equipment_localizations_one(\n      object: $object\n      on_conflict: { constraint: support_equipment_localizations_support_equipment_id_locale_key, update_columns: [display_name] }\n    ) { locale }\n  }"
+    },
+    {
+      "name": "SupportTaxonomySetSupportEquipmentLabels",
+      "query": "mutation SupportTaxonomySetSupportEquipmentLabels(\n    $objects: [catalog_support_equipment_localizations_insert_input!]!\n    $id: uuid!\n    $cleared: [String!]!\n  ) {\n    insert_catalog_support_equipment_localizations(\n      objects: $objects\n      on_conflict: { constraint: support_equipment_localizations_support_equipment_id_locale_key, update_columns: [display_name] }\n    ) { affected_rows }\n    delete_catalog_support_equipment_localizations(\n      where: { support_equipment_id: { _eq: $id }, locale: { _in: $cleared } }\n    ) { affected_rows }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyStrengthPatternByCode",
+      "query": "query SupportTaxonomyStrengthPatternByCode($c: String!) { catalog_strength_patterns(where: { code: { _eq: $c } }, limit: 1) { id code } }"
+    },
+    {
+      "name": "SupportTaxonomySupportEquipmentByCode",
+      "query": "query SupportTaxonomySupportEquipmentByCode($code: String!) {\n      catalog_support_equipment(where: { code: { _eq: $code } }, limit: 1) { id code }\n    }"
+    },
+    {
+      "name": "SupportTaxonomyUnlinkMovement",
+      "query": "mutation SupportTaxonomyUnlinkMovement($mg: uuid!, $mt: uuid!) {\n          delete_catalog_muscle_group_movement_types(\n            where: { muscle_group_id: { _eq: $mg }, movement_type_id: { _eq: $mt } }\n          ) { affected_rows }\n        }"
+    },
+    {
+      "name": "SupportTaxonomyUnlinkMuscle",
+      "query": "mutation SupportTaxonomyUnlinkMuscle($mg: uuid!, $m: uuid!) {\n        delete_catalog_muscle_group_muscles(\n          where: { muscle_group_id: { _eq: $mg }, muscle_id: { _eq: $m } }\n        ) { affected_rows }\n      }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateBodyRegions",
+      "query": "mutation SupportTaxonomyUpdateBodyRegions($id: uuid!, $set: catalog_body_regions_set_input!) {\n    row: update_catalog_body_regions_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateEquipment",
+      "query": "mutation SupportTaxonomyUpdateEquipment($id: uuid!, $set: catalog_equipment_set_input!) {\n    row: update_catalog_equipment_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateGrips",
+      "query": "mutation SupportTaxonomyUpdateGrips($id: uuid!, $set: catalog_grips_set_input!) {\n    row: update_catalog_grips_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateLoadModalities",
+      "query": "mutation SupportTaxonomyUpdateLoadModalities($id: uuid!, $set: catalog_load_modalities_set_input!) {\n    row: update_catalog_load_modalities_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateLoggingModes",
+      "query": "mutation SupportTaxonomyUpdateLoggingModes($id: uuid!, $set: catalog_logging_modes_set_input!) {\n    row: update_catalog_logging_modes_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateMovementTypes",
+      "query": "mutation SupportTaxonomyUpdateMovementTypes($id: uuid!, $set: catalog_movement_types_set_input!) {\n    row: update_catalog_movement_types_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateMuscleGroups",
+      "query": "mutation SupportTaxonomyUpdateMuscleGroups($id: uuid!, $set: catalog_muscle_groups_set_input!) {\n    row: update_catalog_muscle_groups_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description body_region_id }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateMuscles",
+      "query": "mutation SupportTaxonomyUpdateMuscles($id: uuid!, $set: catalog_muscles_set_input!) {\n    row: update_catalog_muscles_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdatePositions",
+      "query": "mutation SupportTaxonomyUpdatePositions($id: uuid!, $set: catalog_positions_set_input!) {\n    row: update_catalog_positions_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateSupportEquipment",
+      "query": "mutation SupportTaxonomyUpdateSupportEquipment($id: uuid!, $set: catalog_support_equipment_set_input!) {\n    row: update_catalog_support_equipment_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description }\n  }"
+    },
+    {
+      "name": "SupportTaxonomyUpdateVariations",
+      "query": "mutation SupportTaxonomyUpdateVariations($id: uuid!, $set: catalog_variations_set_input!) {\n    row: update_catalog_variations_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order }\n  }"
+    },
+    {
+      "name": "SupportUserCoach",
+      "query": "query SupportUserCoach($id: uuid!, $tier: String!) {\n          periods: assistant_usage_periods(\n            where: { user_id: { _eq: $id } }\n            order_by: { period_start: desc }\n            limit: 24\n          ) {\n            user_id\n            period_start\n            period_end\n            input_tokens\n            output_tokens\n            embed_tokens\n            reserved_tokens\n          }\n          policy: assistant_tier_policies_by_pk(tier_code: $tier) {\n            monthly_token_limit\n            weekly_token_limit\n            hourly_burst_limit\n          }\n          quota: assistant_user_quota(args: { p_user_id: $id }) {\n            llm_enabled\n            period_limit period_used period_remaining\n            week_limit week_used week_remaining\n            hour_limit hour_used hour_remaining\n            remaining scope resets_at\n          }\n        }"
+    },
+    {
+      "name": "SupportUserCoachTier",
+      "query": "query SupportUserCoachTier($id: uuid!) {\n          profiles_by_pk(id: $id) { effective_subscription_tier }\n        }"
+    },
+    {
+      "name": "SupportUserCustom",
+      "query": "query SupportUserCustom($id: uuid!) {\n          customExercises: workout_custom_exercises(\n            where: { user_id: { _eq: $id } }\n            order_by: { updated_at: desc }\n            limit: 50\n          ) {\n            id\n            display_name\n            active\n            inserted_at\n            updated_at\n          }\n        }"
+    },
+    {
+      "name": "SupportUserLookup",
+      "query": "query SupportUserLookup($id: uuid!) {\n      users(where: { id: { _eq: $id } }, limit: 1) {\n        id\n        email\n        emailVerified\n        disabled\n        createdAt\n        lastSeen\n        defaultRole\n        roles { role }\n      }\n      profiles(where: { id: { _eq: $id } }, limit: 1) {\n        id\n        username\n        display_name\n        date_of_birth\n        gender\n        height_cm\n        weight_kg\n        sessions_per_week\n        hypertrophy_level\n        strength_level\n        endurance_level\n        avatar_url\n        effective_subscription_tier\n        inserted_at\n        updated_at\n        entitlement {\n          tier_code\n          source\n          expires_at\n          play_purchase_token\n          play_state\n          play_product_id\n          play_base_plan_id\n          play_expiry_time\n          play_auto_renewing\n          play_in_free_trial\n          period_started_at\n          updated_at\n        }\n      }\n      subscription_tiers {\n        code\n        display_name\n        templates_limit\n        history_months\n        routines_enabled\n        support_enabled\n      }\n      grants: billing_manual_grants(\n        where: { user_id: { _eq: $id } }\n        order_by: { inserted_at: desc }\n        limit: 20\n      ) {\n        id\n        tier_code\n        ends_at\n        reason\n        granted_by\n        revoked_at\n        inserted_at\n      }\n      workout_sessions_aggregate(\n        where: { user_id: { _eq: $id }, ended_at: { _is_null: false } }\n      ) {\n        aggregate { count }\n      }\n      open_session: workout_sessions(\n        where: { user_id: { _eq: $id }, ended_at: { _is_null: true } }\n        limit: 1\n      ) {\n        id\n        name\n        started_at\n      }\n      workout_templates_aggregate(where: { user_id: { _eq: $id } }) {\n        aggregate { count }\n      }\n      routines: workout_routines(where: { user_id: { _eq: $id } }, limit: 500) {\n        id\n      }\n      customExercises: workout_custom_exercises(where: { user_id: { _eq: $id } }, limit: 500) {\n        id\n      }\n    }"
+    },
+    {
+      "name": "SupportUserRoutines",
+      "query": "query SupportUserRoutines($id: uuid!) {\n          routines: workout_routines(\n            where: { user_id: { _eq: $id } }\n            order_by: { updated_at: desc }\n            limit: 50\n          ) {\n            id\n            name\n            is_active\n            last_performed_at\n            updated_at\n            steps { id }\n          }\n        }"
+    },
+    {
+      "name": "SupportUserSearch",
+      "query": "query SupportUserSearch($pattern: citext!, $patternText: String!, $limit: Int!) {\n      byEmail: users(\n        where: { email: { _ilike: $pattern } }\n        order_by: { email: asc }\n        limit: $limit\n      ) {\n        id\n        email\n        emailVerified\n        disabled\n        defaultRole\n        roles { role }\n      }\n      byProfile: profiles(\n        where: {\n          _or: [\n            { username: { _ilike: $pattern } }\n            { display_name: { _ilike: $patternText } }\n          ]\n        }\n        order_by: { username: asc_nulls_last }\n        limit: $limit\n      ) {\n        id\n        username\n        display_name\n        effective_subscription_tier\n        user {\n          id\n          email\n          emailVerified\n          disabled\n          defaultRole\n          roles { role }\n        }\n      }\n    }"
+    },
+    {
+      "name": "SupportUserSessions",
+      "query": "query SupportUserSessions($id: uuid!) {\n          open_session: workout_sessions(\n            where: { user_id: { _eq: $id }, ended_at: { _is_null: true } }\n            limit: 1\n          ) {\n            id\n            name\n            started_at\n          }\n          sessions: v_session_list_summary(\n            where: { user_id: { _eq: $id } }\n            order_by: { started_at: desc }\n            limit: 50\n          ) {\n            session_id\n            name\n            started_at\n            ended_at\n            session_tonnage_kg\n            total_sets\n            total_reps\n            exercise_count\n            main_muscle_groups\n            template_id\n          }\n        }"
+    },
+    {
+      "name": "SupportUserTemplates",
+      "query": "query SupportUserTemplates($id: uuid!) {\n          templates: workout_templates(\n            where: { user_id: { _eq: $id } }\n            order_by: { updated_at: desc }\n            limit: 50\n          ) {\n            id\n            name\n            sort_order\n            inserted_at\n            updated_at\n            exercises { id }\n          }\n        }"
+    },
+    {
+      "name": "SupportXcatLibraryAdmin",
+      "query": "query SupportXcatLibraryAdmin {\n      catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {\n        id\n        exo_id\n        display_name\n        localizations(order_by: { locale: asc }) { locale display_name description }\n        taxonomy_status\n        taxonomy_notes\n        primary_muscle_group { code name }\n        target_muscle { code name }\n        muscles_inherited\n        resolved_muscles(order_by: { sort_order: asc }) { role source muscle { code name } }\n        movement_type { code name }\n        equipment { code name }\n        support_equipment { code name }\n        variation { code name }\n        position { code name }\n        grip { code name }\n        load_modality { code name }\n        logging_mode { code name }\n        body_mass_coefficient\n        wrist_imu_mode\n        default_pulley_ratio\n        secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }\n        extra_muscle_groups { muscle_group { code name } }\n      }\n      catalog_muscle_groups(where: { active: { _eq: true } }, order_by: { sort_order: asc }) {\n        id code name\n      }\n      catalog_muscles(where: { active: { _eq: true } }, order_by: { code: asc }) {\n        id code name\n      }\n      catalog_movement_types(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n      }\n      catalog_equipment(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_support_equipment(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_load_modalities(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n      }\n      catalog_logging_modes(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n      }\n    }"
+    }
+  ]
+}

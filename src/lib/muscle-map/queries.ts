@@ -1,3 +1,4 @@
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import type {
   MapBase,
@@ -34,7 +35,7 @@ export async function getBoard(token: string): Promise<MuscleMapBoard> {
     catalog_muscles: MuscleMapBoard["catalog_muscles"];
   }>(
     token,
-    `query MuscleMapBoard {
+    gql`query SupportMuscleMapBoard {
       muscle_map_settings_by_pk(id: true) { ${SETTINGS_FIELDS} }
       muscle_map_muscles { ${MUSCLE_FIELDS} }
       muscle_map_bases(order_by: { created_at: desc }) { ${BASE_FIELDS} }
@@ -55,7 +56,7 @@ export async function getBoard(token: string): Promise<MuscleMapBoard> {
 export async function getSettings(token: string): Promise<MuscleMapSettings> {
   const data = await staffGql<{ muscle_map_settings_by_pk: MuscleMapSettings | null }>(
     token,
-    `query { muscle_map_settings_by_pk(id: true) { ${SETTINGS_FIELDS} } }`,
+    gql`query SupportMuscleMapGetSettings { muscle_map_settings_by_pk(id: true) { ${SETTINGS_FIELDS} } }`,
   );
   if (!data.muscle_map_settings_by_pk) throw new Error("muscle_map.settings has no row");
   return data.muscle_map_settings_by_pk;
@@ -67,7 +68,7 @@ export async function updateSettings(
 ): Promise<void> {
   await staffGql(
     token,
-    `mutation($set: muscle_map_settings_set_input!) {
+    gql`mutation SupportMuscleMapUpdateSettings($set: muscle_map_settings_set_input!) {
       update_muscle_map_settings_by_pk(pk_columns: { id: true }, _set: $set) { updated_at }
     }`,
     { set },
@@ -77,7 +78,7 @@ export async function updateSettings(
 export async function getMapMuscle(token: string, muscleId: string): Promise<MapMuscle | null> {
   const data = await staffGql<{ muscle_map_muscles_by_pk: MapMuscle | null }>(
     token,
-    `query($id: uuid!) { muscle_map_muscles_by_pk(muscle_id: $id) { ${MUSCLE_FIELDS} } }`,
+    gql`query SupportMuscleMapGetMapMuscle($id: uuid!) { muscle_map_muscles_by_pk(muscle_id: $id) { ${MUSCLE_FIELDS} } }`,
     { id: muscleId },
   );
   return data.muscle_map_muscles_by_pk;
@@ -86,7 +87,7 @@ export async function getMapMuscle(token: string, muscleId: string): Promise<Map
 export async function listMapMusclesOfView(token: string, view: MapView): Promise<MapMuscle[]> {
   const data = await staffGql<{ muscle_map_muscles: MapMuscle[] }>(
     token,
-    `query($view: String!) {
+    gql`query SupportMuscleMapListMapMusclesOfView($view: String!) {
       muscle_map_muscles(where: { view: { _eq: $view } }, order_by: { muscle: { code: asc } }) {
         ${MUSCLE_FIELDS}
       }
@@ -99,7 +100,7 @@ export async function listMapMusclesOfView(token: string, view: MapView): Promis
 export async function insertMapMuscle(token: string, muscleId: string, view: MapView) {
   await staffGql(
     token,
-    `mutation($o: muscle_map_muscles_insert_input!) {
+    gql`mutation SupportMuscleMapInsertMapMuscle($o: muscle_map_muscles_insert_input!) {
       insert_muscle_map_muscles_one(object: $o) { muscle_id }
     }`,
     { o: { muscle_id: muscleId, view } },
@@ -109,7 +110,7 @@ export async function insertMapMuscle(token: string, muscleId: string, view: Map
 export async function updateMapMuscleView(token: string, muscleId: string, view: MapView) {
   await staffGql(
     token,
-    `mutation($id: uuid!, $view: String!) {
+    gql`mutation SupportMuscleMapUpdateMapMuscleView($id: uuid!, $view: String!) {
       update_muscle_map_muscles_by_pk(pk_columns: { muscle_id: $id }, _set: { view: $view }) {
         muscle_id
       }
@@ -121,7 +122,7 @@ export async function updateMapMuscleView(token: string, muscleId: string, view:
 export async function deleteMapMuscle(token: string, muscleId: string) {
   await staffGql(
     token,
-    `mutation($id: uuid!) { delete_muscle_map_muscles_by_pk(muscle_id: $id) { muscle_id } }`,
+    gql`mutation SupportMuscleMapDeleteMapMuscle($id: uuid!) { delete_muscle_map_muscles_by_pk(muscle_id: $id) { muscle_id } }`,
     { id: muscleId },
   );
 }
@@ -129,7 +130,7 @@ export async function deleteMapMuscle(token: string, muscleId: string) {
 export async function getBase(token: string, id: string): Promise<MapBase | null> {
   const data = await staffGql<{ muscle_map_bases_by_pk: MapBase | null }>(
     token,
-    `query($id: uuid!) { muscle_map_bases_by_pk(id: $id) { ${BASE_FIELDS} } }`,
+    gql`query SupportMuscleMapGetBase($id: uuid!) { muscle_map_bases_by_pk(id: $id) { ${BASE_FIELDS} } }`,
     { id },
   );
   return data.muscle_map_bases_by_pk;
@@ -138,7 +139,7 @@ export async function getBase(token: string, id: string): Promise<MapBase | null
 export async function getActiveBase(token: string, view: MapView): Promise<MapBase | null> {
   const data = await staffGql<{ muscle_map_bases: MapBase[] }>(
     token,
-    `query($view: String!) {
+    gql`query SupportMuscleMapGetActiveBase($view: String!) {
       muscle_map_bases(where: { view: { _eq: $view }, active: { _eq: true } }, limit: 1) {
         ${BASE_FIELDS}
       }
@@ -168,7 +169,7 @@ export type NewBase = {
 export async function insertActiveBase(token: string, base: NewBase): Promise<MapBase> {
   const data = await staffGql<{ insert_muscle_map_bases_one: MapBase }>(
     token,
-    `mutation($view: String!, $o: muscle_map_bases_insert_input!) {
+    gql`mutation SupportMuscleMapInsertActiveBase($view: String!, $o: muscle_map_bases_insert_input!) {
       update_muscle_map_bases(
         where: { view: { _eq: $view }, active: { _eq: true } }
         _set: { active: false }
@@ -181,20 +182,26 @@ export async function insertActiveBase(token: string, base: NewBase): Promise<Ma
 }
 
 export async function setBaseActive(token: string, base: MapBase, active: boolean) {
+  if (active) {
+    await staffGql(
+      token,
+      gql`mutation SupportMuscleMapActivateBase($id: uuid!, $view: String!) {
+        update_muscle_map_bases(
+          where: { view: { _eq: $view }, active: { _eq: true }, id: { _neq: $id } }
+          _set: { active: false }
+        ) { affected_rows }
+        update_muscle_map_bases_by_pk(pk_columns: { id: $id }, _set: { active: true }) { id }
+      }`,
+      { id: base.id, view: base.view },
+    );
+    return;
+  }
   await staffGql(
     token,
-    active
-      ? `mutation($id: uuid!, $view: String!) {
-          update_muscle_map_bases(
-            where: { view: { _eq: $view }, active: { _eq: true }, id: { _neq: $id } }
-            _set: { active: false }
-          ) { affected_rows }
-          update_muscle_map_bases_by_pk(pk_columns: { id: $id }, _set: { active: true }) { id }
-        }`
-      : `mutation($id: uuid!) {
-          update_muscle_map_bases_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }
-        }`,
-    active ? { id: base.id, view: base.view } : { id: base.id },
+    gql`mutation SupportMuscleMapDeactivateBase($id: uuid!) {
+      update_muscle_map_bases_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }
+    }`,
+    { id: base.id },
   );
 }
 
@@ -202,7 +209,7 @@ export async function setBaseActive(token: string, base: MapBase, active: boolea
 export async function deleteBaseRow(token: string, id: string) {
   const data = await staffGql<{ delete_muscle_map_bases: { affected_rows: number } }>(
     token,
-    `mutation($id: uuid!) {
+    gql`mutation SupportMuscleMapDeleteBaseRow($id: uuid!) {
       delete_muscle_map_bases(where: { id: { _eq: $id }, active: { _eq: false } }) {
         affected_rows
       }
@@ -221,7 +228,7 @@ export async function listMasksOfBase(
 ): Promise<MapMask[]> {
   const data = await staffGql<{ muscle_map_masks: MapMask[] }>(
     token,
-    `query($base: uuid!, $active: [Boolean!]!) {
+    gql`query SupportMuscleMapListMasksOfBase($base: uuid!, $active: [Boolean!]!) {
       muscle_map_masks(where: { base_id: { _eq: $base }, active: { _in: $active } }) {
         ${MASK_FIELDS}
       }
@@ -234,7 +241,7 @@ export async function listMasksOfBase(
 export async function getMask(token: string, id: string): Promise<MapMask | null> {
   const data = await staffGql<{ muscle_map_masks_by_pk: MapMask | null }>(
     token,
-    `query($id: uuid!) { muscle_map_masks_by_pk(id: $id) { ${MASK_FIELDS} } }`,
+    gql`query SupportMuscleMapGetMask($id: uuid!) { muscle_map_masks_by_pk(id: $id) { ${MASK_FIELDS} } }`,
     { id },
   );
   return data.muscle_map_masks_by_pk;
@@ -262,7 +269,7 @@ export type NewMask = {
 export async function insertActiveMask(token: string, mask: NewMask): Promise<MapMask> {
   const data = await staffGql<{ insert_muscle_map_masks_one: MapMask }>(
     token,
-    `mutation($base: uuid!, $muscle: uuid!, $o: muscle_map_masks_insert_input!) {
+    gql`mutation SupportMuscleMapInsertActiveMask($base: uuid!, $muscle: uuid!, $o: muscle_map_masks_insert_input!) {
       update_muscle_map_masks(
         where: { base_id: { _eq: $base }, muscle_id: { _eq: $muscle }, active: { _eq: true } }
         _set: { active: false }
@@ -281,7 +288,7 @@ export async function updateMaskFile(
 ): Promise<MapMask> {
   const data = await staffGql<{ update_muscle_map_masks_by_pk: MapMask }>(
     token,
-    `mutation($id: uuid!, $set: muscle_map_masks_set_input!) {
+    gql`mutation SupportMuscleMapUpdateMaskFile($id: uuid!, $set: muscle_map_masks_set_input!) {
       update_muscle_map_masks_by_pk(pk_columns: { id: $id }, _set: $set) { ${MASK_FIELDS} }
     }`,
     { id, set },
@@ -293,7 +300,7 @@ export async function setMaskActive(token: string, mask: MapMask, active: boolea
   await staffGql(
     token,
     active
-      ? `mutation($id: uuid!, $base: uuid!, $muscle: uuid!) {
+      ? gql`mutation SupportMuscleMapActivateMask($id: uuid!, $base: uuid!, $muscle: uuid!) {
           update_muscle_map_masks(
             where: {
               base_id: { _eq: $base }
@@ -305,7 +312,7 @@ export async function setMaskActive(token: string, mask: MapMask, active: boolea
           ) { affected_rows }
           update_muscle_map_masks_by_pk(pk_columns: { id: $id }, _set: { active: true }) { id }
         }`
-      : `mutation($id: uuid!) {
+      : gql`mutation SupportMuscleMapDeactivateMask($id: uuid!) {
           update_muscle_map_masks_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }
         }`,
     active ? { id: mask.id, base: mask.base_id, muscle: mask.muscle_id } : { id: mask.id },
@@ -315,7 +322,7 @@ export async function setMaskActive(token: string, mask: MapMask, active: boolea
 export async function deleteMaskRow(token: string, id: string) {
   const data = await staffGql<{ delete_muscle_map_masks: { affected_rows: number } }>(
     token,
-    `mutation($id: uuid!) {
+    gql`mutation SupportMuscleMapDeleteMaskRow($id: uuid!) {
       delete_muscle_map_masks(where: { id: { _eq: $id }, active: { _eq: false } }) {
         affected_rows
       }

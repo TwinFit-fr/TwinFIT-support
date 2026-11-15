@@ -1,3 +1,4 @@
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import type {
   SupportManualGrant,
@@ -106,7 +107,7 @@ export async function searchUsers(
     }>;
   }>(
     accessToken,
-    `query SupportUserSearch($pattern: citext!, $patternText: String!, $limit: Int!) {
+    gql`query SupportUserSearch($pattern: citext!, $patternText: String!, $limit: Int!) {
       byEmail: users(
         where: { email: { _ilike: $pattern } }
         order_by: { email: asc }
@@ -170,7 +171,7 @@ export async function searchUsers(
       profiles: typeof emailProfiles;
     }>(
       accessToken,
-      `query SupportSearchProfiles($ids: [uuid!]!) {
+      gql`query SupportSearchProfiles($ids: [uuid!]!) {
         profiles(where: { id: { _in: $ids } }) {
           id
           username
@@ -212,7 +213,7 @@ export async function lookupUserByEmail(
     users: Array<{ id: string }>;
   }>(
     accessToken,
-    `query($email: citext!) {
+    gql`query SupportLookupUserByEmail($email: citext!) {
       users(where: { email: { _eq: $email } }, limit: 1) { id }
     }`,
     { email },
@@ -230,7 +231,7 @@ export async function lookupUserByUsername(
     profiles: Array<{ id: string }>;
   }>(
     accessToken,
-    `query($username: citext!) {
+    gql`query SupportLookupUserByUsername($username: citext!) {
       profiles(where: { username: { _eq: $username } }, limit: 1) { id }
     }`,
     { username },
@@ -265,7 +266,7 @@ export async function lookupUserById(
     customExercises: Array<{ id: string }>;
   }>(
     accessToken,
-    `query SupportUserLookup($id: uuid!) {
+    gql`query SupportUserLookup($id: uuid!) {
       users(where: { id: { _eq: $id } }, limit: 1) {
         id
         email
@@ -427,7 +428,7 @@ export async function fetchUserSection(
         sessions: SupportUserSessionRow[];
       }>(
         accessToken,
-        `query SupportUserSessions($id: uuid!) {
+        gql`query SupportUserSessions($id: uuid!) {
           open_session: workout_sessions(
             where: { user_id: { _eq: $id }, ended_at: { _is_null: true } }
             limit: 1
@@ -473,7 +474,7 @@ export async function fetchUserSection(
         }>;
       }>(
         accessToken,
-        `query SupportUserTemplates($id: uuid!) {
+        gql`query SupportUserTemplates($id: uuid!) {
           templates: workout_templates(
             where: { user_id: { _eq: $id } }
             order_by: { updated_at: desc }
@@ -513,7 +514,7 @@ export async function fetchUserSection(
         }>;
       }>(
         accessToken,
-        `query SupportUserRoutines($id: uuid!) {
+        gql`query SupportUserRoutines($id: uuid!) {
           routines: workout_routines(
             where: { user_id: { _eq: $id } }
             order_by: { updated_at: desc }
@@ -552,7 +553,7 @@ export async function fetchUserSection(
         }>;
       }>(
         accessToken,
-        `query SupportUserCustom($id: uuid!) {
+        gql`query SupportUserCustom($id: uuid!) {
           customExercises: workout_custom_exercises(
             where: { user_id: { _eq: $id } }
             order_by: { updated_at: desc }
@@ -577,7 +578,7 @@ export async function fetchUserSection(
         profiles_by_pk: { effective_subscription_tier: string } | null;
       }>(
         accessToken,
-        `query SupportUserCoachTier($id: uuid!) {
+        gql`query SupportUserCoachTier($id: uuid!) {
           profiles_by_pk(id: $id) { effective_subscription_tier }
         }`,
         { id: userId },
@@ -601,7 +602,7 @@ export async function fetchUserSection(
         quota: Array<Record<keyof SupportUserCoachQuota, unknown>>;
       }>(
         accessToken,
-        `query SupportUserCoach($id: uuid!, $tier: String!) {
+        gql`query SupportUserCoach($id: uuid!, $tier: String!) {
           periods: assistant_usage_periods(
             where: { user_id: { _eq: $id } }
             order_by: { period_start: desc }
