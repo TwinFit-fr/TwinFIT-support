@@ -3,6 +3,30 @@
   "version": "current",
   "operations": [
     {
+      "name": "SupportArticleDelete",
+      "query": "mutation SupportArticleDelete($id: uuid!) {\n  delete_assistant_articles_by_pk(id: $id) { id }\n}"
+    },
+    {
+      "name": "SupportArticleInsert",
+      "query": "mutation SupportArticleInsert($object: assistant_articles_insert_input!) {\n  insert_assistant_articles_one(object: $object) {\n    id slug kind active published_at cover_image_url created_at updated_at is_published\n    localizations(order_by: { locale: asc }) { article_id locale title summary body_md created_at updated_at }\n  }\n}"
+    },
+    {
+      "name": "SupportArticleLocalizationDelete",
+      "query": "mutation SupportArticleLocalizationDelete($article_id: uuid!, $locale: String!) {\n  delete_assistant_article_localizations_by_pk(article_id: $article_id, locale: $locale) { article_id }\n}"
+    },
+    {
+      "name": "SupportArticleLocalizationUpsert",
+      "query": "mutation SupportArticleLocalizationUpsert($object: assistant_article_localizations_insert_input!) {\n  insert_assistant_article_localizations_one(\n    object: $object\n    on_conflict: { constraint: article_localizations_pkey, update_columns: [title, summary, body_md] }\n  ) { article_id locale }\n}"
+    },
+    {
+      "name": "SupportArticleUpdate",
+      "query": "mutation SupportArticleUpdate($id: uuid!, $set: assistant_articles_set_input!) {\n  update_assistant_articles_by_pk(pk_columns: { id: $id }, _set: $set) {\n    id slug kind active published_at cover_image_url created_at updated_at is_published\n    localizations(order_by: { locale: asc }) { article_id locale title summary body_md created_at updated_at }\n  }\n}"
+    },
+    {
+      "name": "SupportArticles",
+      "query": "query SupportArticles {\n  assistant_articles(order_by: [{ published_at: desc_nulls_first }, { created_at: desc }]) {\n    id slug kind active published_at cover_image_url created_at updated_at is_published\n    localizations(order_by: { locale: asc }) { article_id locale title summary body_md created_at updated_at }\n  }\n}"
+    },
+    {
       "name": "SupportCatalogDeactivateExercise",
       "query": "mutation SupportCatalogDeactivateExercise($id: uuid!) {\n      update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }\n    }"
     },
