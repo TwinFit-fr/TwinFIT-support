@@ -99,6 +99,10 @@
       "query": "mutation SupportCoachInsertPromptVersion($object: assistant_prompt_versions_insert_input!) {\n      insert_assistant_prompt_versions_one(object: $object) {\n        id prompt_key locale version body_md is_active created_by created_at\n      }\n    }"
     },
     {
+      "name": "SupportCoachListKnowledgeCandidates",
+      "query": "query SupportCoachListKnowledgeCandidates($status: String!, $limit: Int!) {\n      assistant_knowledge_candidates(\n        where: { status: { _eq: $status } }\n        order_by: [{ year: desc_nulls_last }, { discovered_at: desc }]\n        limit: $limit\n      ) {\n        \n  id pmid doi pmcid title journal year authors publication_types kind topic pubmed_url\n  status source_id reviewed_at discovered_at updated_at\n\n      }\n      pending: assistant_knowledge_candidates_aggregate(where: { status: { _eq: \"pending\" } }) {\n        aggregate { count }\n      }\n      dismissed: assistant_knowledge_candidates_aggregate(where: { status: { _eq: \"dismissed\" } }) {\n        aggregate { count }\n      }\n      accepted: assistant_knowledge_candidates_aggregate(where: { status: { _eq: \"accepted\" } }) {\n        aggregate { count }\n      }\n    }"
+    },
+    {
       "name": "SupportCoachListKnowledgeCards",
       "query": "query SupportCoachListKnowledgeCards {\n      assistant_knowledge_cards(order_by: [{ status: asc }, { title: asc }]) {\n        \n  id source_id topic locale title summary_md key_claims evidence_level\n  population practical_takeaway caveats tags status embedding_model\n  embedded_hash content_hash reviewed_by reviewed_at inserted_at updated_at\n  source { id title }\n\n      }\n    }"
     },
@@ -137,6 +141,10 @@
     {
       "name": "SupportCoachSetCardEmbedding",
       "query": "mutation SupportCoachSetCardEmbedding($id: uuid!, $e: jsonb!, $model: String!) {\n      assistant_set_card_embedding(args: { p_card_id: $id, p_embedding: $e, p_model: $model }) {\n        id embedded_hash content_hash\n      }\n    }"
+    },
+    {
+      "name": "SupportCoachSetKnowledgeCandidateStatus",
+      "query": "mutation SupportCoachSetKnowledgeCandidateStatus($id: uuid!, $status: String!) {\n      update_assistant_knowledge_candidates_by_pk(pk_columns: { id: $id }, _set: { status: $status }) {\n        \n  id pmid doi pmcid title journal year authors publication_types kind topic pubmed_url\n  status source_id reviewed_at discovered_at updated_at\n\n      }\n    }"
     },
     {
       "name": "SupportCoachSetPromptVersionActive",

@@ -17,6 +17,9 @@ export type SuggestionKind = (typeof SUGGESTION_KINDS)[number];
 export const CARD_STATUSES = ["draft", "approved", "retired"] as const;
 export type CardStatus = (typeof CARD_STATUSES)[number];
 
+export const CANDIDATE_STATUSES = ["pending", "dismissed", "accepted"] as const;
+export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
+
 export const ANSWER_MD_MAX = 16000;
 export const SUGGESTION_TEXT_MAX = 120;
 export const PROMPT_BODY_MAX = 4000;
@@ -105,6 +108,29 @@ export type KnowledgeCard = {
   updated_at: string;
   source?: { id: string; title: string } | null;
 };
+
+/** A paper the weekly PubMed discovery found (`assistant.knowledge_candidates`): metadata and link only. */
+export type KnowledgeCandidate = {
+  id: string;
+  pmid: string;
+  doi: string | null;
+  pmcid: string | null;
+  title: string;
+  journal: string | null;
+  year: number | null;
+  authors: string | null;
+  publication_types: string[] | null;
+  kind: string;
+  topic: string;
+  pubmed_url: string | null;
+  status: CandidateStatus;
+  source_id: string | null;
+  reviewed_at: string | null;
+  discovered_at: string;
+  updated_at: string;
+};
+
+export type CandidateCounts = Record<CandidateStatus, number>;
 
 export type TurnToolCall = {
   id: string;

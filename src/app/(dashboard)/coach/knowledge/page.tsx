@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import { KnowledgeCandidates } from "@/components/coach/knowledge-candidates";
 import { Badge, Button, Card, Input } from "@/components/ui/primitives";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import {
@@ -25,8 +26,9 @@ export default function CoachKnowledgePage() {
   const { data, error, isLoading, mutate } = useStaffSWR<Response>("/api/coach/knowledge");
   const sources = useMemo(() => data?.sources ?? [], [data?.sources]);
   const cards = useMemo(() => data?.cards ?? [], [data?.cards]);
-  const [tab, setTab] = useState<"cards" | "sources">("cards");
+  const [tab, setTab] = useState<"cards" | "sources" | "candidates">("cards");
   const [statusFilter, setStatusFilter] = useState<"all" | string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -60,11 +62,14 @@ export default function CoachKnowledgePage() {
 
   const filteredCards = useMemo(
     () =>
-      statusFilter === "all"
-        ? cards
-        : cards.filter((card) => card.status === statusFilter),
-    [cards, statusFilter],
+      cards.filter(
+        (card) =>
+          (statusFilter === "all" || card.status === statusFilter) &&
+          (sourceFilter == null || card.source_id === sourceFilter),
+      ),
+    [cards, statusFilter, sourceFilter],
   );
+  const sourceFilterTitle = sources.find((source) => source.id === sourceFilter)?.title ?? null;
 
   const selectedCard = cards.find((card) => card.id === selectedCardId) ?? null;
 
@@ -249,11 +254,28 @@ export default function CoachKnowledgePage() {
         >
           Sources
         </Button>
+        <Button
+          type="button"
+          variant={tab === "candidates" ? "default" : "secondary"}
+          onClick={() => setTab("candidates")}
+        >
+          Candidates
+        </Button>
       </div>
 
       {isLoading && <p className="text-sm text-zinc-500">Loading…</p>}
 
-      {tab === "sources" ? (
+      {tab === "candidates" ? (
+        <KnowledgeCandidates
+          onCardsChanged={() => void mutate()}
+          onViewCards={(sourceId) => {
+            setSourceFilter(sourceId);
+            setStatusFilter("all");
+            setSelectedCardId(null);
+            setTab("cards");
+          }}
+        />
+      ) : tab === "sources" ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
             <form className="space-y-2" onSubmit={saveSource}>
@@ -356,6 +378,18 @@ export default function CoachKnowledgePage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
           <Card className="space-y-2 self-start">
+            {sourceFilter && (
+              <div className="flex items-start justify-between gap-2 rounded-md bg-sky-50 p-2 text-xs text-sky-900">
+                <span>Cards of: {sourceFilterTitle ?? "this source"}</span>
+                <button
+                  type="button"
+                  className="font-medium underline"
+                  onClick={() => setSourceFilter(null)}
+                >
+                  Show all
+                </button>
+              </div>
+            )}
             <div className="flex flex-wrap gap-1">
               {(["all", ...CARD_STATUSES] as const).map((status) => (
                 <Button
