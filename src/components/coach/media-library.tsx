@@ -8,7 +8,10 @@ import { useConfirm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { cn } from "@/lib/utils";
+import { articlesReferencing } from "@/lib/articles/draft";
+import type { Article } from "@/lib/articles/types";
 import {
+  ROOT_FOLDERS,
   buildFolderTree,
   displayName,
   filesInFolder,
@@ -32,8 +35,11 @@ import type { Suggestion } from "@/lib/coach/types";
 export type LibraryPick = { url: string; alt: string; name: string };
 
 type Props = {
-  /** Every suggestion, to show which answers use each image and to block deleting those. */
-  suggestions: readonly Suggestion[];
+  /**
+   * Every suggestion, to show which answers use each image and to block deleting those. Omit it
+   * to load them here (News articles also count as users of an image either way).
+   */
+  suggestions?: readonly Suggestion[];
   /** The folder opened first and offered even when empty: the suggestion's own. */
   defaultFolder: string;
   /** What picking does: insert a new image chunk, or replace the selected one's picture. */
@@ -56,13 +62,19 @@ function readFileAsBase64(file: File): Promise<string> {
 
 const ALL = "*";
 
-export function MediaLibraryDialog({ suggestions, defaultFolder, mode, onPick, onClose }: Props) {
+export function MediaLibraryDialog({ suggestions: givenSuggestions, defaultFolder, mode, onPick, onClose }: Props) {
   const titleId = useId();
   const staffFetch = useStaffFetch();
   const toast = useToast();
   const confirm = useConfirm();
   const { data, error, isLoading, mutate } = useStaffSWR<{ files: MediaFile[] }>("/api/coach/media");
   const files = useMemo(() => data?.files ?? [], [data]);
+  const loadedSuggestions = useStaffSWR<{ suggestions: Suggestion[] }>(givenSuggestions ? null : "/api/coach/suggestions");
+  const loadedSuggestionRows = loadedSuggestions.data?.suggestions;
+  const suggestions = useMemo(() => givenSuggestions ?? loadedSuggestionRows ?? [], [givenSuggestions, loadedSuggestionRows]);
+  const loadedArticles = useStaffSWR<{ articles: Article[] }>("/api/articles");
+  const loadedArticleRows = loadedArticles.data?.articles;
+  const articles = useMemo(() => loadedArticleRows ?? [], [loadedArticleRows]);
   const [folder, setFolder] = useState(defaultFolder);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -70,14 +82,23 @@ export function MediaLibraryDialog({ suggestions, defaultFolder, mode, onPick, o
   const [newFolder, setNewFolder] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const tree = useMemo(() => buildFolderTree(files, ["lessons", "prompts", "shared", defaultFolder]), [files, defaultFolder]);
+  const tree = useMemo(() => buildFolderTree(files, [...ROOT_FOLDERS, defaultFolder]), [files, defaultFolder]);
   const shown = useMemo(() => {
     const inFolder = folder === ALL ? files : filesInFolder(files, folder);
     const q = query.trim().toLowerCase();
     return q ? inFolder.filter((f) => f.name.toLowerCase().includes(q)) : inFolder;
   }, [files, folder, query]);
   const selected = files.find((f) => f.id === selectedId) ?? null;
-  const usage = useMemo(() => new Map(files.map((f) => [f.id, slugsReferencing(suggestions, f.url)])), [files, suggestions]);
+  const usage = useMemo(
+    () =>
+      new Map(
+        files.map((f) => [
+          f.id,
+          [...slugsReferencing(suggestions, f.url), ...articlesReferencing(articles, f.url).map((slug) => `article ${slug}`)],
+        ]),
+      ),
+    [files, suggestions, articles],
+  );
   const uploadTarget = folder === ALL ? defaultFolder : folder;
 
   async function upload(picked: File[]) {
