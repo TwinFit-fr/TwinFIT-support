@@ -1,6 +1,7 @@
 import { HasuraStorageClient } from "@nhost/nhost-js";
 import { resolveSupportHasuraRole } from "@/lib/nhost/jwt";
 import { publicFileUrl } from "@/lib/images/storage";
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import type { MediaFile } from "./media";
 import { COACH_MEDIA_BUCKET, COACH_MEDIA_MAX_BYTES } from "./types";
@@ -58,7 +59,7 @@ export async function listCoachMediaFiles(token: string, prefix?: string): Promi
   if (prefix) where.name = { _like: `${prefix.replace(/[%_\\]/g, (c) => `\\${c}`)}/%` };
   const data = await staffGql<{ files: FileRow[] }>(
     token,
-    `query CoachMedia($where: files_bool_exp!) {
+    gql`query SupportCoachMedia($where: files_bool_exp!) {
       files(where: $where, order_by: { name: asc }, limit: 5000) { ${FILE_FIELDS} }
     }`,
     { where },
@@ -70,7 +71,7 @@ export async function listCoachMediaFiles(token: string, prefix?: string): Promi
 export async function getCoachMediaFile(token: string, fileId: string): Promise<MediaFile | null> {
   const data = await staffGql<{ file: (FileRow & { bucketId: string }) | null }>(
     token,
-    `query CoachMediaFile($id: uuid!) {
+    gql`query SupportCoachMediaFile($id: uuid!) {
       file(id: $id) { ${FILE_FIELDS} bucketId }
     }`,
     { id: fileId },
@@ -85,7 +86,7 @@ export async function renameCoachMediaFile(token: string, fileId: string, name: 
   if (!current) throw new Error("File not found in coach-media");
   const data = await staffGql<{ updateFile: FileRow | null }>(
     token,
-    `mutation RenameCoachMedia($id: uuid!, $name: String!) {
+    gql`mutation SupportRenameCoachMedia($id: uuid!, $name: String!) {
       updateFile(pk_columns: { id: $id }, _set: { name: $name }) { ${FILE_FIELDS} }
     }`,
     { id: fileId, name },

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import { getUserIdFromToken } from "./queries";
 import { downloadImageFile } from "./storage";
@@ -89,7 +90,7 @@ export async function listStyleReferences(
 ): Promise<StyleReference[]> {
   const data = await staffGql<{ images_style_references: RawReference[] }>(
     token,
-    `query($styleId: uuid!) {
+    gql`query SupportImageReferencesListStyleReferences($styleId: uuid!) {
       images_style_references(
         where: { style_id: { _eq: $styleId } }
         order_by: [{ name: asc }]
@@ -108,7 +109,7 @@ export async function listLinkedReferences(
 ): Promise<StyleReference[]> {
   const data = await staffGql<{ images_style_references: RawReference[] }>(
     token,
-    `query($where: images_style_references_bool_exp!) {
+    gql`query SupportImageReferencesListLinkedReferences($where: images_style_references_bool_exp!) {
       images_style_references(where: $where, order_by: [{ name: asc }]) { ${REFERENCE_FIELDS} }
     }`,
     { where: { style_id: { _eq: styleId }, links: linkWhere(target) } },
@@ -122,7 +123,7 @@ export async function getStyleReference(
 ): Promise<StyleReference | null> {
   const data = await staffGql<{ images_style_references_by_pk: RawReference | null }>(
     token,
-    `query($id: uuid!) { images_style_references_by_pk(id: $id) { ${REFERENCE_FIELDS} } }`,
+    gql`query SupportImageReferencesGetStyleReference($id: uuid!) { images_style_references_by_pk(id: $id) { ${REFERENCE_FIELDS} } }`,
     { id },
   );
   return data.images_style_references_by_pk
@@ -144,7 +145,7 @@ export async function createStyleReference(
 ): Promise<StyleReference> {
   const data = await staffGql<{ insert_images_style_references_one: RawReference }>(
     token,
-    `mutation($object: images_style_references_insert_input!) {
+    gql`mutation SupportImageReferencesCreateStyleReference($object: images_style_references_insert_input!) {
       insert_images_style_references_one(object: $object) { ${REFERENCE_FIELDS} }
     }`,
     {
@@ -170,7 +171,7 @@ export async function updateStyleReference(
   const { links, ...fields } = input;
   await staffGql(
     token,
-    `mutation(
+    gql`mutation SupportImageReferencesUpdateStyleReference(
       $id: uuid!
       $set: images_style_references_set_input!
       $replaceLinks: Boolean!
@@ -201,7 +202,7 @@ export async function deleteStyleReference(token: string, id: string): Promise<s
     delete_images_style_references_by_pk: { file_id: string | null } | null;
   }>(
     token,
-    `mutation($id: uuid!) { delete_images_style_references_by_pk(id: $id) { file_id } }`,
+    gql`mutation SupportImageReferencesDeleteStyleReference($id: uuid!) { delete_images_style_references_by_pk(id: $id) { file_id } }`,
     { id },
   );
   return data.delete_images_style_references_by_pk?.file_id ?? null;
@@ -222,7 +223,7 @@ export async function resolveRunReferences(
     if (!referenceIds.length) return [];
     const data = await staffGql<{ images_style_references: RawReference[] }>(
       token,
-      `query($styleId: uuid!, $ids: [uuid!]!) {
+      gql`query SupportImageReferencesResolveRunReferences($styleId: uuid!, $ids: [uuid!]!) {
         images_style_references(where: { style_id: { _eq: $styleId }, id: { _in: $ids } }) {
           ${REFERENCE_FIELDS}
         }

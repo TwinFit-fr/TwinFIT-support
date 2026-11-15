@@ -1,3 +1,4 @@
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 
 /**
@@ -25,7 +26,7 @@ export type PilotData = { exercises: PilotExercise[] };
 export async function getPilotData(token: string): Promise<PilotData> {
   const data = await staffGql<{ catalog_exercises: PilotExercise[] }>(
     token,
-    `query MuscleMapPilot {
+    gql`query SupportMuscleMapPilot {
       catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {
         exo_id display_name muscles_inherited primary_muscle_group_id
         primary_muscle_group { code }

@@ -1,3 +1,4 @@
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import { resolveExerciseColumns } from "./lookups";
 import {
@@ -20,7 +21,7 @@ type ExerciseRef = {
 async function fetchByExoId(token: string, exoId: number): Promise<ExerciseRef | null> {
   const data = await staffGql<{ catalog_exercises: ExerciseRef[] }>(
     token,
-    `query($exo_id: Int!) {
+    gql`query SupportCatalogFetchByExoId($exo_id: Int!) {
       catalog_exercises(where: { exo_id: { _eq: $exo_id } }, limit: 1) {
         id exo_id taxonomy_status active display_name
       }
@@ -49,7 +50,7 @@ export async function nextExoId(token: string): Promise<number> {
   // Include inactive rows so soft-held ids are not reused.
   const data = await staffGql<{ catalog_exercises: { exo_id: number }[] }>(
     token,
-    `{ catalog_exercises(order_by: { exo_id: asc }) { exo_id } }`,
+    gql`query SupportCatalogNextExoId { catalog_exercises(order_by: { exo_id: asc }) { exo_id } }`,
   );
   return firstFreeExoId(data.catalog_exercises.map((r) => Number(r.exo_id)));
 }
@@ -57,7 +58,7 @@ export async function nextExoId(token: string): Promise<number> {
 export function listLibrary(token: string) {
   return staffGql(
     token,
-    `query XcatLibraryAdmin {
+    gql`query SupportXcatLibraryAdmin {
       catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {
         id
         exo_id
@@ -134,7 +135,7 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
   const displayName = requireDisplayName(payload);
   const dup = await staffGql<{ catalog_exercises: { exo_id: number; display_name: string }[] }>(
     token,
-    `query($name: String!) {
+    gql`query SupportCatalogFindExerciseByName($name: String!) {
       catalog_exercises(where: { active: { _eq: true }, display_name: { _ilike: $name } }, limit: 5) {
         exo_id display_name
       }
@@ -163,17 +164,17 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
 
   const data = await staffGql<{ insert_catalog_exercises_one: unknown }>(
     token,
-    `mutation($o: catalog_exercises_insert_input!${inherit ? ", $exo_id: Int!" : ""}) {
-      insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }
-      ${
-        inherit
-          ? `update_catalog_exercises(
-              where: { exo_id: { _eq: $exo_id } }
-              _set: { muscles_inherited: true }
-            ) { affected_rows }`
-          : ""
-      }
-    }`,
+    inherit
+      ? gql`mutation SupportCatalogInsertExerciseInherited($o: catalog_exercises_insert_input!, $exo_id: Int!) {
+          insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }
+          update_catalog_exercises(
+            where: { exo_id: { _eq: $exo_id } }
+            _set: { muscles_inherited: true }
+          ) { affected_rows }
+        }`
+      : gql`mutation SupportCatalogInsertExercise($o: catalog_exercises_insert_input!) {
+          insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }
+        }`,
     {
       ...(inherit ? { exo_id: exoId } : {}),
       o: {
@@ -243,24 +244,57 @@ export async function updateExercise(token: string, payload: ExercisePayload) {
     update_catalog_exercises_by_pk: { id: string; exo_id: number; taxonomy_status: string };
   }>(
     token,
-    `mutation(
-      $id: uuid!
-      $set: catalog_exercises_set_input!
-      $localizations: [catalog_exercise_localizations_insert_input!]!
-      ${replaceSecondary ? "$secondary: [catalog_exercise_secondary_muscles_insert_input!]!" : ""}
-    ) {
-      update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: $set) { id exo_id taxonomy_status }
-      ${replaceSecondary ? "delete_catalog_exercise_secondary_muscles(where: { exercise_id: { _eq: $id } }) { affected_rows }" : ""}
-      ${replaceSecondary ? "insert_catalog_exercise_secondary_muscles(objects: $secondary) { affected_rows }" : ""}
-      insert_catalog_exercise_localizations(
-        objects: $localizations
-        on_conflict: {
-          constraint: exercise_localizations_exercise_id_locale_key
-          update_columns: [display_name, description]
-        }
-      ) { affected_rows }
-      ${inheritAtEnd ? "inherit: update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { muscles_inherited: true }) { id }" : ""}
-    }`,
+    inheritAtEnd
+      ? gql`mutation SupportCatalogUpdateExerciseInheritAtEnd(
+          $id: uuid!
+          $set: catalog_exercises_set_input!
+          $localizations: [catalog_exercise_localizations_insert_input!]!
+          $secondary: [catalog_exercise_secondary_muscles_insert_input!]!
+        ) {
+          update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: $set) { id exo_id taxonomy_status }
+          delete_catalog_exercise_secondary_muscles(where: { exercise_id: { _eq: $id } }) { affected_rows }
+          insert_catalog_exercise_secondary_muscles(objects: $secondary) { affected_rows }
+          insert_catalog_exercise_localizations(
+            objects: $localizations
+            on_conflict: {
+              constraint: exercise_localizations_exercise_id_locale_key
+              update_columns: [display_name, description]
+            }
+          ) { affected_rows }
+          inherit: update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { muscles_inherited: true }) { id }
+        }`
+      : replaceSecondary
+        ? gql`mutation SupportCatalogUpdateExerciseSecondary(
+            $id: uuid!
+            $set: catalog_exercises_set_input!
+            $localizations: [catalog_exercise_localizations_insert_input!]!
+            $secondary: [catalog_exercise_secondary_muscles_insert_input!]!
+          ) {
+            update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: $set) { id exo_id taxonomy_status }
+            delete_catalog_exercise_secondary_muscles(where: { exercise_id: { _eq: $id } }) { affected_rows }
+            insert_catalog_exercise_secondary_muscles(objects: $secondary) { affected_rows }
+            insert_catalog_exercise_localizations(
+              objects: $localizations
+              on_conflict: {
+                constraint: exercise_localizations_exercise_id_locale_key
+                update_columns: [display_name, description]
+              }
+            ) { affected_rows }
+          }`
+        : gql`mutation SupportCatalogUpdateExercise(
+            $id: uuid!
+            $set: catalog_exercises_set_input!
+            $localizations: [catalog_exercise_localizations_insert_input!]!
+          ) {
+            update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: $set) { id exo_id taxonomy_status }
+            insert_catalog_exercise_localizations(
+              objects: $localizations
+              on_conflict: {
+                constraint: exercise_localizations_exercise_id_locale_key
+                update_columns: [display_name, description]
+              }
+            ) { affected_rows }
+          }`,
     {
       id: current.id,
       set,
@@ -289,7 +323,7 @@ export async function deactivateExercise(token: string, payload: { exo_id?: unkn
   }
   await staffGql(
     token,
-    `mutation($id: uuid!) {
+    gql`mutation SupportCatalogDeactivateExercise($id: uuid!) {
       update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }
     }`,
     { id: current.id },

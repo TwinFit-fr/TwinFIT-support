@@ -1,4 +1,14 @@
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
+import {
+  LOCALIZATION_SET_ENGLISH,
+  LOCALIZATIONS_SET,
+  LOOKUP_FIND,
+  LOOKUP_INSERT,
+  LOOKUP_READ,
+  LOOKUP_UPDATE,
+  TAXONOMY_LOCALIZATION_FK,
+} from "./lookup-operations";
 import { CATALOG_LOCALES, type CatalogLocale } from "./locales";
 import {
   defaultLookupName,
@@ -33,46 +43,6 @@ function assertLookupTable(table: unknown): LookupTable {
   return table as LookupTable;
 }
 
-const TAXONOMY_LOCALIZATIONS: Partial<
-  Record<LookupTable, { table: string; fk: string; constraint: string }>
-> = {
-  catalog_body_regions: {
-    table: "catalog_body_region_localizations",
-    fk: "body_region_id",
-    constraint: "body_region_localizations_body_region_id_locale_key",
-  },
-  catalog_equipment: {
-    table: "catalog_equipment_localizations",
-    fk: "equipment_id",
-    constraint: "equipment_localizations_equipment_id_locale_key",
-  },
-  catalog_support_equipment: {
-    table: "catalog_support_equipment_localizations",
-    fk: "support_equipment_id",
-    constraint: "support_equipment_localizations_support_equipment_id_locale_key",
-  },
-  catalog_movement_types: {
-    table: "catalog_movement_type_localizations",
-    fk: "movement_type_id",
-    constraint: "movement_type_localizations_movement_type_id_locale_key",
-  },
-  catalog_muscle_groups: {
-    table: "catalog_muscle_group_localizations",
-    fk: "muscle_group_id",
-    constraint: "muscle_group_localizations_muscle_group_id_locale_key",
-  },
-  catalog_muscles: {
-    table: "catalog_muscle_localizations",
-    fk: "muscle_id",
-    constraint: "muscle_localizations_muscle_id_locale_key",
-  },
-  catalog_load_modalities: {
-    table: "catalog_load_modality_localizations",
-    fk: "load_modality_id",
-    constraint: "load_modality_localizations_load_modality_id_locale_key",
-  },
-};
-
 /**
  * Rows with required fields beyond code and name: a group belongs to a region. They are created
  * only from Taxonomy (`upsertLookup`), never implied by a code. Body regions are also explicit
@@ -96,7 +66,7 @@ export async function ensureLookup(
   if (!c) throw new Error(`Empty code for ${table}`);
   const existing = await staffGql<Record<string, LookupRef[]>>(
     token,
-    `query($code: String!) { ${table}(where: { code: { _eq: $code } }, limit: 1) { id code } }`,
+    LOOKUP_FIND[table],
     { code: c },
   );
   const hit = existing[table]?.[0];
@@ -107,7 +77,7 @@ export async function ensureLookup(
   const label = String(name || "").trim() || defaultLookupName(c);
   const inserted = await staffGql<Record<string, LookupRef>>(
     token,
-    `mutation($o: ${table}_insert_input!) { insert_${table}_one(object: $o) { id code } }`,
+    LOOKUP_INSERT[table],
     { o: { code: c, name: label, active: true, ...columns } },
   );
   return inserted[`insert_${table}_one`];
@@ -119,7 +89,7 @@ async function resolveBodyRegionId(token: string, raw: unknown): Promise<string>
   if (!code) throw new Error("A muscle group needs a body region");
   const data = await staffGql<{ catalog_body_regions: LookupRef[] }>(
     token,
-    `query($code: String!) {
+    gql`query SupportTaxonomyBodyRegionByCode($code: String!) {
       catalog_body_regions(where: { code: { _eq: $code } }, limit: 1) { id code }
     }`,
     { code },
@@ -135,7 +105,7 @@ async function resolveSupportEquipmentId(token: string, raw: unknown): Promise<s
   if (!code) return null;
   const data = await staffGql<{ catalog_support_equipment: LookupRef[] }>(
     token,
-    `query($code: String!) {
+    gql`query SupportTaxonomySupportEquipmentByCode($code: String!) {
       catalog_support_equipment(where: { code: { _eq: $code } }, limit: 1) { id code }
     }`,
     { code },
@@ -262,46 +232,33 @@ async function upsertTaxonomyLocalizations(
   parentId: string,
   labels: Partial<Record<CatalogLocale, unknown>>,
 ) {
-  const cfg = TAXONOMY_LOCALIZATIONS[table];
-  if (!cfg) return;
+  const fk = TAXONOMY_LOCALIZATION_FK[table];
+  const document = LOCALIZATIONS_SET[table];
+  if (!fk || !document) return;
   const objects = CATALOG_LOCALES.flatMap((locale) => {
     const display_name = String(labels[locale] || "").trim();
     if (!display_name) {
       if (locale === "en") throw new Error("English label is required");
       return [];
     }
-    return [{ [cfg.fk]: parentId, locale, display_name }];
+    return [{ [fk]: parentId, locale, display_name }];
   });
   const cleared = CATALOG_LOCALES.filter((locale) => !objects.some((o) => o.locale === locale));
   await staffGql(
     token,
-    `mutation($objects: [${cfg.table}_insert_input!]!, $id: uuid!, $cleared: [String!]!) {
-      insert_${cfg.table}(
-        objects: $objects
-        on_conflict: { constraint: ${cfg.constraint}, update_columns: [display_name] }
-      ) { affected_rows }
-      delete_${cfg.table}(
-        where: { ${cfg.fk}: { _eq: $id }, locale: { _in: $cleared } }
-      ) { affected_rows }
-    }`,
+    document,
     { objects, id: parentId, cleared },
   );
 }
 
 /** Keeps the English label equal to a renamed row's name; other locales are left as they are. */
 async function setEnglishLabel(token: string, table: LookupTable, parentId: string, name: string) {
-  const cfg = TAXONOMY_LOCALIZATIONS[table];
-  if (!cfg || !name) return;
-  await staffGql(
-    token,
-    `mutation($object: ${cfg.table}_insert_input!) {
-      insert_${cfg.table}_one(
-        object: $object
-        on_conflict: { constraint: ${cfg.constraint}, update_columns: [display_name] }
-      ) { locale }
-    }`,
-    { object: { [cfg.fk]: parentId, locale: "en", display_name: name } },
-  );
+  const fk = TAXONOMY_LOCALIZATION_FK[table];
+  const document = LOCALIZATION_SET_ENGLISH[table];
+  if (!fk || !document || !name) return;
+  await staffGql(token, document, {
+    object: { [fk]: parentId, locale: "en", display_name: name },
+  });
 }
 
 /** A muscle has one target home group: linking as target moves it out of any other group. */
@@ -312,21 +269,24 @@ async function linkMuscleToGroup(
   roleRaw: unknown,
 ) {
   const role = roleRaw === "secondary" ? "secondary" : "target";
-  const moveTarget =
-    role === "target"
-      ? `delete_catalog_muscle_group_muscles(
-          where: { muscle_id: { _eq: $m }, role: { _eq: "target" }, muscle_group_id: { _neq: $mg } }
-        ) { affected_rows }`
-      : "";
   await staffGql(
     token,
-    `mutation($mg: uuid!, $m: uuid!, $role: String!) {
-      ${moveTarget}
-      insert_catalog_muscle_group_muscles(
-        objects: [{ muscle_group_id: $mg, muscle_id: $m, role: $role }]
-        on_conflict: { constraint: muscle_group_muscles_pkey, update_columns: [role] }
-      ) { affected_rows }
-    }`,
+    role === "target"
+      ? gql`mutation SupportTaxonomyMoveAndLinkMuscle($mg: uuid!, $m: uuid!, $role: String!) {
+          delete_catalog_muscle_group_muscles(
+            where: { muscle_id: { _eq: $m }, role: { _eq: "target" }, muscle_group_id: { _neq: $mg } }
+          ) { affected_rows }
+          insert_catalog_muscle_group_muscles(
+            objects: [{ muscle_group_id: $mg, muscle_id: $m, role: $role }]
+            on_conflict: { constraint: muscle_group_muscles_pkey, update_columns: [role] }
+          ) { affected_rows }
+        }`
+      : gql`mutation SupportTaxonomyLinkMuscle($mg: uuid!, $m: uuid!, $role: String!) {
+          insert_catalog_muscle_group_muscles(
+            objects: [{ muscle_group_id: $mg, muscle_id: $m, role: $role }]
+            on_conflict: { constraint: muscle_group_muscles_pkey, update_columns: [role] }
+          ) { affected_rows }
+        }`,
     { mg: groupId, m: muscleId, role },
   );
 }
@@ -367,7 +327,7 @@ export async function upsertLookup(token: string, payload: UpsertLookupPayload) 
     payload.name,
     await explicitColumns(token, table, payload),
   );
-  if (TAXONOMY_LOCALIZATIONS[table]) {
+  if (TAXONOMY_LOCALIZATION_FK[table]) {
     await upsertTaxonomyLocalizations(token, table, row.id, {
       en: String(payload.name || "").trim() || defaultLookupName(row.code),
       es: payload.labels?.es || "",
@@ -406,7 +366,7 @@ export async function updateLookup(token: string, payload: UpdateLookupPayload) 
   const table = assertLookupTable(payload.table);
   const id = String(payload.id || "");
   if (!id) throw new Error("id required");
-  const labels = TAXONOMY_LOCALIZATIONS[table] && payload.labels ? payload.labels : null;
+  const labels = TAXONOMY_LOCALIZATION_FK[table] && payload.labels ? payload.labels : null;
   const set: Record<string, unknown> = {};
   if (payload.name != null) set.name = String(payload.name).trim();
   if (labels) set.name = String(labels.en || payload.name || "").trim();
@@ -421,25 +381,9 @@ export async function updateLookup(token: string, payload: UpdateLookupPayload) 
   }
   if (!Object.keys(set).length && !labels) throw new Error("nothing to update");
 
-  const columns = [
-    "id code name active sort_order",
-    DESCRIBED_LOOKUP_TABLES.has(table) && "description",
-    table === "catalog_muscle_groups" && "body_region_id",
-  ];
-  const fields = `{ ${columns.filter(Boolean).join(" ")} }`;
   const data = Object.keys(set).length
-    ? await staffGql<Record<string, unknown>>(
-        token,
-        `mutation($id: uuid!, $set: ${table}_set_input!) {
-          row: update_${table}_by_pk(pk_columns: { id: $id }, _set: $set) ${fields}
-        }`,
-        { id, set },
-      )
-    : await staffGql<Record<string, unknown>>(
-        token,
-        `query($id: uuid!) { row: ${table}_by_pk(id: $id) ${fields} }`,
-        { id },
-      );
+    ? await staffGql<Record<string, unknown>>(token, LOOKUP_UPDATE[table], { id, set })
+    : await staffGql<Record<string, unknown>>(token, LOOKUP_READ[table], { id });
   if (labels) await upsertTaxonomyLocalizations(token, table, id, labels);
   // Taxonomy edits the name only; translations are edited on Localizations.
   else if (typeof set.name === "string") await setEnglishLabel(token, table, id, set.name);
@@ -469,7 +413,7 @@ export async function manageRelation(token: string, payload: RelationPayload) {
     }
     await staffGql(
       token,
-      `mutation($mg: uuid!, $m: uuid!) {
+      gql`mutation SupportTaxonomyUnlinkMuscle($mg: uuid!, $m: uuid!) {
         delete_catalog_muscle_group_muscles(
           where: { muscle_group_id: { _eq: $mg }, muscle_id: { _eq: $m } }
         ) { affected_rows }
@@ -483,13 +427,13 @@ export async function manageRelation(token: string, payload: RelationPayload) {
   await staffGql(
     token,
     action === "link"
-      ? `mutation($mg: uuid!, $mt: uuid!) {
+      ? gql`mutation SupportTaxonomyLinkMovement($mg: uuid!, $mt: uuid!) {
           insert_catalog_muscle_group_movement_types(
             objects: [{ muscle_group_id: $mg, movement_type_id: $mt }]
             on_conflict: { constraint: muscle_group_movement_types_pkey, update_columns: [] }
           ) { affected_rows }
         }`
-      : `mutation($mg: uuid!, $mt: uuid!) {
+      : gql`mutation SupportTaxonomyUnlinkMovement($mg: uuid!, $mt: uuid!) {
           delete_catalog_muscle_group_movement_types(
             where: { muscle_group_id: { _eq: $mg }, movement_type_id: { _eq: $mt } }
           ) { affected_rows }
@@ -511,7 +455,7 @@ async function requirePair(
   if (!groupCode || !movementCode) throw new Error("muscle_group_code and movement_type_code required");
   const found = await staffGql<{ catalog_muscle_group_movement_types: PairKey[] }>(
     token,
-    `query($g: String!, $m: String!) {
+    gql`query SupportTaxonomyFindPair($g: String!, $m: String!) {
       catalog_muscle_group_movement_types(
         where: { muscle_group: { code: { _eq: $g } }, movement_type: { code: { _eq: $m } } }
         limit: 1
@@ -544,7 +488,7 @@ export async function setGroupMovementLabels(token: string, payload: GroupMoveme
   const cleared = CATALOG_LOCALES.filter((locale) => !filled.some((row) => row.locale === locale));
   await staffGql(
     token,
-    `mutation(
+    gql`mutation SupportTaxonomySetGroupMovementLabels(
       $g: uuid!
       $m: uuid!
       $objects: [catalog_muscle_group_movement_type_localizations_insert_input!]!
@@ -594,7 +538,7 @@ export async function setPairMuscles(token: string, payload: PairMusclesPayload)
   const codes = [targetCode, ...secondaryCodes];
   const found = await staffGql<{ catalog_muscles: LookupRef[] }>(
     token,
-    `query($codes: [String!]!) { catalog_muscles(where: { code: { _in: $codes } }) { id code } }`,
+    gql`query SupportTaxonomyMusclesByCodes($codes: [String!]!) { catalog_muscles(where: { code: { _in: $codes } }) { id code } }`,
     { codes },
   );
   const idOf = new Map(found.catalog_muscles.map((row) => [row.code, row.id]));
@@ -604,7 +548,7 @@ export async function setPairMuscles(token: string, payload: PairMusclesPayload)
 
   await staffGql(
     token,
-    `mutation(
+    gql`mutation SupportTaxonomySetPairMuscles(
       $g: uuid!
       $m: uuid!
       $target: uuid!
@@ -660,7 +604,7 @@ export async function setPairStrengthPattern(token: string, payload: PairStrengt
   if (pattern.code) {
     const found = await staffGql<{ catalog_strength_patterns: LookupRef[] }>(
       token,
-      `query($c: String!) { catalog_strength_patterns(where: { code: { _eq: $c } }, limit: 1) { id code } }`,
+      gql`query SupportTaxonomyStrengthPatternByCode($c: String!) { catalog_strength_patterns(where: { code: { _eq: $c } }, limit: 1) { id code } }`,
       { c: pattern.code },
     );
     const row = found.catalog_strength_patterns[0];
@@ -669,7 +613,7 @@ export async function setPairStrengthPattern(token: string, payload: PairStrengt
   }
   await staffGql(
     token,
-    `mutation($g: uuid!, $m: uuid!, $override: Boolean!, $pattern: uuid) {
+    gql`mutation SupportTaxonomySetPairStrengthPattern($g: uuid!, $m: uuid!, $override: Boolean!, $pattern: uuid) {
       update_catalog_muscle_group_movement_types_by_pk(
         pk_columns: { muscle_group_id: $g, movement_type_id: $m }
         _set: { strength_pattern_override: $override, strength_pattern_id: $pattern }
@@ -682,7 +626,7 @@ export async function setPairStrengthPattern(token: string, payload: PairStrengt
 export function fetchTaxonomy(token: string) {
   return staffGql(
     token,
-    `query TaxonomyAdmin {
+    gql`query SupportTaxonomyAdmin {
       catalog_body_regions(order_by: { sort_order: asc, code: asc }) {
         id code name description sort_order active
         localizations(order_by: { locale: asc }) { locale display_name }

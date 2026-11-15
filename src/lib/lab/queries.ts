@@ -1,3 +1,4 @@
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import { resolveSupportHasuraRole } from "@/lib/nhost/jwt";
 
@@ -40,7 +41,7 @@ const LAB_EXERCISE_FIELDS = `
 export async function listLabExercises(token: string): Promise<LabExerciseRow[]> {
   const data = await staffGql<{ lab_exercises: LabExerciseRow[] }>(
     token,
-    `query {
+    gql`query SupportLabListLabExercises {
       lab_exercises(order_by: [{ sort_order: asc }, { inserted_at: asc }]) {
         ${LAB_EXERCISE_FIELDS}
         sets_aggregate {
@@ -62,7 +63,7 @@ export async function listLabGlobalStats(token: string): Promise<LabGlobalStatRo
     pool: LabExerciseRow[];
   }>(
     token,
-    `query {
+    gql`query SupportLabListLabGlobalStats {
       globalByExercise: lab_sets(distinct_on: catalog_exo_id, order_by: [{ catalog_exo_id: asc }]) {
         catalog_exo_id
         catalogExercise { exo_id display_name }
@@ -114,7 +115,7 @@ export async function listLabUserStats(token: string): Promise<LabUserStatRow[]>
     pool: LabExerciseRow[];
   }>(
     token,
-    `query {
+    gql`query SupportLabListLabUserStats {
       lab_sets {
         user_id
         catalog_exo_id
@@ -161,7 +162,7 @@ export async function linkCatalogExercise(
 ): Promise<LabExerciseRow> {
   const data = await staffGql<{ insert_lab_exercises_one: LabExerciseRow }>(
     token,
-    `mutation($object: lab_exercises_insert_input!) {
+    gql`mutation SupportLabLinkCatalogExercise($object: lab_exercises_insert_input!) {
       insert_lab_exercises_one(object: $object) {
         ${LAB_EXERCISE_FIELDS}
       }
@@ -190,7 +191,7 @@ export async function updateLabExercise(
 ): Promise<LabExerciseRow> {
   const data = await staffGql<{ update_lab_exercises_by_pk: LabExerciseRow }>(
     token,
-    `mutation($id: Int!, $patch: lab_exercises_set_input!) {
+    gql`mutation SupportLabUpdateLabExercise($id: Int!, $patch: lab_exercises_set_input!) {
       update_lab_exercises_by_pk(pk_columns: { catalog_exo_id: $id }, _set: $patch) {
         ${LAB_EXERCISE_FIELDS}
       }
@@ -216,7 +217,7 @@ export async function listCatalogCandidates(token: string): Promise<CatalogCandi
     lab_exercises: { catalog_exo_id: number }[];
   }>(
     token,
-    `query {
+    gql`query SupportLabListCatalogCandidates {
       catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {
         exo_id
         display_name
@@ -298,7 +299,7 @@ async function loadProfilesByIds(
   if (!ids.length) return new Map();
   const data = await staffGql<{ profiles: ProfileName[] }>(
     token,
-    `query($ids: [uuid!]!) {
+    gql`query SupportLabLoadProfilesByIds($ids: [uuid!]!) {
       profiles(where: { id: { _in: $ids } }) {
         id
         username
@@ -362,7 +363,7 @@ export async function listLabSets(
     lab_sets_aggregate: { aggregate?: { count?: number } | null };
   }>(
     token,
-    `query($where: lab_sets_bool_exp!, $limit: Int!, $offset: Int!) {
+    gql`query SupportLabListLabSets($where: lab_sets_bool_exp!, $limit: Int!, $offset: Int!) {
       lab_sets(
         where: $where
         order_by: [{ inserted_at: desc }, { id: desc }]
@@ -427,7 +428,7 @@ export async function listLabSetFilterOptions(token: string): Promise<LabSetFilt
     }[];
   }>(
     token,
-    `query {
+    gql`query SupportLabListLabSetFilterOptions {
       collectors: lab_sets(distinct_on: user_id, order_by: [{ user_id: asc }]) {
         user_id
         user { id email }
@@ -501,7 +502,7 @@ export async function downloadLabSetFile(
     } | null;
   }>(
     token,
-    `query($id: uuid!) {
+    gql`query SupportLabGetSetStoragePath($id: uuid!) {
       lab_sets_by_pk(id: $id) {
         id
         storage_path
@@ -520,7 +521,7 @@ export async function downloadLabSetFile(
     files: { id: string; name: string; mimeType: string | null }[];
   }>(
     token,
-    `query($name: String!) {
+    gql`query SupportLabFindSensorFile($name: String!) {
       files(
         where: {
           _and: [

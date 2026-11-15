@@ -4,10 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "npm run graphql-manifest:check",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test \"src/**/*.test.ts\""
+    "test": "node --test \"src/**/*.test.ts\"",
+    "graphql-manifest": "node scripts/graphql-manifest.mjs",
+    "graphql-manifest:check": "node scripts/graphql-manifest.mjs --check"
   },
   "dependencies": {
     "@nhost/nhost-js": "^3.3.1",

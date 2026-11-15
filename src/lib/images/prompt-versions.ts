@@ -1,3 +1,4 @@
+import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 
 /** A saved text of a style prompt slot (images.prompt_versions). */
@@ -16,7 +17,7 @@ export async function listPromptVersions(
 ): Promise<PromptVersion[]> {
   const data = await staffGql<{ images_prompt_versions: PromptVersion[] }>(
     token,
-    `query($promptId: uuid!) {
+    gql`query SupportImagePromptVersionsListPromptVersions($promptId: uuid!) {
       images_prompt_versions(where: { prompt_id: { _eq: $promptId } }, order_by: { saved_at: desc }) {
         id prompt_id content saved_at saved_by
       }
@@ -34,7 +35,7 @@ export async function currentPromptVersions(
   if (!promptIds.length) return new Map();
   const data = await staffGql<{ images_prompt_versions: PromptVersion[] }>(
     token,
-    `query($ids: [uuid!]!) {
+    gql`query SupportImagePromptVersionsCurrentPromptVersions($ids: [uuid!]!) {
       images_prompt_versions(
         where: { prompt_id: { _in: $ids } }
         order_by: [{ prompt_id: asc }, { saved_at: desc }]
