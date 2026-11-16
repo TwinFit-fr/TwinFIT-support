@@ -1,6 +1,9 @@
 import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import type {
+  CandidateCounts,
+  CandidateStatus,
+  KnowledgeCandidate,
   KnowledgeCard,
   KnowledgeSource,
   PromptVersion,
@@ -439,6 +442,80 @@ export async function setCardEmbedding(
   const row = data.assistant_set_card_embedding?.[0];
   if (!row) throw new Error("Embedding mutation returned no row");
   return row;
+}
+
+const CANDIDATE_FIELDS = `
+  id pmid doi pmcid title journal year authors publication_types kind topic pubmed_url
+  status source_id reviewed_at discovered_at updated_at
+`;
+
+/** Most candidates one list returns; the counts next to it are exact. */
+export const CANDIDATE_LIST_LIMIT = 300;
+
+/** Candidates of one status (newest papers first) and the number of candidates per status. */
+export async function listKnowledgeCandidates(
+  token: string,
+  status: CandidateStatus,
+): Promise<{ candidates: KnowledgeCandidate[]; counts: CandidateCounts }> {
+  const data = await staffGql<{
+    assistant_knowledge_candidates: KnowledgeCandidate[];
+    pending: { aggregate: { count: number } | null };
+    dismissed: { aggregate: { count: number } | null };
+    accepted: { aggregate: { count: number } | null };
+  }>(
+    token,
+    gql`query SupportCoachListKnowledgeCandidates($status: String!, $limit: Int!) {
+      assistant_knowledge_candidates(
+        where: { status: { _eq: $status } }
+        order_by: [{ year: desc_nulls_last }, { discovered_at: desc }]
+        limit: $limit
+      ) {
+        ${CANDIDATE_FIELDS}
+      }
+      pending: assistant_knowledge_candidates_aggregate(where: { status: { _eq: "pending" } }) {
+        aggregate { count }
+      }
+      dismissed: assistant_knowledge_candidates_aggregate(where: { status: { _eq: "dismissed" } }) {
+        aggregate { count }
+      }
+      accepted: assistant_knowledge_candidates_aggregate(where: { status: { _eq: "accepted" } }) {
+        aggregate { count }
+      }
+    }`,
+    { status, limit: CANDIDATE_LIST_LIMIT },
+  );
+  return {
+    candidates: data.assistant_knowledge_candidates ?? [],
+    counts: {
+      pending: data.pending?.aggregate?.count ?? 0,
+      dismissed: data.dismissed?.aggregate?.count ?? 0,
+      accepted: data.accepted?.aggregate?.count ?? 0,
+    },
+  };
+}
+
+/**
+ * Staff may only move a candidate between `pending` and `dismissed`; accepting goes through the
+ * `admin-accept-knowledge-candidate` Function (see `acceptKnowledgeCandidate`).
+ */
+export async function setKnowledgeCandidateStatus(
+  token: string,
+  id: string,
+  status: "pending" | "dismissed",
+): Promise<KnowledgeCandidate> {
+  const data = await staffGql<{ update_assistant_knowledge_candidates_by_pk: KnowledgeCandidate | null }>(
+    token,
+    gql`mutation SupportCoachSetKnowledgeCandidateStatus($id: uuid!, $status: String!) {
+      update_assistant_knowledge_candidates_by_pk(pk_columns: { id: $id }, _set: { status: $status }) {
+        ${CANDIDATE_FIELDS}
+      }
+    }`,
+    { id, status },
+  );
+  if (!data.update_assistant_knowledge_candidates_by_pk) {
+    throw new Error("Candidate not found, or it was already accepted");
+  }
+  return data.update_assistant_knowledge_candidates_by_pk;
 }
 
 export type ToolCallFilters = {

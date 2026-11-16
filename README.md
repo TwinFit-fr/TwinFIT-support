@@ -87,6 +87,7 @@ Support write actions call backend Functions:
 - `admin-verify-email` (staff or admin)
 - `admin-grant-premium` (staff or admin): Premium until a date, or revoke the Support grants
 - `admin-set-user-disabled` (admin only)
+- `admin-accept-knowledge-candidate` (staff or admin): Coach → Knowledge → Candidates; drafts the source and cards of a PubMed candidate
 
 Catalog writes go straight to Hasura with the caller's JWT (`src/lib/catalog/`, on `staffGql` in
 `src/lib/staff-gql.ts`). An exercise update is one GraphQL mutation, so Hasura applies it in a
