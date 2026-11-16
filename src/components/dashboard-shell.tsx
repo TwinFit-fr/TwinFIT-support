@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Search, Menu, X, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsStaff } from "@/hooks/use-is-staff";
+import { BackendCompatBanner } from "@/components/backend-compat-banner";
 import { CommandMenu } from "@/components/command-menu";
 import { GenerationIndicator } from "@/components/images/generation-indicator";
 import { ConfirmProvider } from "@/components/ui/confirm";
@@ -202,6 +203,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               </div>
             )}
           </header>
+
+          <BackendCompatBanner />
 
           <main className="mx-auto max-w-7xl flex-1 w-full px-4 py-6">{children}</main>
         </div>
