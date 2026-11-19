@@ -5,6 +5,8 @@ import {
   cleanPick,
   effectivePick,
   isEmptyPick,
+  liveFrames,
+  liveFramesChanged,
   needsPublish,
   poseWarningText,
   poseWarnings,
@@ -230,5 +232,22 @@ describe("poseWarnings", () => {
       poseWarningText(poseWarnings(poses, [0, 1, 2])),
       "Pose not approved: Mid (generated, not approved), End (no pose, drawn from the description)",
     );
+  });
+});
+
+describe("liveFrames / liveFramesChanged", () => {
+  const img = (id: string, position: number | null, active: boolean) => ({ id, position, active });
+  it("reads the active frame of each slot", () => {
+    assert.deepEqual(liveFrames([img("a", 0, true), img("b", null, false), img("c", 2, true)]), {
+      start: "a",
+      mid: null,
+      end: "c",
+    });
+  });
+  it("detects a slot that changed", () => {
+    const seen = liveFrames([img("a", 0, true), img("c", 2, true)]);
+    assert.equal(liveFramesChanged(seen, { start: "a", mid: null, end: "c" }), false);
+    assert.equal(liveFramesChanged(seen, { start: "x", mid: null, end: "c" }), true);
+    assert.equal(liveFramesChanged(seen, { start: "a", mid: "m", end: "c" }), true);
   });
 });

@@ -70,6 +70,7 @@ import {
   PICK_SLOTS,
   cleanPick,
   effectivePick,
+  liveFrames,
   poseWarningText,
   poseWarnings,
   slotOf,
@@ -1110,11 +1111,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   /** Publishes a subject's sequence (picks over live frames) with the backend's atomic function. */
   async function publishSubject(subject: Subject) {
     if (!exercise || busy) return;
-    const chosen = effectivePick(
-      picks[subject],
-      exercise.images.filter((img) => img.subject === subject),
-      exercise.two_frames,
-    );
+    const subjectImages = exercise.images.filter((img) => img.subject === subject);
+    const chosen = effectivePick(picks[subject], subjectImages, exercise.two_frames);
     if (!chosen.start || !chosen.end) return;
     setBusy(true);
     setPublishing(subject);
@@ -1122,11 +1120,17 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     try {
       await staffFetch("/api/images/sequences", {
         method: "POST",
-        body: JSON.stringify({ startId: chosen.start, midId: chosen.mid, endId: chosen.end }),
+        body: JSON.stringify({
+          startId: chosen.start,
+          midId: chosen.mid,
+          endId: chosen.end,
+          expectedLive: liveFrames(subjectImages),
+        }),
       });
-      setSubjectPick(subject, EMPTY_PICK);
       success(`${SUBJECT_LABEL[subject]} sequence published`);
+      // Show the new frames before the picks go, so the panel does not flash the old ones.
       await refresh();
+      setSubjectPick(subject, EMPTY_PICK);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Publish failed";
       setPublishErrors((current) => ({ ...current, [subject]: message }));

@@ -171,6 +171,10 @@
       "query": "mutation SupportCoachUpsertSuggestionLocalization($object: assistant_suggestion_localizations_insert_input!) {\n      insert_assistant_suggestion_localizations_one(\n        object: $object\n        on_conflict: {\n          constraint: suggestion_localizations_pkey\n          update_columns: [text, answer_md]\n        }\n      ) { suggestion_id locale }\n    }"
     },
     {
+      "name": "SupportImageJobsBatchPending",
+      "query": "query SupportImageJobsBatchPending($batchId: uuid!) {\n      images_generation_jobs(where: { batch_id: { _eq: $batchId }, status: { _in: [\"queued\", \"running\"] } }) { exo_id subject }\n    }"
+    },
+    {
       "name": "SupportImageJobsClaimJob",
       "query": "mutation SupportImageJobsClaimJob { images_claim_generation_job { \n  id seq batch_id style_id kind exo_id subject position options\n  depends_on status attempts max_attempts not_before error result_exercise_image_id\n  inserted_at started_at finished_at\n } }"
     },

@@ -5,6 +5,7 @@ import { staffGql } from "@/lib/staff-gql";
 import { editExerciseFrame } from "./edit-image";
 import { generateExerciseFrame } from "./generate-frame";
 import { errorMessage, isRetryable } from "./generation-error";
+import { busyFrameGroups } from "./job-types";
 import type { GenerationJob, JobSpec } from "./job-types";
 import { getUserIdFromToken } from "./queries";
 
@@ -152,6 +153,18 @@ export async function dismissBatch(
   batchId: string,
   exoId?: number,
 ): Promise<void> {
+  // Finished jobs of an exercise / subject that still has queued or running jobs are kept (a
+  // queued Mid / End needs the result of the Start it depends on), whatever the caller checked.
+  const pending = await staffGql<{
+    images_generation_jobs: Pick<GenerationJob, "exo_id" | "subject">[];
+  }>(
+    token,
+    gql`query SupportImageJobsBatchPending($batchId: uuid!) {
+      images_generation_jobs(where: { batch_id: { _eq: $batchId }, status: { _in: ["queued", "running"] } }) { exo_id subject }
+    }`,
+    { batchId },
+  );
+  const busy = busyFrameGroups(pending.images_generation_jobs);
   await staffGql(
     token,
     gql`mutation SupportImageJobsDismissBatch($where: images_generation_jobs_bool_exp!) {
@@ -162,6 +175,13 @@ export async function dismissBatch(
         batch_id: { _eq: batchId },
         status: { _in: ["done", "error", "cancelled"] },
         ...(exoId != null ? { exo_id: { _eq: exoId } } : {}),
+        ...(busy.length
+          ? {
+              _not: {
+                _or: busy.map((g) => ({ exo_id: { _eq: g.exo_id }, subject: { _eq: g.subject } })),
+              },
+            }
+          : {}),
       },
     },
   );
@@ -205,9 +225,15 @@ async function runJob(token: string, job: GenerationJob): Promise<Record<string,
   }
   // Mid / End of a run edit the Start that run made; otherwise the Start the run names, else the
   // subject's active Start.
-  const guideImageId = job.depends_on
-    ? await resultOf(token, job.depends_on)
-    : job.options.guideImageId;
+  let guideImageId = job.options.guideImageId;
+  if (job.depends_on) {
+    guideImageId = await resultOf(token, job.depends_on);
+    if (!guideImageId) {
+      throw new Error(
+        "The Start this Mid / End depends on is gone (its job was dismissed or made no image). Run it again.",
+      );
+    }
+  }
   const image = await generateExerciseFrame(token, {
     exoId: job.exo_id,
     styleId: job.style_id,

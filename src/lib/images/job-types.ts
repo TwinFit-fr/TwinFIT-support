@@ -116,3 +116,18 @@ export const ACTIVE_JOB_STATUSES: readonly JobStatus[] = ["queued", "running"];
 export function isActiveJob(job: Pick<GenerationJob, "status">): boolean {
   return ACTIVE_JOB_STATUSES.includes(job.status);
 }
+
+/**
+ * Exercise / subject pairs of a run that still have queued or running jobs. Their finished jobs
+ * must stay: a queued Mid / End reads the result of the finished Start it depends on.
+ */
+export function busyFrameGroups(
+  active: Pick<GenerationJob, "exo_id" | "subject">[],
+): { exo_id: number; subject: Subject }[] {
+  const groups = new Map<string, { exo_id: number; subject: Subject }>();
+  for (const job of active) {
+    if (job.exo_id == null || !job.subject) continue;
+    groups.set(`${job.exo_id}:${job.subject}`, { exo_id: job.exo_id, subject: job.subject });
+  }
+  return [...groups.values()];
+}

@@ -185,6 +185,27 @@ export function suggestPick(images: PickImage[], twoFrames: boolean): SequencePi
   return { start: newStart?.id ?? null, mid: mid?.id ?? null, end: end?.id ?? null };
 }
 
+/** The active frame id of each slot, as one side of a publish saw it. */
+export type LiveFrames = SequencePick;
+
+/** The live (active) frames of a subject by slot. */
+export function liveFrames(images: Pick<ExerciseImage, "id" | "active" | "position">[]): LiveFrames {
+  const active = activeByPosition(images);
+  return {
+    start: active.get(SLOT_POSITION.start)?.id ?? null,
+    mid: active.get(SLOT_POSITION.mid)?.id ?? null,
+    end: active.get(SLOT_POSITION.end)?.id ?? null,
+  };
+}
+
+/** Whether the live frames now differ from the ones the panel showed when the pick was made. */
+export function liveFramesChanged(expected: LiveFrames, actual: LiveFrames): boolean {
+  return PICK_SLOTS.some((slot) => expected[slot] !== actual[slot]);
+}
+
+export const LIVE_CHANGED_MESSAGE =
+  "The live frames of this subject changed since this page loaded (another tab or user published). Refresh the page and check before publishing.";
+
 const PUBLISH_ERRORS: [string, string][] = [
   ["start_and_end_required", "Pick a Start and an End."],
   ["frames_must_differ", "Each slot needs a different image."],

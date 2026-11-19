@@ -1,13 +1,28 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
-import { publishExerciseSequence } from "@/lib/images/queries";
-import { publishErrorMessage } from "@/lib/images/sequence";
+import {
+  getActiveImageAtPosition,
+  getExerciseImage,
+  publishExerciseSequence,
+} from "@/lib/images/queries";
+import {
+  LIVE_CHANGED_MESSAGE,
+  liveFramesChanged,
+  publishErrorMessage,
+} from "@/lib/images/sequence";
+import type { Subject } from "@/lib/images/types";
 
 const bodySchema = z.object({
   startId: z.string().uuid(),
   midId: z.string().uuid().nullish(),
   endId: z.string().uuid(),
+  /** The live frames the panel showed: publishing is refused when they are not live any more. */
+  expectedLive: z.object({
+    start: z.string().uuid().nullable(),
+    mid: z.string().uuid().nullable(),
+    end: z.string().uuid().nullable(),
+  }),
 });
 
 /**
@@ -19,7 +34,29 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
-    const { startId, midId, endId } = bodySchema.parse(await request.json());
+    const { startId, midId, endId, expectedLive } = bodySchema.parse(await request.json());
+
+    // Read the subject's live frames now: another tab may have published since the panel loaded.
+    const start = await getExerciseImage(token, startId);
+    if (!start) {
+      return NextResponse.json({ error: publishErrorMessage("image_not_found") }, { status: 409 });
+    }
+    const subject = start.subject as Subject;
+    const [liveStart, liveMid, liveEnd] = await Promise.all(
+      [0, 1, 2].map((position) =>
+        getActiveImageAtPosition(token, start.style_id, start.exo_id, subject, position),
+      ),
+    );
+    if (
+      liveFramesChanged(expectedLive, {
+        start: liveStart?.id ?? null,
+        mid: liveMid?.id ?? null,
+        end: liveEnd?.id ?? null,
+      })
+    ) {
+      return NextResponse.json({ error: LIVE_CHANGED_MESSAGE }, { status: 409 });
+    }
+
     try {
       const images = await publishExerciseSequence(token, { startId, midId, endId });
       return NextResponse.json({ images });

@@ -41,6 +41,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       return NextResponse.json({ error: "Image not found" }, { status: 404 });
     }
 
+    if (body.review_status === "pending" && current.active) {
+      return NextResponse.json(
+        {
+          error:
+            "A live frame cannot go back to pending: it would hide the sequence. Publish another frame first.",
+        },
+        { status: 409 },
+      );
+    }
+
     const deactivate = body.active === false || body.review_status === "rejected";
     const image = await updateExerciseImage(token, id, {
       ...(body.review_status ? { review_status: body.review_status } : {}),

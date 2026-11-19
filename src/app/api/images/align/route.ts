@@ -12,12 +12,13 @@ import {
 } from "@/lib/images/queries";
 import { frameFileName } from "@/lib/images/reference";
 import { downloadImageFile, uploadImageFile } from "@/lib/images/storage";
-import { intendedPosition } from "@/lib/images/types";
 
 export const maxDuration = 60;
 
 const nudgeSchema = z.object({
   imageId: z.string().uuid(),
+  /** The slot the frame is aligned for (it may be a candidate made for another position). */
+  position: z.number().int().min(0).max(2),
   dx: z.number().min(-1).max(1),
   dy: z.number().min(-1).max(1),
   scale: z.number().min(0.2).max(3),
@@ -69,15 +70,14 @@ export async function POST(request: Request) {
       if (
         current.exo_id !== exercise.exo_id ||
         current.style_id !== styleId ||
-        current.subject !== subject ||
-        intendedPosition(current) == null
+        current.subject !== subject
       ) {
         return NextResponse.json(
-          { error: "Each adjustment must be a frame of this exercise/style/subject with a position" },
+          { error: "Each adjustment must be a frame of this exercise, style and subject" },
           { status: 409 },
         );
       }
-      const position = intendedPosition(current) as number;
+      const position = adj.position;
 
       const file = await downloadImageFile(token, current.file_id);
       const bytes = await repositionFrame(

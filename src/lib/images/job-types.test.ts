@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { frameJobSpecs } from "./job-types.ts";
+import { busyFrameGroups, frameJobSpecs } from "./job-types.ts";
 
 const exercise = { exoId: 7, framePositions: [0, 1, 2] };
 
@@ -58,6 +58,23 @@ describe("frameJobSpecs", () => {
     assert.deepEqual(
       specs.map((s) => s.position),
       [0, 2],
+    );
+  });
+});
+
+describe("busyFrameGroups", () => {
+  it("lists each exercise and subject with active jobs once", () => {
+    assert.deepEqual(
+      busyFrameGroups([
+        { exo_id: 7, subject: "man" },
+        { exo_id: 7, subject: "man" },
+        { exo_id: 7, subject: "woman" },
+        { exo_id: null, subject: null },
+      ]),
+      [
+        { exo_id: 7, subject: "man" },
+        { exo_id: 7, subject: "woman" },
+      ],
     );
   });
 });
