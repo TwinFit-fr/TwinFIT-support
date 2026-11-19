@@ -12,13 +12,14 @@ import {
 import { CATALOG_LOCALES, type CatalogLocale } from "./locales";
 import {
   defaultLookupName,
-  inferLoadModalityCode,
   inferLoggingModeCode,
   normalizeMuscleCode,
   normalizeTaxonomy,
+  requireCode,
   type ExercisePayload,
 } from "./normalize";
 import { parsePairStrengthPattern } from "./pair-strength-pattern";
+import { findLookupRow, lookupCode, requireLookupRow, type LookupRef } from "./lookup-find";
 
 export const LOOKUP_TABLES = [
   "catalog_body_regions",
@@ -36,8 +37,6 @@ export const LOOKUP_TABLES = [
 
 export type LookupTable = (typeof LOOKUP_TABLES)[number];
 
-type LookupRef = { id: string; code: string };
-
 function assertLookupTable(table: unknown): LookupTable {
   if (!LOOKUP_TABLES.includes(table as LookupTable)) throw new Error("Invalid lookup table");
   return table as LookupTable;
@@ -46,31 +45,36 @@ function assertLookupTable(table: unknown): LookupTable {
 /**
  * Rows with required fields beyond code and name: a group belongs to a region. They are created
  * only from Taxonomy (`upsertLookup`), never implied by a code. Body regions are also explicit
- * (no auto-create by code alone).
+ * (no creation by code alone).
  */
 const EXPLICIT_LOOKUP_TABLES = new Set<LookupTable>(["catalog_body_regions", "catalog_muscle_groups"]);
 
+function finder(token: string, table: LookupTable) {
+  return (code: string) => staffGql<Record<string, LookupRef[]>>(token, LOOKUP_FIND[table], { code });
+}
+
+/** Finds a lookup row by code; null when it does not exist. Never writes. */
+function findLookup(token: string, table: LookupTable, code: unknown): Promise<LookupRef | null> {
+  return findLookupRow(finder(token, table), table, code);
+}
+
 /**
- * Finds a lookup row by code, creating it (Title Case name) when it does not exist yet.
- * `columns` are the extra fields of an explicit table's new row; without them an unknown code
- * of such a table is an error.
+ * Looks a lookup row up by code and fails when it is unknown. Exercises and relations never
+ * create lookup values: new ones come only from the Taxonomy panel (`upsertLookup`).
  */
-export async function ensureLookup(
+export function ensureLookup(token: string, table: LookupTable, code: unknown): Promise<LookupRef> {
+  return requireLookupRow(finder(token, table), table, code);
+}
+
+/** Taxonomy panel only: inserts a new row (Title Case name unless given) and returns it. */
+async function insertLookup(
   token: string,
   table: LookupTable,
   code: unknown,
   name?: unknown,
   columns?: Record<string, unknown>,
 ): Promise<LookupRef> {
-  const c = table === "catalog_muscles" ? normalizeMuscleCode(code) : normalizeTaxonomy(code);
-  if (!c) throw new Error(`Empty code for ${table}`);
-  const existing = await staffGql<Record<string, LookupRef[]>>(
-    token,
-    LOOKUP_FIND[table],
-    { code: c },
-  );
-  const hit = existing[table]?.[0];
-  if (hit) return hit;
+  const c = lookupCode(table, code);
   if (EXPLICIT_LOOKUP_TABLES.has(table) && !columns) {
     throw new Error(`Unknown ${table.replace("catalog_", "")} code: ${c}. Create it in Taxonomy first.`);
   }
@@ -121,6 +125,8 @@ type ColumnSource = {
   keys: (keyof ExercisePayload)[];
   /** Code used when the payload leaves the field empty. */
   fallback?: (payload: ExercisePayload) => string;
+  /** Mandatory field without default: an empty value is an error. */
+  required?: string;
 };
 
 const LOOKUP_COLUMNS: ColumnSource[] = [
@@ -145,7 +151,7 @@ const LOOKUP_COLUMNS: ColumnSource[] = [
     column: "position_id",
     table: "catalog_positions",
     keys: ["position_code", "position"],
-    fallback: () => "NEUTRAL",
+    required: "position",
   },
   {
     column: "grip_id",
@@ -157,7 +163,7 @@ const LOOKUP_COLUMNS: ColumnSource[] = [
     column: "load_modality_id",
     table: "catalog_load_modalities",
     keys: ["load_modality_code", "load_modality"],
-    fallback: inferLoadModalityCode,
+    required: "load modality",
   },
   {
     column: "logging_mode_id",
@@ -192,7 +198,9 @@ export async function resolveExerciseColumns(
   for (const source of LOOKUP_COLUMNS) {
     if (!has(...source.keys)) continue;
     const given = source.keys.map((key) => payload[key]).find(Boolean);
-    const code = given || source.fallback?.(payload);
+    const code = source.required
+      ? requireCode(source.required, given)
+      : requireCode(source.column, given, source.fallback?.(payload));
     columns[source.column] = (await ensureLookup(token, source.table, code)).id;
   }
 
@@ -320,13 +328,15 @@ async function explicitColumns(
 
 export async function upsertLookup(token: string, payload: UpsertLookupPayload) {
   const table = assertLookupTable(payload.table);
-  const row = await ensureLookup(
-    token,
-    table,
-    payload.code,
-    payload.name,
-    await explicitColumns(token, table, payload),
-  );
+  const row =
+    (await findLookup(token, table, payload.code)) ??
+    (await insertLookup(
+      token,
+      table,
+      payload.code,
+      payload.name,
+      await explicitColumns(token, table, payload),
+    ));
   if (TAXONOMY_LOCALIZATION_FK[table]) {
     await upsertTaxonomyLocalizations(token, table, row.id, {
       en: String(payload.name || "").trim() || defaultLookupName(row.code),

@@ -88,7 +88,7 @@ const DEFAULT_FORM: ExerciseFormState = {
   movement_type_code: "PRESS",
   equipment_code: "BARBELL",
   support_equipment_code: "",
-  position_code: "NEUTRAL",
+  position_code: "",
   grip_code: "STANDARD",
   variation_code: "STANDARD",
   load_modality_code: "",
@@ -230,7 +230,7 @@ export function ExerciseComposeForm({
           primary_muscle_group_code: fullPath[0] || DEFAULT_FORM.primary_muscle_group_code,
           movement_type_code: fullPath[1] || DEFAULT_FORM.movement_type_code,
           equipment_code: fullPath[2] || DEFAULT_FORM.equipment_code,
-          position_code: fullPath[3] || "NEUTRAL",
+          position_code: fullPath[3] || "",
           grip_code: fullPath[4] || "STANDARD",
           variation_code: fullPath[5] || "STANDARD",
           load_modality_code: fullPath[6] || "",
@@ -503,6 +503,7 @@ export function ExerciseComposeForm({
         />
         <LookupSelect
           label="Position"
+          required
           value={form.position_code}
           options={lookups.positions}
           onChange={(value) => setForm({ ...form, position_code: value })}
@@ -521,10 +522,10 @@ export function ExerciseComposeForm({
         />
         <LookupSelect
           label="Load modality"
+          required
           value={form.load_modality_code}
           options={lookups.load_modalities}
           onChange={(value) => setForm({ ...form, load_modality_code: value })}
-          allowEmpty
         />
         <div className="space-y-3 md:col-span-2">
           <div className="flex flex-wrap items-center gap-3">
@@ -614,7 +615,7 @@ function formFromExercise(ex: CatalogExerciseRow): ExerciseFormState {
     movement_type_code: ex.movement_type?.code ?? "PRESS",
     equipment_code: ex.equipment?.code ?? "BARBELL",
     support_equipment_code: ex.support_equipment?.code ?? "",
-    position_code: ex.position?.code ?? "NEUTRAL",
+    position_code: ex.position?.code ?? "",
     grip_code: ex.grip?.code ?? "STANDARD",
     variation_code: ex.variation?.code ?? "STANDARD",
     load_modality_code: ex.load_modality?.code ?? "",
@@ -661,6 +662,7 @@ function LookupSelect({
   onChange,
   allowEmpty,
   emptyLabel,
+  required,
 }: {
   label: string;
   value: string;
@@ -668,15 +670,19 @@ function LookupSelect({
   onChange: (value: string) => void;
   allowEmpty?: boolean;
   emptyLabel?: string;
+  /** Mandatory, no default: the empty choice is a prompt and the form cannot be sent with it. */
+  required?: boolean;
 }) {
   return (
     <Field label={label}>
       <select
         className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
         value={value}
+        required={required}
         onChange={(e) => onChange(e.target.value)}
       >
-        {allowEmpty && <option value="">{emptyLabel ?? "— (infer)"}</option>}
+        {required && <option value="">Select…</option>}
+        {allowEmpty && <option value="">{emptyLabel ?? "— (none)"}</option>}
         {options.map((opt) => (
           <option key={opt.code} value={opt.code}>
             {opt.code} — {opt.name}

@@ -1,4 +1,4 @@
-import { CATALOG_LOCALES, type CatalogLocale } from "./locales";
+import { CATALOG_LOCALES, type CatalogLocale } from "./locales.ts";
 
 type Code = string | null | undefined;
 
@@ -69,16 +69,11 @@ const muscleGroupCode = (p: ExercisePayload) => p.primary_muscle_group_code || p
 const movementTypeCode = (p: ExercisePayload) => p.movement_type_code || p.movement_type;
 const equipmentCode = (p: ExercisePayload) => p.equipment_code || p.equipment;
 
-export function inferLoadModalityCode(payload: ExercisePayload): string {
-  const name = String(payload.display_name || "");
-  const eq = normalizeTaxonomy(equipmentCode(payload));
-  const mt = normalizeTaxonomy(movementTypeCode(payload));
-  const mg = normalizeTaxonomy(muscleGroupCode(payload));
-  if (/assist/i.test(name)) return "ASSISTED";
-  if (/resist/i.test(name)) return "RESISTED";
-  if (eq === "BODYWEIGHT") return "NEUTRAL";
-  if (mt === "CARDIO" || mg === "CARDIO" || eq === "BICYCLE") return "NEUTRAL";
-  return "RESISTED";
+/** A mandatory code (position, load modality): empty is an error, never a silent default. */
+export function requireCode(label: string, ...candidates: unknown[]): string {
+  const code = candidates.map((c) => String(c ?? "").trim()).find(Boolean);
+  if (!code) throw new Error(`${label} is required`);
+  return code;
 }
 
 /** UI + volume: TIME for HOLD / CARDIO group / CARDIO movement; else LOAD. */

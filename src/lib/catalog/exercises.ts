@@ -1,5 +1,6 @@
 import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
+import { nextExoIdFrom } from "./exo-id";
 import { resolveExerciseColumns } from "./lookups";
 import {
   buildExerciseLocalizationRows,
@@ -39,20 +40,13 @@ async function requireExercise(token: string, exoIdRaw: unknown) {
   return current;
 }
 
-function firstFreeExoId(ids: number[]): number {
-  const used = new Set(ids.filter((n) => Number.isFinite(n) && n > 0));
-  let next = 1;
-  while (used.has(next)) next += 1;
-  return next;
-}
-
 export async function nextExoId(token: string): Promise<number> {
-  // Include inactive rows so soft-held ids are not reused.
+  // Highest id of all rows, inactive ones included: ids are never reused, gaps stay free.
   const data = await staffGql<{ catalog_exercises: { exo_id: number }[] }>(
     token,
-    gql`query SupportCatalogNextExoId { catalog_exercises(order_by: { exo_id: asc }) { exo_id } }`,
+    gql`query SupportCatalogNextExoId { catalog_exercises(order_by: { exo_id: desc }, limit: 1) { exo_id } }`,
   );
-  return firstFreeExoId(data.catalog_exercises.map((r) => Number(r.exo_id)));
+  return nextExoIdFrom(data.catalog_exercises.map((r) => Number(r.exo_id)));
 }
 
 export function listLibrary(token: string) {
@@ -149,7 +143,7 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
 
   const biomechanics = parseBiomechanicalFields(payload);
   const { columns, secondaryIds = [] } = await resolveExerciseColumns(token, payload, "create");
-  const exoId = payload.exo_id ? Number(payload.exo_id) : await nextExoId(token);
+  const exoId = await nextExoId(token);
   const inherit = inheritedOf(payload) ?? true;
   const { status, requested, gaps } = resolveTaxonomyStatus(payload, payload.taxonomy_status);
   if (gaps.length && requested === "migrated") {

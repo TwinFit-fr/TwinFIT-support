@@ -48,7 +48,7 @@
     },
     {
       "name": "SupportCatalogNextExoId",
-      "query": "query SupportCatalogNextExoId { catalog_exercises(order_by: { exo_id: asc }) { exo_id } }"
+      "query": "query SupportCatalogNextExoId { catalog_exercises(order_by: { exo_id: desc }, limit: 1) { exo_id } }"
     },
     {
       "name": "SupportCatalogUpdateExercise",
