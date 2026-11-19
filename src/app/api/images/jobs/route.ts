@@ -28,7 +28,7 @@ const jobSpec = z.object({
       positionOverride: promptText.optional(),
       referenceIds,
       skipInputs: z.array(z.enum(["character", "support", "logo"])).optional(),
-      candidate: z.boolean().optional(),
+      guideImageId: z.string().uuid().optional(),
       skipAlign: z.boolean().optional(),
       ...edit,
     })

@@ -20,7 +20,7 @@ const WORK_BUDGET_MS = 200_000;
 const WORKERS_PER_DRAIN = 3;
 /** A drain only chains with a token that outlives one more job. */
 const MIN_TOKEN_SECONDS = 90;
-/** Finished jobs stay listed this long, so a run's outcome remains on screen. */
+/** Finished jobs stay listed this long, so a run's outcome remains on screen; failed ones stay until dismissed. */
 const FINISHED_VISIBLE_MINUTES = 30;
 /** Seconds before a failed attempt is retried, times the attempt number. */
 const RETRY_BACKOFF_SECONDS = 20;
@@ -68,8 +68,9 @@ export async function enqueueJobs(
 }
 
 /**
- * Jobs to show for a style: every active one plus those finished recently, oldest first.
- * Narrowed to one exercise when given.
+ * Jobs to show for a style: every active one, every failed one (until staff dismiss it) plus
+ * those finished recently, oldest first. Dismissed jobs are not returned (the backend hides them
+ * from staff). Narrowed to one exercise when given.
  */
 export async function listJobs(
   token: string,
@@ -81,7 +82,7 @@ export async function listJobs(
     ...(filter.kind ? { kind: { _eq: filter.kind } } : {}),
     ...(filter.exoId != null ? { exo_id: { _eq: filter.exoId } } : {}),
     _or: [
-      { status: { _in: ["queued", "running"] } },
+      { status: { _in: ["queued", "running", "error"] } },
       { finished_at: { _gte: since } },
       { updated_at: { _gte: since } },
     ],
@@ -140,18 +141,30 @@ export function cancelBatch(token: string, batchId: string): Promise<number> {
   );
 }
 
-/** Removes a run's finished jobs from the list (the images they made stay). */
-export async function dismissBatch(token: string, batchId: string): Promise<number> {
-  const data = await staffGql<{ delete_images_generation_jobs: { affected_rows: number } }>(
+/**
+ * Dismisses a run's finished jobs (narrowed to one exercise when given): they leave the list but
+ * the backend keeps them with `dismissed_at` (status, error, attempts, usage). The delete is
+ * turned into a dismissal by the database for staff, so the jobs are not removed; Hasura then
+ * counts no deleted row, which is why nothing here depends on the number it returns.
+ */
+export async function dismissBatch(
+  token: string,
+  batchId: string,
+  exoId?: number,
+): Promise<void> {
+  await staffGql(
     token,
-    gql`mutation SupportImageJobsDismissBatch($batchId: uuid!) {
-      delete_images_generation_jobs(
-        where: { batch_id: { _eq: $batchId }, status: { _in: ["done", "error", "cancelled"] } }
-      ) { affected_rows }
+    gql`mutation SupportImageJobsDismissBatch($where: images_generation_jobs_bool_exp!) {
+      delete_images_generation_jobs(where: $where) { affected_rows }
     }`,
-    { batchId },
+    {
+      where: {
+        batch_id: { _eq: batchId },
+        status: { _in: ["done", "error", "cancelled"] },
+        ...(exoId != null ? { exo_id: { _eq: exoId } } : {}),
+      },
+    },
   );
-  return data.delete_images_generation_jobs.affected_rows;
 }
 
 async function claimJob(token: string): Promise<GenerationJob | null> {
@@ -190,8 +203,11 @@ async function runJob(token: string, job: GenerationJob): Promise<Record<string,
   if (job.exo_id == null || !job.subject || job.position == null) {
     throw new Error("Exercise frame job without an exercise, subject or position");
   }
-  // Mid / End of a run edit the Start that run made; otherwise the subject's active Start.
-  const guideImageId = job.depends_on ? await resultOf(token, job.depends_on) : undefined;
+  // Mid / End of a run edit the Start that run made; otherwise the Start the run names, else the
+  // subject's active Start.
+  const guideImageId = job.depends_on
+    ? await resultOf(token, job.depends_on)
+    : job.options.guideImageId;
   const image = await generateExerciseFrame(token, {
     exoId: job.exo_id,
     styleId: job.style_id,
@@ -201,7 +217,6 @@ async function runJob(token: string, job: GenerationJob): Promise<Record<string,
     positionOverride: job.options.positionOverride,
     referenceIds: job.options.referenceIds,
     skipInputs: job.options.skipInputs,
-    candidate: job.options.candidate,
     skipAlign: job.options.skipAlign,
     guideImageId,
   });

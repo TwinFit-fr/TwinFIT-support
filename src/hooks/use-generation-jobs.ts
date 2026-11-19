@@ -134,8 +134,8 @@ export function useGenerationJobs(
   );
 
   const batchAction = useCallback(
-    async (batchId: string, init: RequestInit) => {
-      await staffFetch(`/api/images/jobs/batches/${batchId}`, init);
+    async (batchId: string, init: RequestInit, query = "") => {
+      await staffFetch(`/api/images/jobs/batches/${batchId}${query}`, init);
       await refreshJobs();
     },
     [staffFetch, refreshJobs],
@@ -164,12 +164,17 @@ export function useGenerationJobs(
           batchAction(b, { method: "POST", body: JSON.stringify({ action: "cancel" }) }),
         ),
       ),
-    /** Clears finished runs from the list (the images stay). */
+    /**
+     * Dismisses finished runs (of this exercise, when the list is narrowed to one): they leave the
+     * list, the images stay and the backend keeps the jobs. Failed jobs stay listed until then.
+     */
     dismissFinished: () =>
       Promise.all(
         batches
           .filter((b) => !activeBatches.includes(b))
-          .map((b) => batchAction(b, { method: "DELETE" })),
+          .map((b) =>
+            batchAction(b, { method: "DELETE" }, filter.exoId != null ? `?exo=${filter.exoId}` : ""),
+          ),
       ),
   };
 }

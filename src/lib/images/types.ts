@@ -208,6 +208,17 @@ export type ImagePrompt = {
   updated_at: string;
 };
 
+/** Review of one frame (images.exercise_images.review_status); every new frame starts pending. */
+export type ReviewStatus = "pending" | "approved" | "rejected";
+
+export const REVIEW_STATUSES: readonly ReviewStatus[] = ["pending", "approved", "rejected"];
+
+export const REVIEW_LABEL: Record<ReviewStatus, string> = {
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
+};
+
 export type ExerciseImage = {
   id: string;
   style_id: string;
@@ -224,7 +235,21 @@ export type ExerciseImage = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  review_status: ReviewStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  /** The drawing the file shows: a frame-align copy keeps its source's. */
+  drawing_id: string;
+  /** Mid / End: drawing_id of the Start it was drawn on; null for Start and when unknown. */
+  start_drawing_id: string | null;
 };
+
+/**
+ * What the app sees of one (style, exercise, subject) sequence: "published" when every frame it
+ * uses is active, approved and (Mid / End) drawn on the active Start; "unpublished" when some
+ * frame is active but that is not so; "empty" with no active frame.
+ */
+export type SequenceState = "empty" | "published" | "unpublished";
 
 export type SubjectFrameStatus = {
   subject: Subject;
@@ -233,6 +258,8 @@ export type SubjectFrameStatus = {
   active_frames: { position: number; image_url: string }[];
   preview_image: ExerciseImage | null;
   status: "complete" | "partial" | "inactive_only" | "empty";
+  /** Whether the app shows this subject's active frames (the style being published aside). */
+  sequence: SequenceState;
 };
 
 export type ExerciseImageBoardItem = {
@@ -259,6 +286,10 @@ export type ExerciseImageBoardItem = {
   prompt_details: string;
   /** Complete only when every selected subject is complete for the style. */
   status: "complete" | "partial" | "inactive_only" | "empty";
+  /** Frames of this style per review status (every subject, active or not). */
+  review_counts: Record<ReviewStatus, number>;
+  /** Some subject has active frames that the app does not show (not all approved, or Mid / End drawn on another Start). */
+  unpublished: boolean;
 };
 
 export type ExerciseImageDetail = ExerciseImageBoardItem & {
@@ -315,6 +346,11 @@ export function framePositionLabel(position: number | null | undefined): string 
 export function targetPosition(image: Pick<ExerciseImage, "params">): number | null {
   const value = image.params?.target_position;
   return typeof value === "number" ? value : null;
+}
+
+/** The frame an image is for: its position when active, else the target of its generation. */
+export function intendedPosition(image: Pick<ExerciseImage, "position" | "params">): number | null {
+  return image.position ?? targetPosition(image);
 }
 
 /** Staff may only delete frames that are not assigned to any position. */

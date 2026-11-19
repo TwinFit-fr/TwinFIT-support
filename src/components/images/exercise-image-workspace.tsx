@@ -22,6 +22,8 @@ import { useToast } from "@/components/ui/toast";
 import { jobStep, useGenerationJobs } from "@/hooks/use-generation-jobs";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { JobFailures } from "@/components/images/run-status";
+import { ReviewBadge } from "@/components/images/review-badge";
+import { SequencePublishPanel } from "@/components/images/sequence-publish-panel";
 import { EditInstruction } from "@/components/images/edit-instruction";
 import { useGenerationConfirm } from "@/hooks/use-generation-confirm";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
@@ -59,10 +61,25 @@ import {
 import {
   frameJobSpecs,
   isActiveJob,
-  isCandidateJob,
   type GenerationJob,
   type SkippableInput,
 } from "@/lib/images/job-types";
+import { activeByPosition } from "@/lib/images/publication";
+import {
+  EMPTY_PICK,
+  PICK_SLOTS,
+  cleanPick,
+  effectivePick,
+  poseWarningText,
+  poseWarnings,
+  slotOf,
+  slotPosition,
+  suggestPick,
+  togglePick,
+  unpick,
+  type PickSlot,
+  type SequencePick,
+} from "@/lib/images/sequence";
 import {
   LabeledControl,
   PositionToggles,
@@ -79,14 +96,18 @@ import type {
   ExercisePose,
   ImagePrompt,
   ImageStyle,
+  ReviewStatus,
   StyleReference,
   Subject,
 } from "@/lib/images/types";
 import {
   FRAME_POSITIONS,
   MID_POSITION,
+  REVIEW_LABEL,
+  REVIEW_STATUSES,
   SUBJECTS,
   framePositionLabel,
+  intendedPosition,
   isDeletableImage,
   targetPosition,
 } from "@/lib/images/types";
@@ -101,7 +122,7 @@ const SUBJECT_LABEL: Record<Subject, string> = {
 
 const SHORTCUTS: [string, string][] = [
   ["R", "Generate"],
-  ["0 1 2", "Assign"],
+  ["0 1 2", "Pick as Start / Mid / End"],
   ["X", "Deactivate"],
   ["Del", "Delete"],
   ["← →", "Browse"],
@@ -109,12 +130,9 @@ const SHORTCUTS: [string, string][] = [
   ["Esc", "Back"],
 ];
 
-/** Where an image sits: inactive images have no position. */
-type Placement = { id: string; position: number | null; active: boolean };
+type SubjectPicks = Record<Subject, SequencePick>;
 
-function placementOf(img: ExerciseImage): Placement {
-  return { id: img.id, position: img.active ? img.position : null, active: img.active };
-}
+const NO_PICKS: SubjectPicks = { man: EMPTY_PICK, woman: EMPTY_PICK };
 
 function imageLabel(img: ExerciseImage): string {
   if (img.active) return framePositionLabel(img.position);
@@ -177,14 +195,14 @@ function FrameTile({
   image,
   alt,
   selected,
-  generating,
+  picked,
   onSelect,
 }: {
   image: ExerciseImage;
   alt: string;
   selected: boolean;
-  /** Present while this slot is in the queue; startedAt once its request is sent. */
-  generating?: { startedAt?: number };
+  /** Chosen for the next publish, not the live frame. */
+  picked: boolean;
   onSelect: () => void;
 }) {
   const src = imageThumbUrl(image.image_url, 400);
@@ -196,7 +214,9 @@ function FrameTile({
         "relative aspect-square w-full overflow-hidden rounded-lg border transition",
         selected
           ? "border-zinc-900 ring-2 ring-zinc-900/15"
-          : "border-zinc-200 enabled:hover:border-zinc-400",
+          : picked
+            ? "border-sky-400 enabled:hover:border-sky-500"
+            : "border-zinc-200 enabled:hover:border-zinc-400",
       )}
       style={CHECKER_STYLE}
     >
@@ -204,14 +224,28 @@ function FrameTile({
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={alt} className="absolute inset-0 h-full w-full object-contain" />
       )}
-      {generating && <GeneratingOverlay startedAt={generating.startedAt} />}
+      {(picked || image.review_status !== "approved") && (
+        <span className="absolute left-1 top-1 flex items-center gap-1">
+          {picked && (
+            <span className="rounded bg-sky-100 px-1 text-[9px] font-semibold leading-4 text-sky-800">
+              Picked
+            </span>
+          )}
+          <ReviewBadge status={image.review_status} />
+        </span>
+      )}
     </button>
   );
 }
 
+/**
+ * The sequence per subject: each slot shows the frame picked for the next publish, else the live
+ * (active) one, and the preview plays what a publish would put in the app.
+ */
 function FrameMatrix({
   images,
   framePositions,
+  picks,
   selectedId,
   generating,
   busy,
@@ -222,6 +256,7 @@ function FrameMatrix({
 }: {
   images: ExerciseImage[];
   framePositions: number[];
+  picks: Record<Subject, SequencePick>;
   selectedId: string | null;
   generating: Map<string, { startedAt?: number }>;
   busy: boolean;
@@ -233,6 +268,7 @@ function FrameMatrix({
 }) {
   const frames = FRAME_POSITIONS.filter((frame) => framePositions.includes(frame.id));
   const columns = { gridTemplateColumns: `3.5rem repeat(${frames.length + 1}, minmax(0, 1fr))` };
+  const twoFrames = !framePositions.includes(MID_POSITION);
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-2.5 sm:p-3">
@@ -251,20 +287,20 @@ function FrameMatrix({
         </span>
 
         {SUBJECTS.map((subject) => {
-          const active = new Map<number, ExerciseImage>();
-          for (const img of images) {
-            if (img.subject === subject && img.active && img.position != null) {
-              active.set(img.position, img);
-            }
-          }
-          const activeList = frames
-            .map((frame) => active.get(frame.id))
-            .filter((img): img is ExerciseImage => Boolean(img));
-          const loop = activeList.map((img) => ({
-            position: img.position as number,
-            image_url: img.image_url,
-          }));
-          const canAlign = activeList.length >= 2;
+          const subjectImages = images.filter((img) => img.subject === subject);
+          const live = activeByPosition(subjectImages);
+          const chosen = effectivePick(picks[subject], subjectImages, twoFrames);
+          const byId = new Map(subjectImages.map((img) => [img.id, img]));
+          const shown = (position: number): ExerciseImage | null => {
+            const slot = slotOf(position);
+            const id = slot ? chosen[slot] : null;
+            return id ? (byId.get(id) ?? null) : null;
+          };
+          const loop = frames.flatMap((frame) => {
+            const img = shown(frame.id);
+            return img ? [{ position: frame.id, image_url: img.image_url }] : [];
+          });
+          const canAlign = loop.length >= 2;
 
           return (
             <div key={subject} className="contents">
@@ -275,31 +311,29 @@ function FrameMatrix({
                 </div>
               </div>
               {frames.map((frame) => {
-                const img = active.get(frame.id) ?? null;
-                return (
-                  img ? (
-                    <FrameTile
-                      key={frame.id}
-                      image={img}
-                      alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
-                      selected={img.id === selectedId}
-                      generating={generating.get(`${subject}-${frame.id}`)}
-                      onSelect={() => onSelect(img.id)}
-                    />
-                  ) : (
-                    <EmptySlot
-                      key={frame.id}
-                      alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
-                      blockedReason={
-                        frame.id !== 0 && !active.has(0)
-                          ? "Generate Start first: Mid and End edit it"
-                          : null
-                      }
-                      disabled={!canGenerate}
-                      generating={generating.get(`${subject}-${frame.id}`)}
-                      onGenerate={() => onGenerate(subject, frame.id)}
-                    />
-                  )
+                const img = shown(frame.id);
+                return img ? (
+                  <FrameTile
+                    key={frame.id}
+                    image={img}
+                    alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
+                    selected={img.id === selectedId}
+                    picked={img.id !== live.get(frame.id)?.id}
+                    onSelect={() => onSelect(img.id)}
+                  />
+                ) : (
+                  <EmptySlot
+                    key={frame.id}
+                    alt={`${SUBJECT_LABEL[subject]} ${frame.label}`}
+                    blockedReason={
+                      frame.id !== 0 && !shown(0)
+                        ? "Pick or publish a Start first: Mid and End edit it"
+                        : null
+                    }
+                    disabled={!canGenerate}
+                    generating={generating.get(`${subject}-${frame.id}`)}
+                    onGenerate={() => onGenerate(subject, frame.id)}
+                  />
                 );
               })}
               <div
@@ -318,8 +352,8 @@ function FrameMatrix({
                   onClick={() => onAlign(subject)}
                   title={
                     canAlign
-                      ? "Nudge frames so the person lines up in the GIF"
-                      : "Need at least two active frames"
+                      ? "Nudge frames so the person lines up in the GIF (saved as candidates)"
+                      : "Need at least two frames"
                   }
                   aria-label={`Align ${SUBJECT_LABEL[subject]} frames`}
                   className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 shadow-xs transition hover:bg-white hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40"
@@ -339,6 +373,7 @@ function FrameMatrix({
 function HistoryStrip({
   images,
   selectedId,
+  pickedIds,
   busy,
   subject,
   onSubjectChange,
@@ -348,6 +383,8 @@ function HistoryStrip({
 }: {
   images: ExerciseImage[];
   selectedId: string | null;
+  /** Frames chosen for the next publish. */
+  pickedIds: Set<string>;
   busy: boolean;
   /** Candidates and edits being made, shown first until they land. */
   pending: GenerationJob[];
@@ -401,8 +438,11 @@ function HistoryStrip({
                   "relative block aspect-square w-full overflow-hidden rounded-lg border transition",
                   selectedId === img.id
                     ? "border-zinc-900 ring-2 ring-zinc-900/15"
-                    : "border-zinc-200 hover:border-zinc-400",
-                  !img.active && "opacity-70 hover:opacity-100",
+                    : pickedIds.has(img.id)
+                      ? "border-sky-400 hover:border-sky-500"
+                      : "border-zinc-200 hover:border-zinc-400",
+                  (!img.active || img.review_status === "rejected") &&
+                    "opacity-70 hover:opacity-100",
                 )}
                 style={CHECKER_STYLE}
               >
@@ -416,6 +456,11 @@ function HistoryStrip({
                 <span className="absolute left-1 top-1 rounded bg-white/90 px-1 text-[9px] font-semibold text-zinc-600">
                   {SUBJECT_LABEL[img.subject][0]}
                 </span>
+                {pickedIds.has(img.id) && (
+                  <span className="absolute bottom-1 left-1 rounded bg-sky-100 px-1 text-[9px] font-semibold leading-4 text-sky-800">
+                    Picked
+                  </span>
+                )}
               </button>
               <div className="mt-1 flex items-center gap-1 text-[10px]">
                 <span
@@ -430,6 +475,7 @@ function HistoryStrip({
                   {imageLabel(img)}
                 </span>
               </div>
+              <ReviewBadge status={img.review_status} className="mt-0.5" />
               {isDeletableImage(img) && (
                 <button
                   type="button"
@@ -456,7 +502,9 @@ function Inspector({
   prompts,
   references,
   busy,
-  onAssign,
+  pickedAt,
+  onPick,
+  onReview,
   onDeactivate,
   onDelete,
   onEdit,
@@ -466,7 +514,10 @@ function Inspector({
   prompts: ImagePrompt[] | undefined;
   references: StyleReference[];
   busy: boolean;
-  onAssign: (position: number) => void;
+  /** The position this image is picked for in the next publish, if any. */
+  pickedAt: number | null;
+  onPick: (position: number) => void;
+  onReview: (status: ReviewStatus) => void;
   onDeactivate: () => void;
   onDelete: () => void;
   onEdit: (instruction: string) => void;
@@ -528,38 +579,95 @@ function Inspector({
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="inline-flex flex-1 rounded-lg bg-zinc-100 p-0.5">
-          {frames.map((frame) => {
-            const current = image.active && image.position === frame.id;
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-[11px] text-zinc-500">
+          <span>Review</span>
+          <span className="tabular-nums text-zinc-400">
+            {image.reviewed_at
+              ? new Date(image.reviewed_at).toLocaleString()
+              : "Not reviewed yet"}
+          </span>
+        </div>
+        <div className="inline-flex w-full rounded-lg bg-zinc-100 p-0.5">
+          {REVIEW_STATUSES.map((status) => {
+            const current = image.review_status === status;
+            // Pending would take an active frame out of the app without deactivating it.
+            const blocked = status === "pending" && image.active;
             return (
               <button
-                key={frame.id}
+                key={status}
                 type="button"
-                disabled={busy}
+                disabled={busy || blocked}
                 aria-pressed={current}
-                title={`Use as ${frame.label} (${frame.id})`}
-                onClick={() => !current && onAssign(frame.id)}
+                title={
+                  blocked
+                    ? "An active frame cannot go back to pending"
+                    : status === "rejected" && image.active
+                      ? "Reject (also deactivates this frame)"
+                      : REVIEW_LABEL[status]
+                }
+                onClick={() => !current && onReview(status)}
                 className={cn(
                   "flex-1 rounded-md px-2 py-1 text-xs font-medium transition disabled:opacity-50",
-                  current ? "bg-zinc-900 text-white" : "text-zinc-600 hover:bg-white hover:text-zinc-900",
+                  current
+                    ? status === "approved"
+                      ? "bg-emerald-600 text-white"
+                      : status === "rejected"
+                        ? "bg-red-600 text-white"
+                        : "bg-amber-500 text-white"
+                    : "text-zinc-600 hover:bg-white hover:text-zinc-900",
                 )}
               >
-                {frame.label}
+                {REVIEW_LABEL[status]}
               </button>
             );
           })}
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-7 px-2 py-0 text-xs"
-          disabled={busy || !image.active}
-          onClick={onDeactivate}
-          title="Deactivate (X)"
-        >
-          Deactivate
-        </Button>
+      </div>
+
+      <div className="space-y-1">
+        <div className="text-[11px] text-zinc-500">Use in the next publish as</div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex flex-1 rounded-lg bg-zinc-100 p-0.5">
+            {frames.map((frame) => {
+              const current = pickedAt === frame.id;
+              return (
+                <button
+                  key={frame.id}
+                  type="button"
+                  disabled={busy || image.review_status === "rejected"}
+                  aria-pressed={current}
+                  title={
+                    image.review_status === "rejected"
+                      ? "Rejected frames cannot be published"
+                      : current
+                        ? `Picked as ${frame.label} (${frame.id}): click to unpick`
+                        : `Pick as ${frame.label} (${frame.id})`
+                  }
+                  onClick={() => onPick(frame.id)}
+                  className={cn(
+                    "flex-1 rounded-md px-2 py-1 text-xs font-medium transition disabled:opacity-50",
+                    current
+                      ? "bg-zinc-900 text-white"
+                      : "text-zinc-600 hover:bg-white hover:text-zinc-900",
+                  )}
+                >
+                  {frame.label}
+                </button>
+              );
+            })}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-7 px-2 py-0 text-xs"
+            disabled={busy || !image.active}
+            onClick={onDeactivate}
+            title="Take this frame out of the app (X)"
+          >
+            Deactivate
+          </Button>
+        </div>
       </div>
 
       <EditInstruction disabled={busy} onSubmit={onEdit} />
@@ -626,6 +734,14 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       ? (exercise.images[0]?.id ?? null)
       : selectedChoice;
   const [busy, setBusy] = useState(false);
+  // Frames chosen for the next publish, per subject; they belong to one exercise and style.
+  const pickKey = `${exoId}:${styleId}`;
+  const [picksFor, setPicksFor] = useState<{ key: string; value: SubjectPicks }>({
+    key: pickKey,
+    value: NO_PICKS,
+  });
+  const [publishing, setPublishing] = useState<Subject | null>(null);
+  const [publishErrors, setPublishErrors] = useState<Partial<Record<Subject, string>>>({});
   const [editOpen, setEditOpen] = useState(false);
   const [alignSubject, setAlignSubject] = useState<Subject | null>(null);
   const [showOverrides, setShowOverrides] = useState(false);
@@ -689,25 +805,60 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     [exercise, selectedId],
   );
 
+  // The picks without images that are gone (deleted) or no longer fit (Mid of a two-frame exercise).
+  const picks = useMemo<SubjectPicks>(() => {
+    const stored = picksFor.key === pickKey ? picksFor.value : NO_PICKS;
+    if (!exercise) return stored;
+    const clean = (subject: Subject) =>
+      cleanPick(
+        stored[subject],
+        exercise.images.filter((img) => img.subject === subject),
+        exercise.two_frames,
+      );
+    return { man: clean("man"), woman: clean("woman") };
+  }, [picksFor, pickKey, exercise]);
+  const setSubjectPick = (subject: Subject, pick: SequencePick) => {
+    setPicksFor({ key: pickKey, value: { ...picks, [subject]: pick } });
+    setPublishErrors((current) => ({ ...current, [subject]: undefined }));
+  };
+  // The Start each subject would have after a publish: the picked one, else the active one.
+  const startIds = useMemo<Record<Subject, string | null>>(() => {
+    const startOf = (subject: Subject) =>
+      exercise
+        ? effectivePick(
+            picks[subject],
+            exercise.images.filter((img) => img.subject === subject),
+            exercise.two_frames,
+          ).start
+        : null;
+    return { man: startOf("man"), woman: startOf("woman") };
+  }, [exercise, picks]);
+
+  const pickedIds = useMemo(
+    () =>
+      new Set(
+        Object.values(picks)
+          .flatMap((pick) => Object.values(pick))
+          .filter((id): id is string => id != null),
+      ),
+    [picks],
+  );
+
   const historyImages = useMemo(() => {
     const images = exercise?.images ?? [];
     if (historySubject === "all") return images;
     return images.filter((img) => img.subject === historySubject);
   }, [exercise, historySubject]);
 
-  // Candidates per position: 1 replaces the active frames, more land in History to pick from.
+  // Candidates per position (and per subject): every run only adds candidates to History.
   const [variants, setVariants] = useState(1);
 
-  // Mid/End need a Start per selected subject: this run's, or (when the run has no Start or
-  // makes candidates) that subject's active one.
+  // Mid/End need a Start per selected subject: this run's, or (when the run has no Start) the
+  // one picked for the next publish, else the active one.
   const missingStartSubjects = useMemo(() => {
-    const editsActiveStart = !runPositions.includes(0) || variants > 1;
-    if (!editsActiveStart || !exercise || !runPositions.some((p) => p !== 0)) return [];
-    return subjects.filter((subject) => {
-      const status = exercise.by_subject.find((s) => s.subject === subject);
-      return !status?.active_positions.includes(0);
-    });
-  }, [exercise, runPositions, subjects, variants]);
+    if (!exercise || runPositions.includes(0) || !runPositions.some((p) => p !== 0)) return [];
+    return subjects.filter((subject) => !startIds[subject]);
+  }, [exercise, runPositions, subjects, startIds]);
   const missingStart = missingStartSubjects.length > 0;
 
   const refresh = useCallback(async () => {
@@ -721,14 +872,21 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   const generating = useMemo(() => {
     const map = new Map<string, { startedAt?: number }>();
     for (const job of jobs.jobs) {
-      if (isActiveJob(job) && !isCandidateJob(job)) {
+      if (isActiveJob(job) && !job.options.editOf) {
         map.set(`${job.subject}-${job.position}`, jobStep(job));
       }
     }
     return map;
   }, [jobs.jobs]);
   const failedJobs = jobs.jobs.filter((job) => job.status === "error");
-  const pendingCandidates = jobs.jobs.filter((job) => isActiveJob(job) && isCandidateJob(job));
+  const pendingCandidates = jobs.jobs.filter(isActiveJob);
+  // Poses are what the frames are drawn from: warn while one of them is not approved.
+  const generationPoseWarning = posesData
+    ? poseWarningText(poseWarnings(posesData.poses, runPositions))
+    : "";
+  const publishPoseWarning = posesData
+    ? poseWarningText(poseWarnings(posesData.poses, framePositions))
+    : "";
 
   /** Generates the toolbar's subjects and positions, or one empty slot of the matrix. */
   async function runGenerate(slot?: { subject: Subject; position: number }) {
@@ -750,11 +908,16 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           positions: positionsToRun,
           subjects: runSubjects,
           variants: runVariants,
-          options: (position) => ({
+          options: (position, subject) => ({
             systemOverride: run.system,
             positionOverride: run.positions[position],
             referenceIds,
             skipInputs: skipped.length ? skipped : undefined,
+            // Mid / End of a run without Start edit the Start picked or live for that subject.
+            guideImageId:
+              position !== 0 && !positionsToRun.includes(0)
+                ? (startIds[subject] ?? undefined)
+                : undefined,
           }),
         }),
       );
@@ -806,7 +969,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
 
   /** Queues an edit of an image; the result lands in History as a candidate of its position. */
   async function queueEdit(image: ExerciseImage, instruction: string) {
-    const position = image.active ? image.position : targetPosition(image);
+    const position = intendedPosition(image);
     if (position == null) return;
     if (!(await confirmGeneration.run(1))) return;
     try {
@@ -841,6 +1004,18 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     ) {
       return;
     }
+    if (
+      !next &&
+      exercise.by_subject.some((s) => s.sequence === "published") &&
+      !(await confirm({
+        title: "Use Start, Mid and End?",
+        description:
+          "A three-frame exercise needs a Mid. It stops showing in the app until a sequence with a Mid is published.",
+        confirmLabel: "Use 3 frames",
+      }))
+    ) {
+      return;
+    }
     setBusy(true);
     try {
       await staffFetch(`/api/images/exercises/${exercise.exo_id}?style=${styleId}`, {
@@ -856,36 +1031,40 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
-  /** Applies placements in order; the server deactivates whoever held a position taken. */
-  async function place(placements: Placement[]) {
-    for (const { id, position, active } of placements) {
-      await staffFetch(`/api/images/items/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ position, active }),
-      });
+  /** Chooses (or unchooses) an image as the Start / Mid / End of the next publish. */
+  function pickImage(image: ExerciseImage, position: number) {
+    if (!framePositions.includes(position)) return;
+    if (image.review_status === "rejected") {
+      toastError("Rejected frames cannot be published", "Not picked");
+      return;
     }
+    setSubjectPick(image.subject, togglePick(picks[image.subject], position, image.id));
   }
 
-  async function setPosition(imageId: string, position: number | null, active: boolean) {
-    const image = exercise?.images.find((img) => img.id === imageId);
-    if (!image) return;
-    // The way back: first the image this one displaces, then this image where it was.
-    const displaced = exercise?.images.find(
-      (img) =>
-        img.id !== imageId &&
-        img.subject === image.subject &&
-        img.active &&
-        active &&
-        img.position === position,
-    );
-    const undo = [...(displaced ? [placementOf(displaced)] : []), placementOf(image)];
+  /** The position an image is picked for in the next publish. */
+  function pickedPosition(image: ExerciseImage): number | null {
+    const slot = PICK_SLOTS.find((s) => picks[image.subject][s] === image.id);
+    return slot ? slotPosition(slot) : null;
+  }
+
+  /** Takes a live frame out of the app; its sequence stays hidden until one is published. */
+  async function deactivateImage(image: ExerciseImage | null) {
+    if (!image || !image.active || busy) return;
+    const ok = await confirm({
+      title: `Take this ${imageLabel(image)} frame out of the app?`,
+      description:
+        "The frame is deactivated, so its sequence stops showing in the app until a sequence is published again.",
+      confirmLabel: "Deactivate",
+      variant: "danger",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
-      await place([{ id: imageId, position, active }]);
-      success(active ? `Set as ${framePositionLabel(position)}` : "Deactivated", undefined, {
-        label: "Undo",
-        onClick: () => void restore(undo),
+      await staffFetch(`/api/images/items/${image.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: false }),
       });
+      success("Deactivated");
       await refresh();
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Update failed");
@@ -894,15 +1073,66 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
-  async function restore(undo: Placement[]) {
+  /** Approves, rejects or resets the review of one frame. */
+  async function reviewImage(image: ExerciseImage, status: ReviewStatus) {
+    if (busy || image.review_status === status) return;
+    if (
+      status === "rejected" &&
+      image.active &&
+      !(await confirm({
+        title: "Reject this live frame?",
+        description:
+          "A rejected frame cannot be active: it is deactivated and its sequence stops showing in the app until a sequence is published again.",
+        confirmLabel: "Reject and deactivate",
+        variant: "danger",
+      }))
+    ) {
+      return;
+    }
     setBusy(true);
     try {
-      await place(undo);
-      success("Change undone");
+      await staffFetch(`/api/images/items/${image.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ review_status: status }),
+      });
+      if (status === "rejected") {
+        setSubjectPick(image.subject, unpick(picks[image.subject], image.id));
+      }
+      success(`${REVIEW_LABEL[status]}: ${SUBJECT_LABEL[image.subject]} · ${imageLabel(image)}`);
       await refresh();
     } catch (err) {
-      toastError(err instanceof Error ? err.message : "Undo failed");
+      toastError(err instanceof Error ? err.message : "Review failed");
     } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Publishes a subject's sequence (picks over live frames) with the backend's atomic function. */
+  async function publishSubject(subject: Subject) {
+    if (!exercise || busy) return;
+    const chosen = effectivePick(
+      picks[subject],
+      exercise.images.filter((img) => img.subject === subject),
+      exercise.two_frames,
+    );
+    if (!chosen.start || !chosen.end) return;
+    setBusy(true);
+    setPublishing(subject);
+    setPublishErrors((current) => ({ ...current, [subject]: undefined }));
+    try {
+      await staffFetch("/api/images/sequences", {
+        method: "POST",
+        body: JSON.stringify({ startId: chosen.start, midId: chosen.mid, endId: chosen.end }),
+      });
+      setSubjectPick(subject, EMPTY_PICK);
+      success(`${SUBJECT_LABEL[subject]} sequence published`);
+      await refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Publish failed";
+      setPublishErrors((current) => ({ ...current, [subject]: message }));
+      toastError(message, "Could not publish");
+    } finally {
+      setPublishing(null);
       setBusy(false);
     }
   }
@@ -940,10 +1170,18 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         method: "POST",
         body: JSON.stringify({ exoId, styleId, subject, adjustments }),
       })) as { images: ExerciseImage[] };
+      // The aligned copies are candidates: pick them so the next publish uses them.
+      let next = picks[subject];
+      for (const image of result.images) {
+        const position = intendedPosition(image);
+        const slot = position != null ? slotOf(position) : null;
+        if (slot) next = { ...next, [slot as PickSlot]: image.id };
+      }
+      setSubjectPick(subject, next);
       success(
         result.images.length === 1
-          ? `Aligned ${framePositionLabel(result.images[0].position)}`
-          : `Aligned ${result.images.length} frames`,
+          ? `Aligned ${framePositionLabel(intendedPosition(result.images[0]))}: picked, publish to use it`
+          : `Aligned ${result.images.length} frames: picked, publish to use them`,
       );
       setAlignSubject(null);
       if (result.images[0]) setSelectedId(result.images[0].id);
@@ -956,10 +1194,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     }
   }
 
-  function assignSelected(position: number) {
-    // Activates the position on the selected image (its subject lane).
-    if (!selected || !framePositions.includes(position)) return;
-    void setPosition(selected.id, position, true);
+  function pickSelected(position: number) {
+    if (selected) pickImage(selected, position);
   }
 
   function browseHistory(step: -1 | 1) {
@@ -978,10 +1214,10 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
       r: () => void runGenerate(),
       Delete: deleteSelected,
       Backspace: deleteSelected,
-      "0": () => assignSelected(0),
-      "1": () => assignSelected(1),
-      "2": () => assignSelected(2),
-      x: () => selected && void setPosition(selected.id, null, false),
+      "0": () => pickSelected(0),
+      "1": () => pickSelected(1),
+      "2": () => pickSelected(2),
+      x: () => void deactivateImage(selected),
       ArrowLeft: () => browseHistory(-1),
       ArrowRight: () => browseHistory(1),
       "[": () => previousHref && router.push(previousHref),
@@ -1078,9 +1314,8 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
   // Start is drawn from the character and library references; Mid/End edit a Start. Support and
   // equipment images go with every frame.
   const startInRun = runPositions.includes(0);
-  // Mid/End edit the subject's active Start unless this run draws a single new one.
-  const editsActiveStart =
-    runPositions.some((p) => p !== 0) && (!startInRun || variants > 1);
+  // Mid/End edit the picked or active Start unless this run draws a new one.
+  const editsExistingStart = runPositions.some((p) => p !== 0) && !startInRun;
   const support = exercise.support_equipment;
   const automaticInputs: AutomaticInput[] = [
     ...(startInRun
@@ -1091,14 +1326,11 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           fileId: style?.characters.find((c) => c.subject === subject)?.file_id ?? null,
         }))
       : []),
-    ...(editsActiveStart
+    ...(editsExistingStart
       ? subjects.map((subject) => ({
           label: `Start · ${SUBJECT_LABEL[subject]}`,
-          detail: "Active Start, edited by Mid and End",
-          fileId:
-            exercise.images.find(
-              (img) => img.subject === subject && img.active && img.position === 0,
-            )?.file_id ?? null,
+          detail: "Picked or active Start, edited by Mid and End",
+          fileId: exercise.images.find((img) => img.id === startIds[subject])?.file_id ?? null,
         }))
       : []),
     ...(support
@@ -1129,13 +1361,19 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
     style?.logo_in_exercises && style.logo_file_id
       ? [{ label: "Logo", fileId: style.logo_file_id, skip: "logo" as const }]
       : [];
-  const startThumb =
-    exercise.by_subject.find((s) => s.subject === subjects[0])?.active_frames.find(
-      (f) => f.position === 0,
-    )?.image_url ??
-    exercise.by_subject.find((s) => s.active_positions.includes(0))?.active_frames.find(
-      (f) => f.position === 0,
-    )?.image_url;
+  const startThumb = [...subjects, ...SUBJECTS]
+    .map((subject) => exercise.images.find((img) => img.id === startIds[subject]))
+    .find(Boolean)?.image_url;
+  // What the align editor plays and nudges: the frames of the next publish, at their slots.
+  const alignFrames = (subject: Subject): ExerciseImage[] => {
+    const subjectImages = exercise.images.filter((img) => img.subject === subject);
+    const chosen = effectivePick(picks[subject], subjectImages, exercise.two_frames);
+    return framePositions.flatMap((position) => {
+      const slot = slotOf(position);
+      const image = subjectImages.find((img) => img.id === (slot ? chosen[slot] : null));
+      return image ? [{ ...image, position }] : [];
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -1164,7 +1402,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             options={[1, 2, 3, 4].map((n) => ({
               value: n,
               label: String(n),
-              title: n === 1 ? "Replace the active frames" : `${n} candidates each, kept in History`,
+              title: n === 1 ? "One candidate per position" : `${n} candidate sequences`,
             }))}
           />
         </LabeledControl>
@@ -1172,9 +1410,9 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           {missingStart && !running && (
             <span
               className="text-xs text-amber-700"
-              title="Mid/End are edits of the Start: generate Start first"
+              title="Mid/End are edits of a Start: generate one, then pick it (or publish it)"
             >
-              No active Start · {missingStartSubjects.map((s) => SUBJECT_LABEL[s]).join(", ")}
+              No Start to edit · {missingStartSubjects.map((s) => SUBJECT_LABEL[s]).join(", ")}
             </span>
           )}
           {running && (
@@ -1239,6 +1477,13 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         </div>
       </div>
 
+      {generationPoseWarning && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {generationPoseWarning}. The frames are drawn from it: check and approve it in the Poses
+          panel below before generating.
+        </p>
+      )}
+
       <JobFailures
         jobs={failedJobs}
         labelOf={(job) =>
@@ -1276,7 +1521,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           note={
             startInRun
               ? "Support and equipment go with every frame; character and library references only with Start, which Mid and End then edit."
-              : "Mid and End edit the active Start and also get support and equipment; library references are only sent with Start."
+              : "Mid and End edit the picked (else active) Start and also get support and equipment; library references are only sent with Start."
           }
           referencesDisabled={!startInRun}
           disabled={running}
@@ -1290,6 +1535,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
           <FrameMatrix
             images={exercise.images}
             framePositions={framePositions}
+            picks={picks}
             selectedId={selectedId}
             generating={generating}
             busy={busy}
@@ -1298,9 +1544,33 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             onAlign={setAlignSubject}
             onGenerate={(subject, position) => void runGenerate({ subject, position })}
           />
+          <SequencePublishPanel
+            exercise={exercise}
+            picks={picks}
+            styleName={style?.name ?? ""}
+            styleUnpublished={style != null && !style.published}
+            poseWarning={publishPoseWarning}
+            busy={busy}
+            publishing={publishing}
+            errors={publishErrors}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onSuggest={(subject) =>
+              setSubjectPick(
+                subject,
+                suggestPick(
+                  exercise.images.filter((img) => img.subject === subject),
+                  exercise.two_frames,
+                ),
+              )
+            }
+            onReset={(subject) => setSubjectPick(subject, EMPTY_PICK)}
+            onPublish={(subject) => void publishSubject(subject)}
+          />
           <HistoryStrip
             images={historyImages}
             selectedId={selectedId}
+            pickedIds={pickedIds}
             busy={busy}
             subject={historySubject}
             onSubjectChange={setHistorySubject}
@@ -1318,8 +1588,10 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
             prompts={promptsData?.prompts}
             references={library}
             busy={busy}
-            onAssign={(position) => selected && void setPosition(selected.id, position, true)}
-            onDeactivate={() => selected && void setPosition(selected.id, null, false)}
+            pickedAt={selected ? pickedPosition(selected) : null}
+            onPick={(position) => selected && pickImage(selected, position)}
+            onReview={(status) => selected && void reviewImage(selected, status)}
+            onDeactivate={() => void deactivateImage(selected)}
             onDelete={() => void removeImage(selected)}
             onEdit={(instruction) => selected && void queueEdit(selected, instruction)}
           />
@@ -1351,13 +1623,7 @@ export function ExerciseImageWorkspace({ exoId }: { exoId: number }) {
         <FrameAlignEditor
           open
           subject={alignSubject}
-          frames={exercise.images.filter(
-            (img) =>
-              img.subject === alignSubject &&
-              img.active &&
-              img.position != null &&
-              framePositions.includes(img.position),
-          )}
+          frames={alignFrames(alignSubject)}
           busy={busy}
           onClose={() => setAlignSubject(null)}
           onSave={(adjustments) => saveAlign(alignSubject, adjustments)}

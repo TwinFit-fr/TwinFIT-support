@@ -26,7 +26,7 @@ function startContextNote(newStart: boolean, hasActiveStart: boolean) {
   if (hasActiveStart) {
     return { title: "Mid/End edit this Start", blocking: false };
   }
-  return { title: "No active Start — generate Start first", blocking: true };
+  return { title: "No Start — generate one, then pick it", blocking: true };
 }
 
 function OverrideField({
@@ -111,7 +111,7 @@ export function PromptOverridesPanel({
   value: PromptOverrides;
   onChange: (next: PromptOverrides) => void;
   disabled?: boolean;
-  /** Thumbnail of the exercise's active Start frame, if any. */
+  /** Thumbnail of the Start Mid/End edit (the one picked for publishing, else the active one), if any. */
   startThumbUrl: string | null;
   /** EXERCISE DETAILS block sent with every frame (equipment, support, grip...). */
   details: string;
@@ -119,7 +119,7 @@ export function PromptOverridesPanel({
   onSaveToStyle?: (slot: "system" | number, text: string) => void;
 }) {
   const showStartContext = positions.some((p) => p !== 0);
-  // When the run also draws Start, Mid/End edit that new Start instead of the active one.
+  // When the run also draws Start, Mid/End edit that new Start instead of the picked / active one.
   const newStart = positions.includes(0);
   const note = startContextNote(newStart, Boolean(startThumbUrl));
   const edits = countOverrides(value, positions);
@@ -151,7 +151,7 @@ export function PromptOverridesPanel({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={startThumbUrl}
-              alt="Active Start"
+              alt="Start to edit"
               className="h-10 w-10 shrink-0 rounded border border-zinc-200 bg-white object-contain"
             />
           )}
