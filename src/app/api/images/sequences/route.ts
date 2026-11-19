@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     } catch (error) {
       const raw = error instanceof Error ? error.message : "Publish failed";
       const message = publishErrorMessage(raw, (id) =>
-        id === midId ? "The Mid" : id === endId ? "The End" : null,
+        id === startId ? "The Start" : id === midId ? "The Mid" : id === endId ? "The End" : null,
       );
       return NextResponse.json({ error: message }, { status: message === raw ? 502 : 409 });
     }

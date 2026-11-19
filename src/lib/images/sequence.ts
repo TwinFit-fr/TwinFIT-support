@@ -231,6 +231,11 @@ export function publishErrorMessage(
   raw: string,
   labelOf?: (imageId: string) => string | null,
 ): string {
+  const rejected = /frame_rejected(?::\s*([0-9a-f-]{36}))?/i.exec(raw);
+  if (rejected) {
+    const label = rejected[1] ? labelOf?.(rejected[1]) : null;
+    return `${label ?? "A frame"} was rejected in review. Pick another frame, or set it back to pending first.`;
+  }
   const drawn = /frame_drawn_on_another_start(?::\s*([0-9a-f-]{36}))?/i.exec(raw);
   if (drawn) {
     const label = drawn[1] ? labelOf?.(drawn[1]) : null;

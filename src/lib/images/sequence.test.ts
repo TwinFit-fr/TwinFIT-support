@@ -194,6 +194,10 @@ describe("publishErrorMessage", () => {
       /same style, exercise and subject/,
     );
     assert.match(publishErrorMessage("frames_must_differ"), /different image/);
+    assert.match(
+      publishErrorMessage("frame_rejected: 22222222-0000-0000-0000-000000000004", () => "The Mid"),
+      /^The Mid was rejected in review/,
+    );
     assert.match(publishErrorMessage("start_and_end_required"), /Start and an End/);
   });
 
