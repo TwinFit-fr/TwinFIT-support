@@ -10,6 +10,7 @@ import {
   TAXONOMY_LOCALIZATION_FK,
 } from "./lookup-operations";
 import { CATALOG_LOCALES, type CatalogLocale } from "./locales";
+import { requireTargetMuscleCode } from "./target-muscle";
 import {
   defaultLookupName,
   inferLoadModalityCode,
@@ -199,7 +200,8 @@ export async function resolveExerciseColumns(
   const targetCode = String(payload.target_muscle_code || "").trim();
   let targetId: string | null = null;
   if (has("target_muscle_code")) {
-    targetId = targetCode ? (await ensureLookup(token, "catalog_muscles", targetCode)).id : null;
+    // catalog.exercises.target_muscle_id is NOT NULL: never send null (Hasura rejects it as a bad uuid).
+    targetId = (await ensureLookup(token, "catalog_muscles", requireTargetMuscleCode(payload))).id;
     columns.target_muscle_id = targetId;
   }
 
