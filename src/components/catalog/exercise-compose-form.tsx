@@ -143,7 +143,6 @@ export function ExerciseComposeForm({
   const [pairMuscles, setPairMuscles] = useState<Map<string, MuscleSet>>(new Map());
   const [allExercises, setAllExercises] = useState<ExerciseWithPath[]>([]);
   const [copySource, setCopySource] = useState<CatalogExerciseRow | null>(null);
-  const [nextExoId, setNextExoId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [localeTab, setLocaleTab] = useState<CatalogLocale>("en");
@@ -243,16 +242,6 @@ export function ExerciseComposeForm({
         setCopySource(null);
       }
 
-      if (!editExoId) {
-        try {
-          const nextRes = (await staffFetch(
-            "/api/catalog/library?nextExoId=1",
-          )) as { exo_id: number };
-          if (Number.isFinite(nextRes.exo_id)) setNextExoId(nextRes.exo_id);
-        } catch {
-          /* optional */
-        }
-      }
     }
     void loadLookups().catch((err) => {
       setMessage(err instanceof Error ? err.message : "Failed to load lookups");
@@ -343,9 +332,6 @@ export function ExerciseComposeForm({
         payload.target_muscle_code = inheritedFromPair.target;
         delete payload.secondary_muscle_codes;
       }
-      if (form.load_modality_code) {
-        payload.load_modality_code = form.load_modality_code;
-      }
       if (editExoId) {
         await staffFetch("/api/catalog/update", {
           method: "POST",
@@ -388,9 +374,6 @@ export function ExerciseComposeForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      {isCreate && nextExoId != null && (
-        <p className="text-sm text-zinc-500">Next exo_id: #{nextExoId}</p>
-      )}
       {editExoId && (
         <p className="text-sm text-zinc-500">Editing exo_id #{editExoId}</p>
       )}

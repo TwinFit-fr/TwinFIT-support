@@ -2,7 +2,6 @@ export {
   composeExercise,
   deactivateExercise,
   listLibrary,
-  nextExoId,
   updateExercise,
 } from "./exercises";
 export {

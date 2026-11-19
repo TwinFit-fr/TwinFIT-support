@@ -1,22 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { nextExoIdFrom } from "./exo-id.ts";
+import { CLOSED_LOOKUP_TABLES } from "./closed-lookups.ts";
 import { findLookupRow, requireLookupRow, type LookupFinder } from "./lookup-find.ts";
 import { requireCode } from "./normalize.ts";
 
-describe("nextExoIdFrom", () => {
-  it("is max + 1 and never reuses a gap", () => {
-    const ids = Array.from({ length: 190 }, (_, i) => i + 1).filter((n) => n !== 177 && n !== 189);
-    assert.equal(nextExoIdFrom(ids), 191);
-    assert.notEqual(nextExoIdFrom(ids), 177);
-    assert.notEqual(nextExoIdFrom(ids), 189);
-  });
-  it("works on the largest id alone and on an empty catalog", () => {
-    assert.equal(nextExoIdFrom([190]), 191);
-    assert.equal(nextExoIdFrom([]), 1);
-  });
-  it("ignores invalid values", () => {
-    assert.equal(nextExoIdFrom([3, Number.NaN, -5]), 4);
+describe("closed lookup lists", () => {
+  it("lists the tables that only a backend migration extends", () => {
+    for (const t of ["catalog_load_modalities", "catalog_logging_modes", "catalog_strength_patterns"])
+      assert.ok(CLOSED_LOOKUP_TABLES.has(t));
+    assert.ok(!CLOSED_LOOKUP_TABLES.has("catalog_equipment"));
   });
 });
 

@@ -1,6 +1,5 @@
 import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
-import { nextExoIdFrom } from "./exo-id";
 import { resolveExerciseColumns } from "./lookups";
 import {
   buildExerciseLocalizationRows,
@@ -38,15 +37,6 @@ async function requireExercise(token: string, exoIdRaw: unknown) {
   const current = await fetchByExoId(token, exoId);
   if (!current) throw new Error(`No xcat exercise for exo_id ${exoId}`);
   return current;
-}
-
-export async function nextExoId(token: string): Promise<number> {
-  // Highest id of all rows, inactive ones included: ids are never reused, gaps stay free.
-  const data = await staffGql<{ catalog_exercises: { exo_id: number }[] }>(
-    token,
-    gql`query SupportCatalogNextExoId { catalog_exercises(order_by: { exo_id: desc }, limit: 1) { exo_id } }`,
-  );
-  return nextExoIdFrom(data.catalog_exercises.map((r) => Number(r.exo_id)));
 }
 
 export function listLibrary(token: string) {
@@ -119,7 +109,8 @@ function inheritedOf(payload: ExercisePayload): boolean | undefined {
 }
 
 /**
- * Inserts the exercise with its localizations and muscles in one mutation document. New
+ * Inserts the exercise with its localizations and muscles in one mutation; the backend sequence
+ * assigns `exo_id` (never sent from here). New
  * exercises inherit their pair's muscles unless the payload says otherwise. The row is inserted
  * custom with its own muscles, then switched to inherited: the database then copies the pair's
  * muscles onto it, or gives them to a pair that has none yet (writes to an inherited exercise's
@@ -143,12 +134,11 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
 
   const biomechanics = parseBiomechanicalFields(payload);
   const { columns, secondaryIds = [] } = await resolveExerciseColumns(token, payload, "create");
-  const exoId = await nextExoId(token);
   const inherit = inheritedOf(payload) ?? true;
   const { status, requested, gaps } = resolveTaxonomyStatus(payload, payload.taxonomy_status);
   if (gaps.length && requested === "migrated") {
     // Keep the save, but never allow migrated when incomplete.
-    console.warn(`xcat compose exo_id=${exoId}: coerced to pending (missing: ${gaps.join(", ")})`);
+    console.warn(`xcat compose "${displayName}": coerced to pending (missing: ${gaps.join(", ")})`);
   }
   const localizations = buildExerciseLocalizationRows(
     payload,
@@ -156,23 +146,13 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
     trimmedOrNull(payload.description),
   );
 
-  const data = await staffGql<{ insert_catalog_exercises_one: unknown }>(
+  const data = await staffGql<{ insert_catalog_exercises_one: { id: string; exo_id: number } }>(
     token,
-    inherit
-      ? gql`mutation SupportCatalogInsertExerciseInherited($o: catalog_exercises_insert_input!, $exo_id: Int!) {
-          insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }
-          update_catalog_exercises(
-            where: { exo_id: { _eq: $exo_id } }
-            _set: { muscles_inherited: true }
-          ) { affected_rows }
-        }`
-      : gql`mutation SupportCatalogInsertExercise($o: catalog_exercises_insert_input!) {
-          insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }
-        }`,
+    gql`mutation SupportCatalogInsertExercise($o: catalog_exercises_insert_input!) {
+      insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }
+    }`,
     {
-      ...(inherit ? { exo_id: exoId } : {}),
       o: {
-        exo_id: exoId,
         display_name: localizations[0].display_name,
         ...columns,
         ...biomechanics,
@@ -187,7 +167,17 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
       },
     },
   );
-  return data.insert_catalog_exercises_one;
+  const created = data.insert_catalog_exercises_one;
+  if (inherit) {
+    await staffGql(
+      token,
+      gql`mutation SupportCatalogInheritNewExercise($id: uuid!) {
+        update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { muscles_inherited: true }) { id }
+      }`,
+      { id: created.id },
+    );
+  }
+  return created;
 }
 
 /**

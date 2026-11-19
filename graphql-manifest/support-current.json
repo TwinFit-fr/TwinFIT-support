@@ -39,16 +39,12 @@
       "query": "query SupportCatalogFindExerciseByName($name: String!) {\n      catalog_exercises(where: { active: { _eq: true }, display_name: { _ilike: $name } }, limit: 5) {\n        exo_id display_name\n      }\n    }"
     },
     {
+      "name": "SupportCatalogInheritNewExercise",
+      "query": "mutation SupportCatalogInheritNewExercise($id: uuid!) {\n        update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { muscles_inherited: true }) { id }\n      }"
+    },
+    {
       "name": "SupportCatalogInsertExercise",
-      "query": "mutation SupportCatalogInsertExercise($o: catalog_exercises_insert_input!) {\n          insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }\n        }"
-    },
-    {
-      "name": "SupportCatalogInsertExerciseInherited",
-      "query": "mutation SupportCatalogInsertExerciseInherited($o: catalog_exercises_insert_input!, $exo_id: Int!) {\n          insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }\n          update_catalog_exercises(\n            where: { exo_id: { _eq: $exo_id } }\n            _set: { muscles_inherited: true }\n          ) { affected_rows }\n        }"
-    },
-    {
-      "name": "SupportCatalogNextExoId",
-      "query": "query SupportCatalogNextExoId { catalog_exercises(order_by: { exo_id: desc }, limit: 1) { exo_id } }"
+      "query": "mutation SupportCatalogInsertExercise($o: catalog_exercises_insert_input!) {\n      insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }\n    }"
     },
     {
       "name": "SupportCatalogUpdateExercise",
@@ -609,14 +605,6 @@
     {
       "name": "SupportTaxonomyInsertGrips",
       "query": "mutation SupportTaxonomyInsertGrips($o: catalog_grips_insert_input!) {\n    insert_catalog_grips_one(object: $o) { id code }\n  }"
-    },
-    {
-      "name": "SupportTaxonomyInsertLoadModalities",
-      "query": "mutation SupportTaxonomyInsertLoadModalities($o: catalog_load_modalities_insert_input!) {\n    insert_catalog_load_modalities_one(object: $o) { id code }\n  }"
-    },
-    {
-      "name": "SupportTaxonomyInsertLoggingModes",
-      "query": "mutation SupportTaxonomyInsertLoggingModes($o: catalog_logging_modes_insert_input!) {\n    insert_catalog_logging_modes_one(object: $o) { id code }\n  }"
     },
     {
       "name": "SupportTaxonomyInsertMovementTypes",

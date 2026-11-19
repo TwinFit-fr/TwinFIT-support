@@ -44,8 +44,8 @@ export const LOOKUP_FIND: Record<LookupTable, GqlDocument> = {
   }`,
 };
 
-/** Inserts a row; the result is under `insert_<table>_one`. */
-export const LOOKUP_INSERT: Record<LookupTable, GqlDocument> = {
+/** Inserts a row; the result is under `insert_<table>_one`. Closed lists have no entry (see closed-lookups.ts). */
+export const LOOKUP_INSERT: Partial<Record<LookupTable, GqlDocument>> = {
   catalog_body_regions: gql`mutation SupportTaxonomyInsertBodyRegions($o: catalog_body_regions_insert_input!) {
     insert_catalog_body_regions_one(object: $o) { id code }
   }`,
@@ -72,12 +72,6 @@ export const LOOKUP_INSERT: Record<LookupTable, GqlDocument> = {
   }`,
   catalog_grips: gql`mutation SupportTaxonomyInsertGrips($o: catalog_grips_insert_input!) {
     insert_catalog_grips_one(object: $o) { id code }
-  }`,
-  catalog_load_modalities: gql`mutation SupportTaxonomyInsertLoadModalities($o: catalog_load_modalities_insert_input!) {
-    insert_catalog_load_modalities_one(object: $o) { id code }
-  }`,
-  catalog_logging_modes: gql`mutation SupportTaxonomyInsertLoggingModes($o: catalog_logging_modes_insert_input!) {
-    insert_catalog_logging_modes_one(object: $o) { id code }
   }`,
 };
 

@@ -19,6 +19,7 @@ import {
   type ExercisePayload,
 } from "./normalize";
 import { parsePairStrengthPattern } from "./pair-strength-pattern";
+import { CLOSED_LOOKUP_MESSAGE, CLOSED_LOOKUP_TABLES } from "./closed-lookups";
 import { findLookupRow, lookupCode, requireLookupRow, type LookupRef } from "./lookup-find";
 
 export const LOOKUP_TABLES = [
@@ -74,6 +75,8 @@ async function insertLookup(
   name?: unknown,
   columns?: Record<string, unknown>,
 ): Promise<LookupRef> {
+  const insertDocument = LOOKUP_INSERT[table];
+  if (!insertDocument) throw new Error(`${table.replace("catalog_", "")}: ${CLOSED_LOOKUP_MESSAGE}`);
   const c = lookupCode(table, code);
   if (EXPLICIT_LOOKUP_TABLES.has(table) && !columns) {
     throw new Error(`Unknown ${table.replace("catalog_", "")} code: ${c}. Create it in Taxonomy first.`);
@@ -81,7 +84,7 @@ async function insertLookup(
   const label = String(name || "").trim() || defaultLookupName(c);
   const inserted = await staffGql<Record<string, LookupRef>>(
     token,
-    LOOKUP_INSERT[table],
+    insertDocument,
     { o: { code: c, name: label, active: true, ...columns } },
   );
   return inserted[`insert_${table}_one`];
@@ -125,48 +128,62 @@ type ColumnSource = {
   keys: (keyof ExercisePayload)[];
   /** Code used when the payload leaves the field empty. */
   fallback?: (payload: ExercisePayload) => string;
+  /** Human label for the missing-field error. */
+  label: string;
   /** Mandatory field without default: an empty value is an error. */
-  required?: string;
+  required?: boolean;
 };
 
 const LOOKUP_COLUMNS: ColumnSource[] = [
   {
     column: "primary_muscle_group_id",
+    label: "primary muscle group",
     table: "catalog_muscle_groups",
     keys: ["primary_muscle_group_code", "muscle_group"],
   },
   {
     column: "movement_type_id",
+    label: "movement type",
     table: "catalog_movement_types",
     keys: ["movement_type_code", "movement_type"],
   },
-  { column: "equipment_id", table: "catalog_equipment", keys: ["equipment_code", "equipment"] },
+{
+    column: "equipment_id",
+    label: "equipment",
+    table: "catalog_equipment",
+    keys: ["equipment_code", "equipment"],
+  },
   {
     column: "variation_id",
+    label: "variation",
     table: "catalog_variations",
     keys: ["variation_code", "variation"],
     fallback: () => "STANDARD",
   },
   {
     column: "position_id",
+    label: "position",
     table: "catalog_positions",
     keys: ["position_code", "position"],
-    required: "position",
+    required: true,
   },
   {
     column: "grip_id",
+    label: "grip",
     table: "catalog_grips",
     keys: ["grip_code", "grip"],
     fallback: () => "STANDARD",
   },
   {
     column: "load_modality_id",
+    label: "load modality",
     table: "catalog_load_modalities",
     keys: ["load_modality_code", "load_modality"],
-    required: "load modality",
+    required: true,
   },
   {
     column: "logging_mode_id",
+    label: "logging mode",
     table: "catalog_logging_modes",
     keys: ["logging_mode_code", "logging_mode"],
     fallback: inferLoggingModeCode,
@@ -199,8 +216,8 @@ export async function resolveExerciseColumns(
     if (!has(...source.keys)) continue;
     const given = source.keys.map((key) => payload[key]).find(Boolean);
     const code = source.required
-      ? requireCode(source.required, given)
-      : requireCode(source.column, given, source.fallback?.(payload));
+      ? requireCode(source.label, given)
+      : requireCode(source.label, given, source.fallback?.(payload));
     columns[source.column] = (await ensureLookup(token, source.table, code)).id;
   }
 
@@ -328,6 +345,9 @@ async function explicitColumns(
 
 export async function upsertLookup(token: string, payload: UpsertLookupPayload) {
   const table = assertLookupTable(payload.table);
+  if (CLOSED_LOOKUP_TABLES.has(table)) {
+    throw new Error(`${table.replace("catalog_", "")}: ${CLOSED_LOOKUP_MESSAGE}`);
+  }
   const row =
     (await findLookup(token, table, payload.code)) ??
     (await insertLookup(
