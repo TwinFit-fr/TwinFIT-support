@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "graphql";
 import ts from "typescript";
+import { samePath, toLf, toPosix } from "./graphql-manifest-paths.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const manifestPath = path.join(root, "graphql-manifest", "support-current.json");
@@ -38,17 +39,18 @@ function collectDocuments(program) {
 
   const where = (sf, node) => {
     const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-    return `${path.relative(root, sf.fileName)}:${line + 1}`;
+    return `${toPosix(path.relative(root, sf.fileName))}:${line + 1}`;
   };
   const isGql = (node) => {
     if (!ts.isIdentifier(node) || node.text !== "gql") return false;
     let symbol = checker.getSymbolAtLocation(node);
     if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
-    return symbol?.declarations?.[0]?.getSourceFile().fileName === gqlModule;
+    const declared = symbol?.declarations?.[0]?.getSourceFile().fileName;
+    return declared !== undefined && samePath(declared, gqlModule);
   };
 
   for (const sf of program.getSourceFiles().filter(isSourceFile)) {
-    if (sf.fileName === gqlModule) continue;
+    if (samePath(sf.fileName, gqlModule)) continue;
     const visit = (node) => {
       if (ts.isTaggedTemplateExpression(node) && isGql(node.tag)) {
         const template = node.template;
@@ -132,7 +134,7 @@ const manifest = buildManifest();
 const count = JSON.parse(manifest).operations.length;
 if (process.argv.includes("--check")) {
   const current = fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, "utf8") : "";
-  if (current !== manifest) {
+  if (toLf(current) !== manifest) {
     console.error(
       "graphql-manifest/support-current.json is out of date: a GraphQL operation changed.\n" +
         "Run `npm run graphql-manifest` and commit the result.",
