@@ -319,19 +319,21 @@ export function isVisiblePathComplete(
 }
 
 
-/** Full 7-axis path for compose URL (defaults for unset / hidden levels). */
+/**
+ * Full 7-axis path, one entry per level (defaults for unset grip / variation; position and the
+ * rest stay empty when unset: position is mandatory and never defaults).
+ */
 export function fullPathFromSelection(selection: Record<string, string>): string[] {
   return CATALOG_LEVELS.map((level) => {
     const sel = selection[level.key];
     if (sel) return normTaxonomy(sel);
-    if (level.key === "position") return "NEUTRAL";
     if (level.key === "grip" || level.key === "variation") return "STANDARD";
     return "";
-  }).filter(Boolean);
+  });
 }
 
 export function composeUrlFromSelection(selection: Record<string, string>): string {
-  const parts = fullPathFromSelection(selection);
+  const parts = fullPathFromSelection(selection).filter(Boolean);
   return composeUrlFromPath(parts);
 }
 

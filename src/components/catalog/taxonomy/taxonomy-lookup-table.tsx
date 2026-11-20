@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
+import { CLOSED_LOOKUP_TABLES } from "@/lib/catalog/closed-lookups";
 import { resolveLocalizedName } from "@/lib/catalog/locales";
 import type { LookupRowFull, TaxonomyTabId } from "./types";
 import {
@@ -63,6 +64,7 @@ export function TaxonomyLookupTable({
 }: TaxonomyLookupTableProps) {
   const isLocalized = LOCALIZED_TAXONOMY_TABLES.has(table);
   const hasDescription = DESCRIBED_TAXONOMY_TABLES.has(table);
+  const isClosed = CLOSED_LOOKUP_TABLES.has(table);
   const hasRegion = table === "catalog_muscle_groups";
   const regionCodeOf = (id: string | undefined) => regions.find((r) => r.id === id)?.code ?? "";
   const [filter, setFilter] = useState("");
@@ -120,6 +122,7 @@ export function TaxonomyLookupTable({
           <p className="text-sm text-zinc-500">
             {filtered.length} / {rows.length} items
             {TABLE_HINTS[table] && ` · ${TABLE_HINTS[table]}`}
+            {isClosed && " · closed list: new values only by backend migration"}
             {isLocalized && " · names in every language on Catalog → Localizations"}
             {hasDescription && " · description is internal (image prompts)"}
           </p>
@@ -131,13 +134,15 @@ export function TaxonomyLookupTable({
             onChange={(e) => setFilter(e.target.value)}
             className="max-w-[200px]"
           />
-          <Button type="button" variant="secondary" onClick={() => setShowAdd(true)}>
-            + Add
-          </Button>
+          {!isClosed && (
+            <Button type="button" variant="secondary" onClick={() => setShowAdd(true)}>
+              + Add
+            </Button>
+          )}
         </div>
       </div>
 
-      {showAdd && (
+      {showAdd && !isClosed && (
         <div className="mt-4 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
           <Input placeholder="CODE" value={newCode} onChange={(e) => setNewCode(e.target.value)} />
           {/* A translated entry gets a Title Case name from its code; edit it on Localizations. */}

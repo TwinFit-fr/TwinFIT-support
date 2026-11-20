@@ -1,15 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
-import { composeExercise, listLibrary, nextExoId, type ExercisePayload } from "@/lib/catalog";
+import { composeExercise, listLibrary, type ExercisePayload } from "@/lib/catalog";
 
 export async function GET(request: Request) {
   try {
     const token = requireStaffToken(request);
-    const { searchParams } = new URL(request.url);
-    if (searchParams.get("nextExoId") === "1") {
-      const exo_id = await nextExoId(token);
-      return NextResponse.json({ ok: true, exo_id });
-    }
     const data = await listLibrary(token);
     return NextResponse.json({ ok: true, data });
   } catch (error) {

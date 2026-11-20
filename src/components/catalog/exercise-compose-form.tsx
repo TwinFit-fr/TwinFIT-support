@@ -88,7 +88,7 @@ const DEFAULT_FORM: ExerciseFormState = {
   movement_type_code: "PRESS",
   equipment_code: "BARBELL",
   support_equipment_code: "",
-  position_code: "NEUTRAL",
+  position_code: "",
   grip_code: "STANDARD",
   variation_code: "STANDARD",
   load_modality_code: "",
@@ -143,7 +143,6 @@ export function ExerciseComposeForm({
   const [pairMuscles, setPairMuscles] = useState<Map<string, MuscleSet>>(new Map());
   const [allExercises, setAllExercises] = useState<ExerciseWithPath[]>([]);
   const [copySource, setCopySource] = useState<CatalogExerciseRow | null>(null);
-  const [nextExoId, setNextExoId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [localeTab, setLocaleTab] = useState<CatalogLocale>("en");
@@ -230,7 +229,7 @@ export function ExerciseComposeForm({
           primary_muscle_group_code: fullPath[0] || DEFAULT_FORM.primary_muscle_group_code,
           movement_type_code: fullPath[1] || DEFAULT_FORM.movement_type_code,
           equipment_code: fullPath[2] || DEFAULT_FORM.equipment_code,
-          position_code: fullPath[3] || "NEUTRAL",
+          position_code: fullPath[3] || "",
           grip_code: fullPath[4] || "STANDARD",
           variation_code: fullPath[5] || "STANDARD",
           load_modality_code: fullPath[6] || "",
@@ -243,16 +242,6 @@ export function ExerciseComposeForm({
         setCopySource(null);
       }
 
-      if (!editExoId) {
-        try {
-          const nextRes = (await staffFetch(
-            "/api/catalog/library?nextExoId=1",
-          )) as { exo_id: number };
-          if (Number.isFinite(nextRes.exo_id)) setNextExoId(nextRes.exo_id);
-        } catch {
-          /* optional */
-        }
-      }
     }
     void loadLookups().catch((err) => {
       setMessage(err instanceof Error ? err.message : "Failed to load lookups");
@@ -343,9 +332,6 @@ export function ExerciseComposeForm({
         payload.target_muscle_code = inheritedFromPair.target;
         delete payload.secondary_muscle_codes;
       }
-      if (form.load_modality_code) {
-        payload.load_modality_code = form.load_modality_code;
-      }
       if (editExoId) {
         await staffFetch("/api/catalog/update", {
           method: "POST",
@@ -388,9 +374,6 @@ export function ExerciseComposeForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      {isCreate && nextExoId != null && (
-        <p className="text-sm text-zinc-500">Next exo_id: #{nextExoId}</p>
-      )}
       {editExoId && (
         <p className="text-sm text-zinc-500">Editing exo_id #{editExoId}</p>
       )}
@@ -503,6 +486,7 @@ export function ExerciseComposeForm({
         />
         <LookupSelect
           label="Position"
+          required
           value={form.position_code}
           options={lookups.positions}
           onChange={(value) => setForm({ ...form, position_code: value })}
@@ -521,10 +505,10 @@ export function ExerciseComposeForm({
         />
         <LookupSelect
           label="Load modality"
+          required
           value={form.load_modality_code}
           options={lookups.load_modalities}
           onChange={(value) => setForm({ ...form, load_modality_code: value })}
-          allowEmpty
         />
         <div className="space-y-3 md:col-span-2">
           <div className="flex flex-wrap items-center gap-3">
@@ -614,7 +598,7 @@ function formFromExercise(ex: CatalogExerciseRow): ExerciseFormState {
     movement_type_code: ex.movement_type?.code ?? "PRESS",
     equipment_code: ex.equipment?.code ?? "BARBELL",
     support_equipment_code: ex.support_equipment?.code ?? "",
-    position_code: ex.position?.code ?? "NEUTRAL",
+    position_code: ex.position?.code ?? "",
     grip_code: ex.grip?.code ?? "STANDARD",
     variation_code: ex.variation?.code ?? "STANDARD",
     load_modality_code: ex.load_modality?.code ?? "",
@@ -661,6 +645,7 @@ function LookupSelect({
   onChange,
   allowEmpty,
   emptyLabel,
+  required,
 }: {
   label: string;
   value: string;
@@ -668,15 +653,19 @@ function LookupSelect({
   onChange: (value: string) => void;
   allowEmpty?: boolean;
   emptyLabel?: string;
+  /** Mandatory, no default: the empty choice is a prompt and the form cannot be sent with it. */
+  required?: boolean;
 }) {
   return (
     <Field label={label}>
       <select
         className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
         value={value}
+        required={required}
         onChange={(e) => onChange(e.target.value)}
       >
-        {allowEmpty && <option value="">{emptyLabel ?? "— (infer)"}</option>}
+        {required && <option value="">Select…</option>}
+        {allowEmpty && <option value="">{emptyLabel ?? "— (none)"}</option>}
         {options.map((opt) => (
           <option key={opt.code} value={opt.code}>
             {opt.code} — {opt.name}
