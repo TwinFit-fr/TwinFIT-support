@@ -1,7 +1,6 @@
 import { editImage, generateImage } from "@/lib/images/openai";
 import { assembleImagePrompt, exerciseDetails, selectedPrompts } from "@/lib/images/prompt";
 import {
-  clearActivePosition,
   englishDescription,
   ensureTwoFramesDefault,
   getActiveImageAtPosition,
@@ -24,7 +23,10 @@ import { GenerationError } from "./generation-error";
 import { currentPromptVersions } from "./prompt-versions";
 import type { SkippableInput } from "./job-types";
 
-/** One exercise frame to generate; Mid/End edit `guideImageId` or the subject's active Start. */
+/**
+ * One exercise frame to generate; Mid/End edit `guideImageId` (any Start of the exercise, style
+ * and subject, candidate or active) or else the subject's active Start.
+ */
 export type FrameRequest = {
   exoId: number;
   styleId: string;
@@ -37,15 +39,15 @@ export type FrameRequest = {
   referenceIds?: string[];
   /** Automatic inputs left out of this run. */
   skipInputs?: SkippableInput[];
-  /** Keep it as an inactive candidate for its position; the active frame stays. */
-  candidate?: boolean;
   /** Leave the frame where the model drew it (no feet-baseline shift); a later step aligns it to the Start. */
   skipAlign?: boolean;
 };
 
 /**
- * Generates one frame and stores it as the active image of its position (the previous one stays
- * in history), or as an inactive candidate for that position. Throws GenerationError when the request cannot succeed as asked.
+ * Generates one frame and stores it as an inactive candidate for its position (no position, not
+ * active, `target_position` in its snapshot, review pending). It never touches the active
+ * frames: they stay in the app until staff publish a sequence (`publishExerciseSequence`).
+ * Throws GenerationError when the request cannot succeed as asked.
  */
 export async function generateExerciseFrame(
   token: string,
@@ -227,33 +229,19 @@ export async function generateExerciseFrame(
     system_prompt_saved_at: versions.get(chosen.system.id)?.saved_at ?? null,
     position_prompt_saved_at: versions.get(chosen.position.id)?.saved_at ?? null,
   };
-  const insert = () =>
-    insertExerciseImage(token, {
-      style_id: styleId,
-      exo_id: exercise.exo_id,
-      subject,
-      file_id: uploaded.id,
-      image_url: uploaded.url,
-      model: params.model,
-      prompt,
-      params: snapshot,
-      usage: result.usage,
-      created_by: getUserIdFromToken(token),
-      position: body.candidate ? null : position,
-      active: !body.candidate,
-    });
-
-  // A candidate keeps target_position in its snapshot and waits in history to be picked.
-  if (body.candidate) return insert();
-  await clearActivePosition(token, styleId, exercise.exo_id, subject, position);
-  let image;
-  try {
-    image = await insert();
-  } catch (error) {
-    if (!(error instanceof Error && /uniqueness|unique/i.test(error.message))) throw error;
-    await clearActivePosition(token, styleId, exercise.exo_id, subject, position);
-    image = await insert();
-  }
-
-  return image;
+  return insertExerciseImage(token, {
+    style_id: styleId,
+    exo_id: exercise.exo_id,
+    subject,
+    file_id: uploaded.id,
+    image_url: uploaded.url,
+    model: params.model,
+    prompt,
+    params: snapshot,
+    usage: result.usage,
+    created_by: getUserIdFromToken(token),
+    // A candidate: its position is in the snapshot (target_position) until it is published.
+    position: null,
+    active: false,
+  });
 }

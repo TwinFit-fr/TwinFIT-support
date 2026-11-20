@@ -167,6 +167,10 @@
       "query": "mutation SupportCoachUpsertSuggestionLocalization($object: assistant_suggestion_localizations_insert_input!) {\n      insert_assistant_suggestion_localizations_one(\n        object: $object\n        on_conflict: {\n          constraint: suggestion_localizations_pkey\n          update_columns: [text, answer_md]\n        }\n      ) { suggestion_id locale }\n    }"
     },
     {
+      "name": "SupportImageJobsBatchPending",
+      "query": "query SupportImageJobsBatchPending($batchId: uuid!) {\n      images_generation_jobs(where: { batch_id: { _eq: $batchId }, status: { _in: [\"queued\", \"running\"] } }) { exo_id subject }\n    }"
+    },
+    {
       "name": "SupportImageJobsClaimJob",
       "query": "mutation SupportImageJobsClaimJob { images_claim_generation_job { \n  id seq batch_id style_id kind exo_id subject position options\n  depends_on status attempts max_attempts not_before error result_exercise_image_id\n  inserted_at started_at finished_at\n } }"
     },
@@ -176,7 +180,7 @@
     },
     {
       "name": "SupportImageJobsDismissBatch",
-      "query": "mutation SupportImageJobsDismissBatch($batchId: uuid!) {\n      delete_images_generation_jobs(\n        where: { batch_id: { _eq: $batchId }, status: { _in: [\"done\", \"error\", \"cancelled\"] } }\n      ) { affected_rows }\n    }"
+      "query": "mutation SupportImageJobsDismissBatch($where: images_generation_jobs_bool_exp!) {\n      delete_images_generation_jobs(where: $where) { affected_rows }\n    }"
     },
     {
       "name": "SupportImageJobsEnqueueJobs",
@@ -255,14 +259,6 @@
       "query": "mutation SupportImageStyleAssetsUpsertStyleSupport($object: images_style_supports_insert_input!) {\n      insert_images_style_supports_one(\n        object: $object\n        on_conflict: {\n          constraint: images_style_supports_pkey\n          update_columns: [file_id, image_url, updated_at]\n        }\n      ) { style_id }\n    }"
     },
     {
-      "name": "SupportImagesClearActivePosition",
-      "query": "mutation SupportImagesClearActivePosition(\n          $styleId: uuid!\n          $exoId: Int!\n          $subject: String!\n          $position: smallint!\n          $updatedAt: timestamptz!\n        ) {\n          update_images_exercise_images(\n            where: {\n              style_id: { _eq: $styleId }\n              exo_id: { _eq: $exoId }\n              subject: { _eq: $subject }\n              position: { _eq: $position }\n              active: { _eq: true }\n            }\n            _set: { active: false, position: null, updated_at: $updatedAt }\n          ) { affected_rows }\n        }"
-    },
-    {
-      "name": "SupportImagesClearActivePositionExcept",
-      "query": "mutation SupportImagesClearActivePositionExcept(\n          $styleId: uuid!\n          $exoId: Int!\n          $subject: String!\n          $position: smallint!\n          $exceptId: uuid!\n          $updatedAt: timestamptz!\n        ) {\n          update_images_exercise_images(\n            where: {\n              style_id: { _eq: $styleId }\n              exo_id: { _eq: $exoId }\n              subject: { _eq: $subject }\n              position: { _eq: $position }\n              active: { _eq: true }\n              id: { _neq: $exceptId }\n            }\n            _set: { active: false, position: null, updated_at: $updatedAt }\n          ) { affected_rows }\n        }"
-    },
-    {
       "name": "SupportImagesClearDefaultStyle",
       "query": "mutation SupportImagesClearDefaultStyle($updatedAt: timestamptz!, $updatedBy: uuid) {\n        update_images_styles(\n          where: { is_default: { _eq: true } }\n          _set: { is_default: false, updated_at: $updatedAt, updated_by: $updatedBy }\n        ) { affected_rows }\n      }"
     },
@@ -292,7 +288,7 @@
     },
     {
       "name": "SupportImagesGetActiveImageAtPosition",
-      "query": "query SupportImagesGetActiveImageAtPosition($styleId: uuid!, $exoId: Int!, $subject: String!, $position: smallint!) {\n      images_exercise_images(\n        where: {\n          style_id: { _eq: $styleId }\n          exo_id: { _eq: $exoId }\n          subject: { _eq: $subject }\n          position: { _eq: $position }\n          active: { _eq: true }\n        }\n        limit: 1\n      ) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n }\n    }"
+      "query": "query SupportImagesGetActiveImageAtPosition($styleId: uuid!, $exoId: Int!, $subject: String!, $position: smallint!) {\n      images_exercise_images(\n        where: {\n          style_id: { _eq: $styleId }\n          exo_id: { _eq: $exoId }\n          subject: { _eq: $subject }\n          position: { _eq: $position }\n          active: { _eq: true }\n        }\n        limit: 1\n      ) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n  review_status\n  reviewed_by\n  reviewed_at\n  drawing_id\n  start_drawing_id\n }\n    }"
     },
     {
       "name": "SupportImagesGetDefaultStyle",
@@ -300,7 +296,7 @@
     },
     {
       "name": "SupportImagesGetExerciseImage",
-      "query": "query SupportImagesGetExerciseImage($id: uuid!) { images_exercise_images_by_pk(id: $id) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n } }"
+      "query": "query SupportImagesGetExerciseImage($id: uuid!) { images_exercise_images_by_pk(id: $id) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n  review_status\n  reviewed_by\n  reviewed_at\n  drawing_id\n  start_drawing_id\n } }"
     },
     {
       "name": "SupportImagesGetExerciseSummary",
@@ -308,7 +304,7 @@
     },
     {
       "name": "SupportImagesGetImageExercise",
-      "query": "query SupportImagesGetImageExercise($exoId: Int!, $styleId: uuid!) {\n      images_exercise_options_by_pk(exo_id: $exoId) { two_frames }\n      catalog_exercises(where: { exo_id: { _eq: $exoId } }, limit: 1) {\n        \n  id\n  exo_id\n  display_name\n  active\n  primary_muscle_group { id name }\n  equipment { id code name description }\n  support_equipment { id code name description }\n  position { code name }\n  grip { code name description }\n  variation { code name }\n  localizations { locale display_name description }\n\n      }\n      images_exercise_images(\n        where: { exo_id: { _eq: $exoId }, style_id: { _eq: $styleId } }\n        order_by: [{ active: desc }, { position: asc_nulls_last }, { created_at: desc }]\n      ) {\n        \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n\n      }\n    }"
+      "query": "query SupportImagesGetImageExercise($exoId: Int!, $styleId: uuid!) {\n      images_exercise_options_by_pk(exo_id: $exoId) { two_frames }\n      catalog_exercises(where: { exo_id: { _eq: $exoId } }, limit: 1) {\n        \n  id\n  exo_id\n  display_name\n  active\n  primary_muscle_group { id name }\n  equipment { id code name description }\n  support_equipment { id code name description }\n  position { code name }\n  grip { code name description }\n  variation { code name }\n  localizations { locale display_name description }\n\n      }\n      images_exercise_images(\n        where: { exo_id: { _eq: $exoId }, style_id: { _eq: $styleId } }\n        order_by: [{ active: desc }, { position: asc_nulls_last }, { created_at: desc }]\n      ) {\n        \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n  review_status\n  reviewed_by\n  reviewed_at\n  drawing_id\n  start_drawing_id\n\n      }\n    }"
     },
     {
       "name": "SupportImagesGetImagePrompt",
@@ -324,7 +320,7 @@
     },
     {
       "name": "SupportImagesInsertExerciseImage",
-      "query": "mutation SupportImagesInsertExerciseImage($object: images_exercise_images_insert_input!) {\n      insert_images_exercise_images_one(object: $object) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n }\n    }"
+      "query": "mutation SupportImagesInsertExerciseImage($object: images_exercise_images_insert_input!) {\n      insert_images_exercise_images_one(object: $object) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n  review_status\n  reviewed_by\n  reviewed_at\n  drawing_id\n  start_drawing_id\n }\n    }"
     },
     {
       "name": "SupportImagesInsertStyle",
@@ -348,7 +344,7 @@
     },
     {
       "name": "SupportImagesListImageExercises",
-      "query": "query SupportImagesListImageExercises($styleId: uuid!) {\n      images_exercise_options { exo_id two_frames }\n      catalog_exercises(order_by: [{ exo_id: asc }]) {\n        \n  id\n  exo_id\n  display_name\n  active\n  primary_muscle_group { id name }\n  equipment { id code name description }\n  support_equipment { id code name description }\n  position { code name }\n  grip { code name description }\n  variation { code name }\n  localizations { locale display_name description }\n\n      }\n      images_exercise_images(\n        where: { style_id: { _eq: $styleId } }\n        order_by: [{ created_at: desc }]\n      ) {\n        \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n\n      }\n    }"
+      "query": "query SupportImagesListImageExercises($styleId: uuid!) {\n      images_exercise_options { exo_id two_frames }\n      catalog_exercises(order_by: [{ exo_id: asc }]) {\n        \n  id\n  exo_id\n  display_name\n  active\n  primary_muscle_group { id name }\n  equipment { id code name description }\n  support_equipment { id code name description }\n  position { code name }\n  grip { code name description }\n  variation { code name }\n  localizations { locale display_name description }\n\n      }\n      images_exercise_images(\n        where: { style_id: { _eq: $styleId } }\n        order_by: [{ created_at: desc }]\n      ) {\n        \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n  review_status\n  reviewed_by\n  reviewed_at\n  drawing_id\n  start_drawing_id\n\n      }\n    }"
     },
     {
       "name": "SupportImagesListImagePrompts",
@@ -367,8 +363,12 @@
       "query": "query SupportImagesLoadSettings {\n      images_settings_by_pk(id: true) {\n        max_concurrency\n        updated_at\n        updated_by\n      }\n    }"
     },
     {
+      "name": "SupportImagesPublishExerciseSequence",
+      "query": "mutation SupportImagesPublishExerciseSequence($startId: uuid!, $endId: uuid!, $midId: uuid) {\n      images_publish_exercise_sequence(\n        args: { p_start_image_id: $startId, p_end_image_id: $endId, p_mid_image_id: $midId }\n      ) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n  review_status\n  reviewed_by\n  reviewed_at\n  drawing_id\n  start_drawing_id\n }\n    }"
+    },
+    {
       "name": "SupportImagesUpdateExerciseImage",
-      "query": "mutation SupportImagesUpdateExerciseImage($id: uuid!, $set: images_exercise_images_set_input!) {\n      update_images_exercise_images_by_pk(pk_columns: { id: $id }, _set: $set) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n }\n    }"
+      "query": "mutation SupportImagesUpdateExerciseImage($id: uuid!, $set: images_exercise_images_set_input!) {\n      update_images_exercise_images_by_pk(pk_columns: { id: $id }, _set: $set) { \n  id\n  style_id\n  exo_id\n  subject\n  file_id\n  image_url\n  position\n  active\n  model\n  prompt\n  params\n  usage\n  created_by\n  created_at\n  updated_at\n  review_status\n  reviewed_by\n  reviewed_at\n  drawing_id\n  start_drawing_id\n }\n    }"
     },
     {
       "name": "SupportImagesUpdateImagePrompt",

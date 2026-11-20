@@ -2,71 +2,59 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
 import {
-  clearActivePosition,
   deleteExerciseImageRow,
   getExerciseImage,
-  isTwoFrameExercise,
   updateExerciseImage,
 } from "@/lib/images/queries";
 import { deleteImageFile } from "@/lib/images/storage";
-import { MID_POSITION, isDeletableImage } from "@/lib/images/types";
+import { isDeletableImage } from "@/lib/images/types";
 
-const patchSchema = z.object({
-  position: z.number().int().min(0).nullable().optional(),
-  active: z.boolean().optional(),
-});
+const patchSchema = z
+  .object({
+    /** Only `false` (take the frame out of the app); activating is publishing a sequence. */
+    active: z.boolean().optional(),
+    review_status: z.enum(["pending", "approved", "rejected"]).optional(),
+  })
+  .refine((body) => body.active !== undefined || body.review_status !== undefined, {
+    message: "Nothing to update",
+  });
 
+/**
+ * Deactivates a frame and/or sets its review status. A frame is never activated here: that is
+ * `POST /api/images/sequences` (the backend publishes Start, Mid and End together). A rejected
+ * frame cannot be active, so rejecting an active frame deactivates it too.
+ */
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const token = requireStaffToken(request);
     const { id } = await context.params;
     const body = patchSchema.parse(await request.json());
+    if (body.active === true) {
+      return NextResponse.json(
+        { error: "Frames are activated by publishing a sequence (Start, Mid and End together)" },
+        { status: 409 },
+      );
+    }
 
     const current = await getExerciseImage(token, id);
     if (!current) {
       return NextResponse.json({ error: "Image not found" }, { status: 404 });
     }
 
-    let nextActive = body.active ?? current.active;
-    let nextPosition = body.position !== undefined ? body.position : current.position;
-
-    if (body.active === false || (nextActive === false && body.position === null)) {
-      nextActive = false;
-      nextPosition = null;
-    }
-
-    if (nextActive && nextPosition == null) {
+    if (body.review_status === "pending" && current.active) {
       return NextResponse.json(
-        { error: "Active images require a position (0, 1, or 2)" },
-        { status: 400 },
-      );
-    }
-
-    if (
-      nextActive &&
-      nextPosition === MID_POSITION &&
-      (await isTwoFrameExercise(token, current.exo_id, current.style_id))
-    ) {
-      return NextResponse.json(
-        { error: "This exercise uses two frames (Start + End); Mid cannot be active" },
+        {
+          error:
+            "A live frame cannot go back to pending: it would hide the sequence. Publish another frame first.",
+        },
         { status: 409 },
       );
     }
 
-    if (nextActive && nextPosition != null) {
-      await clearActivePosition(
-        token,
-        current.style_id,
-        current.exo_id,
-        current.subject,
-        nextPosition,
-        id,
-      );
-    }
-
+    const deactivate = body.active === false || body.review_status === "rejected";
     const image = await updateExerciseImage(token, id, {
-      active: nextActive,
-      position: nextPosition,
+      ...(body.review_status ? { review_status: body.review_status } : {}),
+      ...(deactivate && current.active ? { active: false, position: null } : {}),
     });
     return NextResponse.json({ image });
   } catch (error) {

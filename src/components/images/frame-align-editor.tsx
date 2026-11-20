@@ -28,7 +28,9 @@ type FrameAlignEditorProps = {
   frames: ExerciseImage[];
   busy?: boolean;
   onClose: () => void;
-  onSave: (adjustments: { imageId: string; dx: number; dy: number; scale: number }[]) => Promise<void>;
+  onSave: (
+    adjustments: { imageId: string; position: number; dx: number; dy: number; scale: number }[],
+  ) => Promise<void>;
 };
 
 function nudgeCss(nudge: FrameNudge): string {
@@ -200,7 +202,7 @@ function FrameAlignEditorBody({
     const adjustments = sorted
       .map((f) => {
         const n = nudges[f.id] ?? IDENTITY_NUDGE;
-        return { imageId: f.id, dx: n.dx, dy: n.dy, scale: n.scale };
+        return { imageId: f.id, position: f.position as number, dx: n.dx, dy: n.dy, scale: n.scale };
       })
       .filter((a) => !isIdentityNudge(a));
     if (!adjustments.length) return;

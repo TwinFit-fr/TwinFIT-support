@@ -28,7 +28,9 @@ import {
   useSubjectSelection,
 } from "@/hooks/use-image-preferences";
 import {
+  REVIEW_FILTERS,
   type BoardFilters,
+  type ReviewFilter,
   boardFiltersQuery,
   matchesBoardFilters,
   readBoardFilters,
@@ -172,6 +174,20 @@ export function ImageBoard() {
     ) {
       return false;
     }
+    // Back to three frames: a published exercise needs a Mid it does not have yet.
+    const losingApp = twoFrames
+      ? []
+      : changing.filter((ex) => ex.by_subject.some((s) => s.sequence === "published"));
+    if (
+      losingApp.length &&
+      !(await confirm({
+        title: "Switch to 3 frames?",
+        description: `${losingApp.length} exercise(s) are in the app with two frames. With three frames they need a Mid, so they stop showing in the app until a sequence with a Mid is published.`,
+        confirmLabel: "Use 3 frames",
+      }))
+    ) {
+      return false;
+    }
     setPreparing(true);
     try {
       for (let i = 0; i < changing.length; i += 5) {
@@ -241,6 +257,13 @@ export function ImageBoard() {
               className="h-8 w-56 py-1 pl-8 text-xs"
             />
           </div>
+          <FilterSelect
+            value={filters.review}
+            onChange={(review) => setFilters({ review: review as ReviewFilter })}
+            allLabel={REVIEW_FILTERS[0][1]}
+          >
+            {REVIEW_FILTERS.slice(1).map(([id, label]) => [id, label] as [string, string])}
+          </FilterSelect>
           <FilterSelect
             value={filters.muscle}
             onChange={(muscle) => setFilters({ muscle })}

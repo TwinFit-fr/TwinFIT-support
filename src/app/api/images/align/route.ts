@@ -4,7 +4,6 @@ import { requireStaffToken } from "@/lib/api-auth";
 import { isIdentityNudge } from "@/lib/images/nudge";
 import { repositionFrame } from "@/lib/images/reposition";
 import {
-  clearActivePosition,
   getExerciseImage,
   getExerciseSummary,
   getStyle,
@@ -18,6 +17,8 @@ export const maxDuration = 60;
 
 const nudgeSchema = z.object({
   imageId: z.string().uuid(),
+  /** The slot the frame is aligned for (it may be a candidate made for another position). */
+  position: z.number().int().min(0).max(2),
   dx: z.number().min(-1).max(1),
   dy: z.number().min(-1).max(1),
   scale: z.number().min(0.2).max(3),
@@ -30,6 +31,11 @@ const bodySchema = z.object({
   adjustments: z.array(nudgeSchema).min(1).max(3),
 });
 
+/**
+ * Saves nudged copies of frames of a subject (live or candidates) as new candidates for their
+ * positions: nothing is replaced. The copies share their source's drawing, so a Mid / End drawn
+ * on a Start still goes with that Start's aligned copy; publish them with the sequence.
+ */
 export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
@@ -64,15 +70,14 @@ export async function POST(request: Request) {
       if (
         current.exo_id !== exercise.exo_id ||
         current.style_id !== styleId ||
-        current.subject !== subject ||
-        !current.active ||
-        current.position == null
+        current.subject !== subject
       ) {
         return NextResponse.json(
-          { error: "Each adjustment must be an active frame of this exercise/style/subject" },
+          { error: "Each adjustment must be a frame of this exercise, style and subject" },
           { status: 409 },
         );
       }
+      const position = adj.position;
 
       const file = await downloadImageFile(token, current.file_id);
       const bytes = await repositionFrame(
@@ -86,13 +91,13 @@ export async function POST(request: Request) {
         token,
         bytes,
         mimeType,
-        name: frameFileName(style.code, exercise.exo_id, subject, current.position, extension),
+        name: frameFileName(style.code, exercise.exo_id, subject, position, extension),
       });
 
       const snapshot = {
         ...(current.params ?? params),
         ...params,
-        target_position: current.position,
+        target_position: position,
         frame_align: true,
         align_source_image_id: current.id,
         align_dx: adj.dx,
@@ -100,9 +105,8 @@ export async function POST(request: Request) {
         align_scale: adj.scale,
       };
 
-      const position = current.position;
-      const insert = () =>
-        insertExerciseImage(token, {
+      images.push(
+        await insertExerciseImage(token, {
           style_id: styleId,
           exo_id: exercise.exo_id,
           subject,
@@ -113,20 +117,10 @@ export async function POST(request: Request) {
           params: snapshot,
           usage: null,
           created_by: getUserIdFromToken(token),
-          position,
-          active: true,
-        });
-
-      await clearActivePosition(token, styleId, exercise.exo_id, subject, position);
-      let image;
-      try {
-        image = await insert();
-      } catch (error) {
-        if (!(error instanceof Error && /uniqueness|unique/i.test(error.message))) throw error;
-        await clearActivePosition(token, styleId, exercise.exo_id, subject, position);
-        image = await insert();
-      }
-      images.push(image);
+          position: null,
+          active: false,
+        }),
+      );
     }
 
     if (images.length === 0) {

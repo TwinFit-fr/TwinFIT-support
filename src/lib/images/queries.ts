@@ -2,6 +2,7 @@ import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import { DEFAULT_GENERATION_PARAMS } from "./capabilities";
 import { exerciseDetails, type ExerciseTaxonomy } from "./prompt";
+import { reviewCounts, sequenceState } from "./publication";
 import { MID_POSITION, SUBJECTS, framePositionsFor, resolveTwoFrames } from "./types";
 import type {
   ExerciseImage,
@@ -9,6 +10,7 @@ import type {
   ExerciseImageDetail,
   ExercisePose,
   PoseStatus,
+  ReviewStatus,
   GenerationSnapshot,
   ImagePrompt,
   ImageSettings,
@@ -34,6 +36,11 @@ const IMAGE_FIELDS = `
   created_by
   created_at
   updated_at
+  review_status
+  reviewed_by
+  reviewed_at
+  drawing_id
+  start_drawing_id
 `;
 
 const PROMPT_FIELDS = `
@@ -113,6 +120,7 @@ function subjectStatus(
   images: ExerciseImage[],
   subject: Subject,
   framePositions: number[],
+  twoFrames: boolean,
 ): SubjectFrameStatus {
   const subjectImages = images.filter((img) => img.subject === subject);
   const active = subjectImages
@@ -133,6 +141,7 @@ function subjectStatus(
     })),
     preview_image: active[0] ?? subjectImages.find((img) => img.active) ?? subjectImages[0] ?? null,
     status,
+    sequence: sequenceState(subjectImages, twoFrames),
   };
 }
 
@@ -152,7 +161,9 @@ function toBoardItem(
   twoFrames: boolean,
 ): ExerciseImageBoardItem {
   const framePositions = framePositionsFor(twoFrames);
-  const bySubject = SUBJECTS.map((subject) => subjectStatus(images, subject, framePositions));
+  const bySubject = SUBJECTS.map((subject) =>
+    subjectStatus(images, subject, framePositions, twoFrames),
+  );
   const active = images
     .filter((img) => img.active && img.position != null && framePositions.includes(img.position))
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -184,6 +195,8 @@ function toBoardItem(
     two_frames: twoFrames,
     frame_positions: framePositions,
     status: boardStatus(bySubject, images),
+    review_counts: reviewCounts(images),
+    unpublished: bySubject.some((s) => s.sequence === "unpublished"),
   };
 }
 
@@ -789,6 +802,7 @@ export async function updateExerciseImage(
   set: Partial<{
     position: number | null;
     active: boolean;
+    review_status: ReviewStatus;
     updated_at: string;
   }>,
 ): Promise<ExerciseImage> {
@@ -808,65 +822,26 @@ export async function updateExerciseImage(
   return data.update_images_exercise_images_by_pk;
 }
 
-/** Deactivate any other active image occupying the same (style, exo, subject, position). */
-export async function clearActivePosition(
+/**
+ * Publishes one sequence in a transaction (backend function `images.publish_exercise_sequence`):
+ * the given frames become the active, approved Start / Mid / End of their subject, and every other
+ * active frame of it is deactivated. This is the only way Support activates frames. Returns the
+ * published rows by position; throws the function's error (see publishErrorMessage).
+ */
+export async function publishExerciseSequence(
   token: string,
-  styleId: string,
-  exoId: number,
-  subject: Subject,
-  position: number,
-  exceptId?: string,
-): Promise<void> {
-  await staffGql(
+  frames: { startId: string; endId: string; midId?: string | null },
+): Promise<ExerciseImage[]> {
+  const data = await staffGql<{ images_publish_exercise_sequence: ExerciseImage[] }>(
     token,
-    exceptId
-      ? gql`mutation SupportImagesClearActivePositionExcept(
-          $styleId: uuid!
-          $exoId: Int!
-          $subject: String!
-          $position: smallint!
-          $exceptId: uuid!
-          $updatedAt: timestamptz!
-        ) {
-          update_images_exercise_images(
-            where: {
-              style_id: { _eq: $styleId }
-              exo_id: { _eq: $exoId }
-              subject: { _eq: $subject }
-              position: { _eq: $position }
-              active: { _eq: true }
-              id: { _neq: $exceptId }
-            }
-            _set: { active: false, position: null, updated_at: $updatedAt }
-          ) { affected_rows }
-        }`
-      : gql`mutation SupportImagesClearActivePosition(
-          $styleId: uuid!
-          $exoId: Int!
-          $subject: String!
-          $position: smallint!
-          $updatedAt: timestamptz!
-        ) {
-          update_images_exercise_images(
-            where: {
-              style_id: { _eq: $styleId }
-              exo_id: { _eq: $exoId }
-              subject: { _eq: $subject }
-              position: { _eq: $position }
-              active: { _eq: true }
-            }
-            _set: { active: false, position: null, updated_at: $updatedAt }
-          ) { affected_rows }
-        }`,
-    {
-      styleId,
-      exoId,
-      subject,
-      position,
-      ...(exceptId ? { exceptId } : {}),
-      updatedAt: new Date().toISOString(),
-    },
+    gql`mutation SupportImagesPublishExerciseSequence($startId: uuid!, $endId: uuid!, $midId: uuid) {
+      images_publish_exercise_sequence(
+        args: { p_start_image_id: $startId, p_end_image_id: $endId, p_mid_image_id: $midId }
+      ) { ${IMAGE_FIELDS} }
+    }`,
+    { startId: frames.startId, endId: frames.endId, midId: frames.midId ?? null },
   );
+  return data.images_publish_exercise_sequence ?? [];
 }
 
 export async function deleteExerciseImageRow(token: string, id: string): Promise<void> {

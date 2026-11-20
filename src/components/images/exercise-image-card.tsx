@@ -7,6 +7,7 @@ import { SUBJECTS, framePositionLabel } from "@/lib/images/types";
 import { FramePlayer } from "@/components/images/frame-player";
 import { CHECKER_STYLE } from "@/components/images/checker";
 import { statusLabel } from "@/lib/images/urls";
+import { REVIEW_LABEL } from "@/lib/images/types";
 import { cn } from "@/lib/utils";
 
 const SUBJECT_LABEL: Record<Subject, string> = {
@@ -132,6 +133,26 @@ export function ExerciseImageCard({
             <span className="truncate">{meta || "—"}</span>
             <span className="shrink-0 tabular-nums text-zinc-400">#{exercise.exo_id}</span>
           </div>
+          {(exercise.unpublished || exercise.review_counts.pending > 0) && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {exercise.unpublished && (
+                <span
+                  title="Active frames the app does not show: not all approved, or Mid / End drawn on another Start"
+                  className="rounded bg-red-100 px-1 text-[9px] font-semibold leading-4 text-red-700"
+                >
+                  Not in app
+                </span>
+              )}
+              {exercise.review_counts.pending > 0 && (
+                <span
+                  title={`${exercise.review_counts.pending} frame(s) with review ${REVIEW_LABEL.pending.toLowerCase()}`}
+                  className="rounded bg-amber-100 px-1 text-[9px] font-semibold leading-4 text-amber-800"
+                >
+                  {exercise.review_counts.pending} pending
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </Link>
     </div>

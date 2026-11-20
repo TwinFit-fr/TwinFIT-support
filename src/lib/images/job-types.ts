@@ -7,7 +7,10 @@ import type { Subject } from "./types";
 
 export type JobStatus = "queued" | "running" | "done" | "error" | "cancelled";
 
-/** Edit an existing image of the job's target with an instruction (result: a candidate). */
+/**
+ * Edit an existing image of the job's target with an instruction. Every job makes a candidate
+ * (inactive, no position, review pending); publishing a sequence is a separate step.
+ */
 export type ImageEditOptions = { editOf?: string; instruction?: string };
 
 /** Automatic inputs of an exercise frame a run can leave out. */
@@ -23,8 +26,11 @@ export type FrameJobOptions = {
   referenceIds?: string[];
   /** Automatic inputs not sent this time (the style still has them). */
   skipInputs?: SkippableInput[];
-  /** Keep the result as an inactive candidate instead of replacing the active frame. */
-  candidate?: boolean;
+  /**
+   * Mid / End of a run without Start: the Start to edit (a candidate or the active one). Omitted
+   * = the subject's active Start. Ignored when the job depends on a Start of its own run.
+   */
+  guideImageId?: string;
   /** No feet-baseline shift: the frame is aligned to its Start later. */
   skipAlign?: boolean;
 } & ImageEditOptions;
@@ -66,10 +72,10 @@ export type JobSpec = {
 };
 
 /**
- * The frame jobs of a run: per exercise and subject, the chosen positions its sequence has.
- * When the run includes Start, Mid / End wait for it and edit it; otherwise they edit the
- * subject's active Start. With `variants` > 1 each position gets that many inactive candidates
- * (nothing is replaced, and Mid / End candidates edit the active Start).
+ * The frame jobs of a run: per exercise and subject, the chosen positions its sequence has, once
+ * per variant. When the run includes Start, Mid / End wait for the Start of their variant and edit
+ * it, so each variant is a coherent sequence; otherwise they edit the Start the options give
+ * (`guideImageId`) or the subject's active one. Every job makes a candidate: nothing is replaced.
  */
 export function frameJobSpecs({
   exercises,
@@ -81,35 +87,26 @@ export function frameJobSpecs({
   exercises: { exoId: number; framePositions: number[] }[];
   positions: number[];
   subjects: Subject[];
-  options?: (position: number) => FrameJobOptions;
+  options?: (position: number, subject: Subject) => FrameJobOptions;
   variants?: number;
 }): JobSpec[] {
   return exercises.flatMap(({ exoId, framePositions }) =>
     subjects.flatMap((subject) => {
       const run = framePositions.filter((p) => positions.includes(p));
-      if (variants > 1) {
-        return run.flatMap((position) =>
-          Array.from({ length: variants }, (): JobSpec => ({
+      const withStart = run.includes(0);
+      return Array.from({ length: variants }, (_, variant) => {
+        const key = `${exoId}:${subject}:${variant}`;
+        return run.map(
+          (position): JobSpec => ({
             kind: "exercise_frame",
             exoId,
             subject,
             position,
-            options: { ...options?.(position), candidate: true },
-          })),
+            ...(position === 0 ? { key } : withStart ? { after: key } : {}),
+            options: options?.(position, subject),
+          }),
         );
-      }
-      const key = `${exoId}:${subject}`;
-      const withStart = run.includes(0);
-      return run.map(
-        (position): JobSpec => ({
-          kind: "exercise_frame",
-          exoId,
-          subject,
-          position,
-          ...(position === 0 ? { key } : withStart ? { after: key } : {}),
-          options: options?.(position),
-        }),
-      );
+      }).flat();
     }),
   );
 }
@@ -120,7 +117,17 @@ export function isActiveJob(job: Pick<GenerationJob, "status">): boolean {
   return ACTIVE_JOB_STATUSES.includes(job.status);
 }
 
-/** A job that adds a candidate (variant or edit) instead of replacing the active image. */
-export function isCandidateJob(job: Pick<GenerationJob, "options">): boolean {
-  return Boolean(job.options.candidate || job.options.editOf);
+/**
+ * Exercise / subject pairs of a run that still have queued or running jobs. Their finished jobs
+ * must stay: a queued Mid / End reads the result of the finished Start it depends on.
+ */
+export function busyFrameGroups(
+  active: Pick<GenerationJob, "exo_id" | "subject">[],
+): { exo_id: number; subject: Subject }[] {
+  const groups = new Map<string, { exo_id: number; subject: Subject }>();
+  for (const job of active) {
+    if (job.exo_id == null || !job.subject) continue;
+    groups.set(`${job.exo_id}:${job.subject}`, { exo_id: job.exo_id, subject: job.subject });
+  }
+  return [...groups.values()];
 }

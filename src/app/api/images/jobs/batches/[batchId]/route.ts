@@ -31,7 +31,10 @@ export async function POST(request: Request, context: Ctx) {
   }
 }
 
-/** Clears a run's finished jobs from the list; the images stay. */
+/**
+ * Dismisses a run's finished jobs (of one exercise with `?exo=`): they leave the list, the images
+ * stay and the backend keeps the jobs with `dismissed_at`.
+ */
 export async function DELETE(request: Request, context: Ctx) {
   try {
     const token = requireStaffToken(request);
@@ -39,7 +42,9 @@ export async function DELETE(request: Request, context: Ctx) {
       .string()
       .uuid()
       .parse((await context.params).batchId);
-    return NextResponse.json({ dismissed: await dismissBatch(token, batchId) });
+    const exo = new URL(request.url).searchParams.get("exo");
+    await dismissBatch(token, batchId, exo ? z.coerce.number().int().positive().parse(exo) : undefined);
+    return NextResponse.json({ status: "dismissed" });
   } catch (error) {
     return assetErrorResponse(error, "Dismiss failed", 400);
   }
