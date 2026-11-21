@@ -44,7 +44,10 @@ export const LOOKUP_FIND: Record<LookupTable, GqlDocument> = {
   }`,
 };
 
-/** Inserts a row; the result is under `insert_<table>_one`. Closed lists have no entry (see closed-lookups.ts). */
+/**
+ * Inserts a row; the result is under `insert_<table>_one`. Tables staff cannot insert into (closed
+ * lists, grips, variations, positions: `NO_STAFF_INSERT_TABLES`) have no entry.
+ */
 export const LOOKUP_INSERT: Partial<Record<LookupTable, GqlDocument>> = {
   catalog_body_regions: gql`mutation SupportTaxonomyInsertBodyRegions($o: catalog_body_regions_insert_input!) {
     insert_catalog_body_regions_one(object: $o) { id code }
@@ -63,15 +66,6 @@ export const LOOKUP_INSERT: Partial<Record<LookupTable, GqlDocument>> = {
   }`,
   catalog_support_equipment: gql`mutation SupportTaxonomyInsertSupportEquipment($o: catalog_support_equipment_insert_input!) {
     insert_catalog_support_equipment_one(object: $o) { id code }
-  }`,
-  catalog_variations: gql`mutation SupportTaxonomyInsertVariations($o: catalog_variations_insert_input!) {
-    insert_catalog_variations_one(object: $o) { id code }
-  }`,
-  catalog_positions: gql`mutation SupportTaxonomyInsertPositions($o: catalog_positions_insert_input!) {
-    insert_catalog_positions_one(object: $o) { id code }
-  }`,
-  catalog_grips: gql`mutation SupportTaxonomyInsertGrips($o: catalog_grips_insert_input!) {
-    insert_catalog_grips_one(object: $o) { id code }
   }`,
 };
 

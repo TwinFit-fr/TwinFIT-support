@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
-import { CLOSED_LOOKUP_TABLES } from "@/lib/catalog/closed-lookups";
+import { CLOSED_LOOKUP_TABLES, NO_STAFF_INSERT_TABLES } from "@/lib/catalog/closed-lookups";
 import { resolveLocalizedName } from "@/lib/catalog/locales";
 import type { LookupRowFull, TaxonomyTabId } from "./types";
 import {
@@ -36,7 +36,8 @@ type TaxonomyLookupTableProps = {
       /** Only tables without translations: a translated name is its English label. */
       name?: string;
       sort_order: number;
-      active: boolean;
+      /** Left out for closed lists (their codes are written in SQL and the app). */
+      active?: boolean;
       description?: string | null;
     } & LookupExtraFields,
   ) => Promise<void>;
@@ -65,6 +66,8 @@ export function TaxonomyLookupTable({
   const isLocalized = LOCALIZED_TAXONOMY_TABLES.has(table);
   const hasDescription = DESCRIBED_TAXONOMY_TABLES.has(table);
   const isClosed = CLOSED_LOOKUP_TABLES.has(table);
+  /** Staff cannot add values (closed lists, grips, variations, positions: backend migrations). */
+  const canAdd = !NO_STAFF_INSERT_TABLES.has(table);
   const hasRegion = table === "catalog_muscle_groups";
   const regionCodeOf = (id: string | undefined) => regions.find((r) => r.id === id)?.code ?? "";
   const [filter, setFilter] = useState("");
@@ -122,7 +125,9 @@ export function TaxonomyLookupTable({
           <p className="text-sm text-zinc-500">
             {filtered.length} / {rows.length} items
             {TABLE_HINTS[table] && ` · ${TABLE_HINTS[table]}`}
-            {isClosed && " · closed list: new values only by backend migration"}
+            {isClosed && " · closed list: new values only by backend migration, always active"}
+            {!isClosed && !canAdd && " · new values only by backend migration"}
+            {" · a value in use cannot be deactivated"}
             {isLocalized && " · names in every language on Catalog → Localizations"}
             {hasDescription && " · description is internal (image prompts)"}
           </p>
@@ -134,7 +139,7 @@ export function TaxonomyLookupTable({
             onChange={(e) => setFilter(e.target.value)}
             className="max-w-[200px]"
           />
-          {!isClosed && (
+          {canAdd && (
             <Button type="button" variant="secondary" onClick={() => setShowAdd(true)}>
               + Add
             </Button>
@@ -142,9 +147,13 @@ export function TaxonomyLookupTable({
         </div>
       </div>
 
-      {showAdd && !isClosed && (
+      {showAdd && canAdd && (
         <div className="mt-4 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-          <Input placeholder="CODE" value={newCode} onChange={(e) => setNewCode(e.target.value)} />
+          <Input
+            placeholder="CODE (upper case, digits, _; no spaces)"
+            value={newCode}
+            onChange={(e) => setNewCode(e.target.value.toUpperCase().replace(/\s+/g, "_"))}
+          />
           {/* A translated entry gets a Title Case name from its code; edit it on Localizations. */}
           {!isLocalized && (
             <Input
@@ -245,14 +254,20 @@ export function TaxonomyLookupTable({
                     />
                   </td>
                   <td className="px-3 py-2 align-top">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={draft.active}
-                        onChange={(e) => setDraft(row.id, { active: e.target.checked })}
-                      />
-                      <span>{draft.active ? "On" : "Off"}</span>
-                    </label>
+                    {isClosed ? (
+                      <span title="Closed list: changed only by a backend migration">
+                        {draft.active ? "On" : "Off"}
+                      </span>
+                    ) : (
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={draft.active}
+                          onChange={(e) => setDraft(row.id, { active: e.target.checked })}
+                        />
+                        <span>{draft.active ? "On" : "Off"}</span>
+                      </label>
+                    )}
                   </td>
                   <td className="px-3 py-2 align-top">
                     <Button
@@ -262,7 +277,7 @@ export function TaxonomyLookupTable({
                         void onSave(row.id, {
                           name: isLocalized ? undefined : draft.name,
                           sort_order: draft.sort_order,
-                          active: draft.active,
+                          ...(isClosed ? {} : { active: draft.active }),
                           description: hasDescription ? draft.description : undefined,
                           ...(hasRegion ? { body_region_code: draft.body_region_code } : {}),
                         })

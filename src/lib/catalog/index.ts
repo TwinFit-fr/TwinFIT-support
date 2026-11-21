@@ -1,6 +1,7 @@
 export {
   composeExercise,
   deactivateExercise,
+  exerciseDetail,
   listLibrary,
   updateExercise,
 } from "./exercises";

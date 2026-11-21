@@ -22,6 +22,14 @@ import {
   MuscleSetEditor,
   type MuscleSet,
 } from "@/components/catalog/muscle-set-editor";
+import {
+  duplicateNameErrors,
+  exerciseGuardRailErrors,
+  parseBodyMassCoefficient,
+  parsePulleyRatio,
+} from "@/lib/catalog/guard-rails";
+import type { HistoryEntry } from "@/lib/catalog/history";
+import { inferLoggingModeCode } from "@/lib/catalog/normalize";
 import { useIsAdmin } from "@/hooks/use-is-staff";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
@@ -29,15 +37,28 @@ export type LookupRow = { code: string; name: string };
 
 type MuscleGroup = {
   code: string;
+  kind?: string | null;
   group_muscles: Array<{ role: string; muscle: { code: string } }>;
   group_movement_types: Array<{
     movement_type: { code: string };
     target_muscle?: { code: string } | null;
     secondary_muscles?: Array<{ muscle: { code: string } }>;
+    target_profiles?: Array<{
+      target_muscle: { code: string };
+      secondary_muscles?: Array<{ muscle: { code: string } }>;
+    }>;
   }>;
 };
 
 const pairKey = (groupCode: string, movementCode: string) => `${groupCode}::${movementCode}`;
+
+/** A pair's muscles and its target profiles (another target with its own secondaries). */
+type PairMuscles = MuscleSet & { profiles: MuscleSet[] };
+
+type ExerciseDetail = {
+  muscles_custom_reason: string | null;
+  history: HistoryEntry[];
+};
 
 type CatalogExerciseRow = {
   exo_id: number;
@@ -51,6 +72,9 @@ type CatalogExerciseRow = {
   grip?: { code: string };
   variation?: { code: string };
   load_modality?: { code: string };
+  logging_mode?: { code: string };
+  body_mass_coefficient?: number | null;
+  default_pulley_ratio?: number | null;
   target_muscle?: { code: string };
   muscles_inherited?: boolean;
   resolved_muscles?: Array<{ role: string; muscle: { code: string } }>;
@@ -75,6 +99,12 @@ export type ExerciseFormState = {
   /** Custom muscles only; an inherited exercise shows its pair's. */
   secondary_muscle_codes: string[];
   muscles_inherited: boolean;
+  /** Required when the muscles are custom (backend 2.10.0). */
+  muscles_custom_reason: string;
+  /** C_ex: empty, or a number in (0, 1]. */
+  body_mass_coefficient: string;
+  /** 1 unless the exercise is on CABLE. */
+  default_pulley_ratio: string;
   taxonomy_status: string;
   localizations: Record<
     CatalogLocale,
@@ -95,6 +125,9 @@ const DEFAULT_FORM: ExerciseFormState = {
   target_muscle_code: "",
   secondary_muscle_codes: [],
   muscles_inherited: true,
+  muscles_custom_reason: "",
+  body_mass_coefficient: "",
+  default_pulley_ratio: "1",
   taxonomy_status: "migrated",
   localizations: emptyLocaleFields(),
 };
@@ -140,7 +173,11 @@ export function ExerciseComposeForm({
     muscles: [],
   });
   const [form, setForm] = useState<ExerciseFormState>(DEFAULT_FORM);
-  const [pairMuscles, setPairMuscles] = useState<Map<string, MuscleSet>>(new Map());
+  const [pairMuscles, setPairMuscles] = useState<Map<string, PairMuscles>>(new Map());
+  const [groups, setGroups] = useState<MuscleGroup[]>([]);
+  /** The exercise as loaded (edit): its pair and logging mode, which the form does not change. */
+  const [original, setOriginal] = useState<CatalogExerciseRow | null>(null);
+  const [detail, setDetail] = useState<ExerciseDetail | null>(null);
   const [allExercises, setAllExercises] = useState<ExerciseWithPath[]>([]);
   const [copySource, setCopySource] = useState<CatalogExerciseRow | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -189,26 +226,40 @@ export function ExerciseComposeForm({
         muscles: libRes.data.catalog_muscles ?? [],
       });
 
-      const pairs = new Map<string, MuscleSet>();
+      const pairs = new Map<string, PairMuscles>();
       for (const group of taxRes.data.catalog_muscle_groups ?? []) {
         for (const pair of group.group_movement_types ?? []) {
           pairs.set(pairKey(group.code, pair.movement_type.code), {
             target: pair.target_muscle?.code ?? "",
             secondary: (pair.secondary_muscles ?? []).map((s) => s.muscle.code),
+            profiles: (pair.target_profiles ?? []).map((p) => ({
+              target: p.target_muscle.code,
+              secondary: (p.secondary_muscles ?? []).map((s) => s.muscle.code),
+            })),
           });
         }
       }
       setPairMuscles(pairs);
+      setGroups(taxRes.data.catalog_muscle_groups ?? []);
 
       if (editExoId) {
         const ex = libRes.data.catalog_exercises.find((row) => row.exo_id === editExoId);
+        const extra = (await staffFetch(`/api/catalog/update?exo_id=${editExoId}`)) as {
+          data: ExerciseDetail;
+        };
         if (ex) {
-          setForm(formFromExercise(ex));
+          setForm({
+            ...formFromExercise(ex),
+            muscles_custom_reason: extra.data.muscles_custom_reason ?? "",
+          });
         }
+        setOriginal(ex ?? null);
+        setDetail(extra.data);
         setCopySource(null);
       } else if (copyFromExoId != null) {
         const ex = libRes.data.catalog_exercises.find((row) => row.exo_id === copyFromExoId);
         if (ex) {
+          // A copy keeps the muscles; a custom copy needs its own reason.
           setForm(formFromExercise(ex));
           setCopySource(ex);
         } else {
@@ -257,13 +308,6 @@ export function ExerciseComposeForm({
     const nameKey = name.toLowerCase();
     const warnings: string[] = [];
 
-    const nameDup = allExercises.find(
-      (e) => e.display_name.trim().toLowerCase() === nameKey,
-    );
-    if (nameDup) {
-      warnings.push(`Display name already used by exo_id #${nameDup.exo_id}`);
-    }
-
     const sourceNameKey = copySource.display_name.trim().toLowerCase();
     if (nameKey && nameKey === sourceNameKey) {
       warnings.push("Display name must differ from the copied exercise");
@@ -287,21 +331,95 @@ export function ExerciseComposeForm({
 
     const canCreate =
       name.length > 0 &&
-      !nameDup &&
       nameKey !== sourceNameKey &&
       formFp !== sourceFp;
 
     return { warnings, canCreate };
   }, [isCopy, copySource, form, allExercises]);
 
-  /** The pair's muscles when the exercise inherits them; null when it picks its own. */
   const pair = pairMuscles.get(pairKey(form.primary_muscle_group_code, form.movement_type_code));
-  const inheritedFromPair = form.muscles_inherited && pair?.target ? pair : null;
+  /** The pair's target profile for the current target, if any (an inherited exercise keeps it). */
+  const profile = pair?.profiles.find((p) => p.target === form.target_muscle_code) ?? null;
+  /** What an inherited exercise resolves to: the profile of its target, else the pair. */
+  const pairView: MuscleSet | null = pair?.target ? (profile ?? pair) : null;
+  /** The pair's muscles when the exercise inherits them; null when it picks its own. */
+  const inheritedFromPair = form.muscles_inherited && pairView ? pairView : null;
+
+  const group = groups.find((g) => g.code === form.primary_muscle_group_code);
+  /** The group's own muscles (home = role target): the only valid targets (backend 2.10.0). */
+  const homeCodes = useMemo(
+    () => new Set((group?.group_muscles ?? []).filter((m) => m.role === "target").map((m) => m.muscle.code)),
+    [group],
+  );
+  const targetMuscles = useMemo(
+    () => lookups.muscles.filter((m) => homeCodes.has(m.code)),
+    [lookups.muscles, homeCodes],
+  );
+  /** Home group of each muscle (its role target row). */
+  const homeOf = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const g of groups) {
+      for (const m of g.group_muscles) if (m.role === "target") map.set(m.muscle.code, g.code);
+    }
+    return map;
+  }, [groups]);
+
+  /** Logging mode: the exercise's own on edit (the form does not change it), inferred on create. */
+  const loggingMode =
+    original?.logging_mode?.code ??
+    inferLoggingModeCode({
+      primary_muscle_group_code: form.primary_muscle_group_code,
+      movement_type_code: form.movement_type_code,
+    });
+
+  /** Every guard rail the form breaks now; the save waits until the list is empty. */
+  const guardErrors = useMemo(() => {
+    const errors: string[] = [];
+    let cex: number | null = null;
+    let pulley = 1;
+    try {
+      cex = parseBodyMassCoefficient(form.body_mass_coefficient);
+    } catch (err) {
+      errors.push((err as Error).message);
+    }
+    try {
+      pulley = parsePulleyRatio(form.default_pulley_ratio);
+    } catch (err) {
+      errors.push((err as Error).message);
+    }
+    const target = inheritedFromPair ? inheritedFromPair.target : form.target_muscle_code;
+    if (form.load_modality_code && form.equipment_code) {
+      errors.push(
+        ...exerciseGuardRailErrors({
+          groupCode: form.primary_muscle_group_code,
+          groupKind: group?.kind ?? null,
+          equipment: form.equipment_code,
+          loadModality: form.load_modality_code,
+          loggingMode,
+          bodyMassCoefficient: cex,
+          pulleyRatio: pulley,
+          musclesInherited: form.muscles_inherited,
+          musclesCustomReason: form.muscles_custom_reason,
+          // A pair's target belongs to its group (the database checks pairs too).
+          targetCode: inheritedFromPair ? "" : target,
+          targetHomeGroupCode: target ? (homeOf.get(target) ?? null) : null,
+        }),
+      );
+    }
+    errors.push(
+      ...duplicateNameErrors(
+        Object.fromEntries(CATALOG_LOCALES.map((loc) => [loc, form.localizations[loc].display_name])),
+        allExercises,
+        editExoId,
+      ),
+    );
+    return errors;
+  }, [form, inheritedFromPair, group, homeOf, loggingMode, allExercises, editExoId]);
 
   function setMusclesInherited(inherited: boolean) {
     if (inherited === form.muscles_inherited) return;
     // Going custom starts from the pair's muscles, as the database keeps them.
-    const start = !inherited && pair?.target ? pair : null;
+    const start = !inherited && pairView ? pairView : null;
     setForm({
       ...form,
       muscles_inherited: inherited,
@@ -317,6 +435,10 @@ export function ExerciseComposeForm({
       setMessage(copyValidation.warnings[0] ?? "Fix validation errors before creating");
       return;
     }
+    if (guardErrors.length) {
+      setMessage(guardErrors.join("; "));
+      return;
+    }
 
     setLoading(true);
     setMessage(null);
@@ -328,10 +450,13 @@ export function ExerciseComposeForm({
         localizations: form.localizations,
       };
       if (inheritedFromPair) {
-        // Muscles come from the pair; the target keeps validation and status as before.
+        // Muscles come from the pair (or its profile for this target): never send secondaries,
+        // the database refuses them on an inherited exercise.
         payload.target_muscle_code = inheritedFromPair.target;
         delete payload.secondary_muscle_codes;
       }
+      if (form.muscles_inherited) delete payload.muscles_custom_reason;
+      else payload.muscles_custom_reason = form.muscles_custom_reason.trim();
       if (editExoId) {
         await staffFetch("/api/catalog/update", {
           method: "POST",
@@ -370,7 +495,7 @@ export function ExerciseComposeForm({
   }
 
   const submitDisabled =
-    loading || (isCopy && !copyValidation.canCreate);
+    loading || (isCopy && !copyValidation.canCreate) || guardErrors.length > 0;
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
@@ -510,6 +635,33 @@ export function ExerciseComposeForm({
           options={lookups.load_modalities}
           onChange={(value) => setForm({ ...form, load_modality_code: value })}
         />
+        <Field label="C_ex (body mass coefficient)">
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            max="1"
+            placeholder="empty: the body is not part of the load"
+            value={form.body_mass_coefficient}
+            onChange={(e) => setForm({ ...form, body_mass_coefficient: e.target.value })}
+          />
+          <span className="mt-1 block text-xs text-zinc-500">
+            Empty, or greater than 0 and at most 1. Needed for BODYWEIGHT / ASSISTED logged as LOAD;
+            empty on TIME. Logging mode: {loggingMode}.
+          </span>
+        </Field>
+        <Field label="Pulley ratio">
+          <Input
+            type="number"
+            step="0.5"
+            min="0"
+            value={form.default_pulley_ratio}
+            onChange={(e) => setForm({ ...form, default_pulley_ratio: e.target.value })}
+          />
+          <span className="mt-1 block text-xs text-zinc-500">
+            1 = the user logs the stack number. Another value only on CABLE.
+          </span>
+        </Field>
         <div className="space-y-3 md:col-span-2">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium">Muscles</span>
@@ -534,8 +686,9 @@ export function ExerciseComposeForm({
             <div className="space-y-1">
               <MuscleSetChips muscles={lookups.muscles} value={inheritedFromPair} />
               <p className="text-xs text-zinc-500">
-                From the pair {form.primary_muscle_group_code} + {form.movement_type_code}. Edit
-                them in Taxonomy → Group movements.
+                {profile
+                  ? `From the target profile ${profile.target} of the pair ${form.primary_muscle_group_code} + ${form.movement_type_code} (changed by a backend migration).`
+                  : `From the pair ${form.primary_muscle_group_code} + ${form.movement_type_code}. Edit them in Taxonomy → Group movements.`}
               </p>
             </div>
           ) : (
@@ -545,8 +698,21 @@ export function ExerciseComposeForm({
                   This pair has no muscles yet; it will take these.
                 </p>
               )}
+              {!form.muscles_inherited && (
+                <Field label="Why custom muscles (required)">
+                  <textarea
+                    className="min-h-16 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+                    placeholder="The biomechanical reason this exercise does not use its pair's muscles"
+                    value={form.muscles_custom_reason}
+                    required
+                    onChange={(e) => setForm({ ...form, muscles_custom_reason: e.target.value })}
+                  />
+                </Field>
+              )}
               <MuscleSetEditor
                 muscles={lookups.muscles}
+                targetMuscles={targetMuscles}
+                targetHint={`Targets: the muscles of ${form.primary_muscle_group_code} (Taxonomy → Anatomy).`}
                 value={{ target: form.target_muscle_code, secondary: form.secondary_muscle_codes }}
                 onChange={(value) =>
                   setForm({
@@ -560,6 +726,13 @@ export function ExerciseComposeForm({
           )}
         </div>
       </Card>
+      {guardErrors.length > 0 && (
+        <ul className="space-y-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          {guardErrors.map((error) => (
+            <li key={error}>{error}</li>
+          ))}
+        </ul>
+      )}
       {message && <p className="text-sm text-red-600">{message}</p>}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={submitDisabled}>
@@ -574,6 +747,7 @@ export function ExerciseComposeForm({
           Cancel
         </Button>
       </div>
+      {detail && detail.history.length > 0 && <ExerciseHistory entries={detail.history} />}
     </form>
   );
 }
@@ -602,6 +776,9 @@ function formFromExercise(ex: CatalogExerciseRow): ExerciseFormState {
     grip_code: ex.grip?.code ?? "STANDARD",
     variation_code: ex.variation?.code ?? "STANDARD",
     load_modality_code: ex.load_modality?.code ?? "",
+    body_mass_coefficient: ex.body_mass_coefficient == null ? "" : String(ex.body_mass_coefficient),
+    default_pulley_ratio: String(ex.default_pulley_ratio ?? 1),
+    muscles_custom_reason: "",
     ...musclesFromExercise(ex),
     taxonomy_status: ex.taxonomy_status,
     localizations,
@@ -619,6 +796,36 @@ function musclesFromExercise(ex: CatalogExerciseRow) {
       .map((m) => m.muscle.code),
     muscles_inherited: ex.muscles_inherited ?? false,
   };
+}
+
+const formatValue = (value: unknown) =>
+  value === null || value === undefined ? "∅" : typeof value === "object" ? JSON.stringify(value) : String(value);
+
+/** The exercise's change history (catalog.change_log), newest first. */
+function ExerciseHistory({ entries }: { entries: HistoryEntry[] }) {
+  return (
+    <details className="rounded-md border border-zinc-200 px-3 py-2 text-sm">
+      <summary className="cursor-pointer font-medium">History ({entries.length})</summary>
+      <ol className="mt-2 space-y-2">
+        {entries.map((entry) => (
+          <li key={entry.id} className="text-xs text-zinc-600">
+            <span className="font-mono">{new Date(entry.changed_at).toLocaleString()}</span>{" "}
+            {entry.op.toLowerCase()} {entry.what}
+            {entry.actor && <span className="text-zinc-400"> · {entry.actor}</span>}
+            {entry.changes.length > 0 && (
+              <ul className="ml-4 list-disc">
+                {entry.changes.map((c) => (
+                  <li key={c.field}>
+                    <span className="font-mono">{c.field}</span>: {formatValue(c.from)} → {formatValue(c.to)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
 }
 
 function Field({
