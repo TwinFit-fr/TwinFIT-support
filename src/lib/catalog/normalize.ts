@@ -32,7 +32,6 @@ export type ExercisePayload = {
   taxonomy_status?: string;
   taxonomy_notes?: string | null;
   body_mass_coefficient?: number | string | null;
-  wrist_imu_mode?: string;
   default_pulley_ratio?: number | string | null;
   localizations?: Partial<
     Record<CatalogLocale, { display_name?: string | null; description?: string | null }>
@@ -122,13 +121,15 @@ const isBlank = (value: unknown) =>
 
 export type BiomechanicalFields = {
   body_mass_coefficient: number | null;
-  wrist_imu_mode: "STATIC" | "DYNAMIC";
   default_pulley_ratio: number;
 };
 
-/** Validated biomechanics with the catalog defaults for blank values. */
+/**
+ * Validated biomechanics with the catalog defaults for blank values. No wrist IMU mode: backend
+ * 2.10.0 dropped `catalog.exercises.wrist_imu_mode` (migration 1790000000116) and refuses a write
+ * that names it; a `wrist_imu_mode` key a caller still sends is ignored.
+ */
 export function parseBiomechanicalFields(payload: ExercisePayload): BiomechanicalFields {
-  const wrist = String(payload.wrist_imu_mode || "DYNAMIC").trim().toUpperCase();
   let body_mass_coefficient: number | null = null;
   if (!isBlank(payload.body_mass_coefficient)) {
     const n = Number(payload.body_mass_coefficient);
@@ -145,7 +146,6 @@ export function parseBiomechanicalFields(payload: ExercisePayload): Biomechanica
   }
   return {
     body_mass_coefficient,
-    wrist_imu_mode: wrist === "STATIC" ? "STATIC" : "DYNAMIC",
     default_pulley_ratio,
   };
 }
@@ -153,7 +153,7 @@ export function parseBiomechanicalFields(payload: ExercisePayload): Biomechanica
 /** Only the biomechanical fields present in the payload, so an update keeps the others. */
 export function providedBiomechanicalFields(payload: ExercisePayload): Partial<BiomechanicalFields> {
   const parsed = parseBiomechanicalFields(payload);
-  const keys = ["body_mass_coefficient", "wrist_imu_mode", "default_pulley_ratio"] as const;
+  const keys = ["body_mass_coefficient", "default_pulley_ratio"] as const;
   return Object.fromEntries(keys.filter((k) => k in payload).map((k) => [k, parsed[k]]));
 }
 
