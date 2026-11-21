@@ -69,6 +69,14 @@ export function TaxonomyAnatomyPanel({
   }, [group]);
 
   const linkedCodes = new Set(linked.map((x) => x.code));
+  /** Home group of each muscle (its role target row): linking it as target elsewhere moves it. */
+  const homeOf = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const g of groups) {
+      for (const m of g.group_muscles) if (m.role === "target") map.set(m.muscle.code, g.code);
+    }
+    return map;
+  }, [groups]);
   const q = poolFilter.trim().toLowerCase();
   const pool = muscles
     .filter((x) => x.active !== false)
@@ -148,7 +156,7 @@ export function TaxonomyAnatomyPanel({
                   setNewGroupCode("");
                   setNewGroupRegion("");
                   setShowNewGroup(false);
-                  setGroupCode(newGroupCode.trim().toUpperCase());
+                  setGroupCode(newGroupCode.trim().toUpperCase().replace(/\s+/g, "_"));
                 });
               }}
             >
@@ -188,7 +196,9 @@ export function TaxonomyAnatomyPanel({
               <p className="text-sm text-zinc-500">
                 {resolveLocalizedName(group as LocalizedLookup, "en")} — link muscles
                 (target / secondary). Group + movement pairs are under{" "}
-                <span className="font-medium">Group movements</span>.
+                <span className="font-medium">Group movements</span>. A muscle has one home
+                (target) group: linking it as target here moves it, which is refused while
+                exercises or pairs of its current group target it.
               </p>
             </div>
 
@@ -296,6 +306,9 @@ export function TaxonomyAnatomyPanel({
                       </p>
                       {linkRow?.role && (
                         <span className="text-xs text-zinc-500">{linkRow.role}</span>
+                      )}
+                      {homeOf.get(item.code) && homeOf.get(item.code) !== groupCode && (
+                        <span className="block text-xs text-zinc-400">home: {homeOf.get(item.code)}</span>
                       )}
                     </button>
                   );

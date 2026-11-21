@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
 import { composeExercise, listLibrary, type ExercisePayload } from "@/lib/catalog";
+import { friendlyCatalogError } from "@/lib/catalog/guard-rails";
 
 export async function GET(request: Request) {
   try {
@@ -23,6 +24,6 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Compose failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: friendlyCatalogError(message, "exercise") }, { status: 400 });
   }
 }

@@ -31,20 +31,32 @@
       "query": "mutation SupportCatalogDeactivateExercise($id: uuid!) {\n      update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }\n    }"
     },
     {
+      "name": "SupportCatalogExerciseForSave",
+      "query": "query SupportCatalogExerciseForSave($exo_id: Int!) {\n      catalog_exercises(where: { exo_id: { _eq: $exo_id } }, limit: 1) {\n        id exo_id taxonomy_status active display_name\n        muscles_inherited muscles_custom_reason body_mass_coefficient default_pulley_ratio\n        primary_muscle_group { code } movement_type { code } equipment { code }\n        load_modality { code } logging_mode { code } target_muscle { code }\n      }\n    }"
+    },
+    {
+      "name": "SupportCatalogExerciseHistory",
+      "query": "query SupportCatalogExerciseHistory($exo: String!, $prefix: String!) {\n      catalog_change_log(\n        where: {\n          table_name: { _in: [\"exercises\", \"exercise_localizations\", \"exercise_secondary_muscles\"] }\n          _or: [{ row_key: { _eq: $exo } }, { row_key: { _like: $prefix } }]\n        }\n        order_by: { id: desc }\n        limit: 50\n      ) { id changed_at actor table_name row_key op old_row new_row }\n    }"
+    },
+    {
       "name": "SupportCatalogFetchByExoId",
       "query": "query SupportCatalogFetchByExoId($exo_id: Int!) {\n      catalog_exercises(where: { exo_id: { _eq: $exo_id } }, limit: 1) {\n        id exo_id taxonomy_status active display_name\n      }\n    }"
     },
     {
-      "name": "SupportCatalogFindExerciseByName",
-      "query": "query SupportCatalogFindExerciseByName($name: String!) {\n      catalog_exercises(where: { active: { _eq: true }, display_name: { _ilike: $name } }, limit: 5) {\n        exo_id display_name\n      }\n    }"
+      "name": "SupportCatalogFindExerciseNames",
+      "query": "query SupportCatalogFindExerciseNames($where: catalog_exercise_localizations_bool_exp!) {\n      catalog_exercise_localizations(where: $where) { locale display_name exercise { exo_id } }\n    }"
     },
     {
-      "name": "SupportCatalogInheritNewExercise",
-      "query": "mutation SupportCatalogInheritNewExercise($id: uuid!) {\n        update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { muscles_inherited: true }) { id }\n      }"
+      "name": "SupportCatalogGuardContext",
+      "query": "query SupportCatalogGuardContext($group: String!, $movement: String!, $target: String!) {\n      group: catalog_muscle_groups(where: { code: { _eq: $group } }, limit: 1) { code kind }\n      pair: catalog_muscle_group_movement_types(\n        where: { muscle_group: { code: { _eq: $group } }, movement_type: { code: { _eq: $movement } } }\n        limit: 1\n      ) {\n        target_muscle { code }\n        target_profiles { target_muscle { code } }\n      }\n      target: catalog_muscles(where: { code: { _eq: $target } }, limit: 1) { code home_muscle_group { code } }\n    }"
     },
     {
       "name": "SupportCatalogInsertExercise",
       "query": "mutation SupportCatalogInsertExercise($o: catalog_exercises_insert_input!) {\n      insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }\n    }"
+    },
+    {
+      "name": "SupportCatalogInsertExerciseGivingPairMuscles",
+      "query": "mutation SupportCatalogInsertExerciseGivingPairMuscles(\n        $o: catalog_exercises_insert_input!\n        $g: uuid!\n        $m: uuid!\n      ) {\n        insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }\n        update_catalog_exercises(\n          where: {\n            primary_muscle_group_id: { _eq: $g }\n            movement_type_id: { _eq: $m }\n            active: { _eq: true }\n            muscles_inherited: { _eq: false }\n            muscles_custom_reason: { _is_null: true }\n          }\n          _set: { muscles_inherited: true }\n        ) { affected_rows }\n      }"
     },
     {
       "name": "SupportCatalogUpdateExercise",
@@ -540,7 +552,7 @@
     },
     {
       "name": "SupportTaxonomyAdmin",
-      "query": "query SupportTaxonomyAdmin {\n      catalog_body_regions(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active body_region_id\n        localizations(order_by: { locale: asc }) { locale display_name }\n        group_muscles { role muscle { id code name description active localizations(order_by: { locale: asc }) { locale display_name } } }\n        group_movement_types {\n          movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } }\n          localizations(order_by: { locale: asc }) { locale display_name }\n          target_muscle { code name }\n          strength_pattern_override\n          strength_pattern { code name }\n          secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }\n          exercises { muscles_inherited }\n        }\n      }\n      catalog_muscles(order_by: { code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_movement_types(order_by: { sort_order: asc, code: asc }) {\n        id code name sort_order active\n        strength_pattern { code name }\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_strength_patterns(order_by: { sort_order: asc, code: asc }) {\n        id code name sort_order active\n      }\n      catalog_equipment(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_support_equipment(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_variations(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }\n      catalog_positions(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }\n      catalog_grips(order_by: { sort_order: asc, code: asc }) { id code name description sort_order active }\n      catalog_load_modalities(order_by: { sort_order: asc, code: asc }) {\n        id code name sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_logging_modes(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }\n    }"
+      "query": "query SupportTaxonomyAdmin {\n      catalog_body_regions(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active body_region_id kind\n        localizations(order_by: { locale: asc }) { locale display_name }\n        group_muscles { role muscle { id code name description active localizations(order_by: { locale: asc }) { locale display_name } } }\n        group_movement_types {\n          movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } }\n          localizations(order_by: { locale: asc }) { locale display_name }\n          target_muscle { code name }\n          strength_pattern_override\n          strength_pattern { code name }\n          secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }\n          target_profiles {\n            target_muscle { code name }\n            secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }\n          }\n          exercises { muscles_inherited }\n        }\n      }\n      catalog_muscles(order_by: { code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_movement_types(order_by: { sort_order: asc, code: asc }) {\n        id code name sort_order active\n        strength_pattern { code name }\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_strength_patterns(order_by: { sort_order: asc, code: asc }) {\n        id code name sort_order active\n      }\n      catalog_equipment(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_support_equipment(order_by: { sort_order: asc, code: asc }) {\n        id code name description sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_variations(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }\n      catalog_positions(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }\n      catalog_grips(order_by: { sort_order: asc, code: asc }) { id code name description sort_order active }\n      catalog_load_modalities(order_by: { sort_order: asc, code: asc }) {\n        id code name sort_order active\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_logging_modes(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }\n    }"
     },
     {
       "name": "SupportTaxonomyBodyRegionByCode",
@@ -603,10 +615,6 @@
       "query": "mutation SupportTaxonomyInsertEquipment($o: catalog_equipment_insert_input!) {\n    insert_catalog_equipment_one(object: $o) { id code }\n  }"
     },
     {
-      "name": "SupportTaxonomyInsertGrips",
-      "query": "mutation SupportTaxonomyInsertGrips($o: catalog_grips_insert_input!) {\n    insert_catalog_grips_one(object: $o) { id code }\n  }"
-    },
-    {
       "name": "SupportTaxonomyInsertMovementTypes",
       "query": "mutation SupportTaxonomyInsertMovementTypes($o: catalog_movement_types_insert_input!) {\n    insert_catalog_movement_types_one(object: $o) { id code }\n  }"
     },
@@ -619,16 +627,8 @@
       "query": "mutation SupportTaxonomyInsertMuscles($o: catalog_muscles_insert_input!) {\n    insert_catalog_muscles_one(object: $o) { id code }\n  }"
     },
     {
-      "name": "SupportTaxonomyInsertPositions",
-      "query": "mutation SupportTaxonomyInsertPositions($o: catalog_positions_insert_input!) {\n    insert_catalog_positions_one(object: $o) { id code }\n  }"
-    },
-    {
       "name": "SupportTaxonomyInsertSupportEquipment",
       "query": "mutation SupportTaxonomyInsertSupportEquipment($o: catalog_support_equipment_insert_input!) {\n    insert_catalog_support_equipment_one(object: $o) { id code }\n  }"
-    },
-    {
-      "name": "SupportTaxonomyInsertVariations",
-      "query": "mutation SupportTaxonomyInsertVariations($o: catalog_variations_insert_input!) {\n    insert_catalog_variations_one(object: $o) { id code }\n  }"
     },
     {
       "name": "SupportTaxonomyLinkMovement",
@@ -643,8 +643,12 @@
       "query": "mutation SupportTaxonomyMoveAndLinkMuscle($mg: uuid!, $m: uuid!, $role: String!) {\n          delete_catalog_muscle_group_muscles(\n            where: { muscle_id: { _eq: $m }, role: { _eq: \"target\" }, muscle_group_id: { _neq: $mg } }\n          ) { affected_rows }\n          insert_catalog_muscle_group_muscles(\n            objects: [{ muscle_group_id: $mg, muscle_id: $m, role: $role }]\n            on_conflict: { constraint: muscle_group_muscles_pkey, update_columns: [role] }\n          ) { affected_rows }\n        }"
     },
     {
+      "name": "SupportTaxonomyMuscleUse",
+      "query": "query SupportTaxonomyMuscleUse($m: uuid!) {\n      muscle: catalog_muscles_by_pk(id: $m) { code active home_muscle_group_id }\n      exercises: catalog_exercises(where: { target_muscle_id: { _eq: $m } }, order_by: { exo_id: asc }) {\n        exo_id primary_muscle_group_id\n      }\n      pairs: catalog_muscle_group_movement_types(where: { target_muscle_id: { _eq: $m } }) {\n        muscle_group_id muscle_group { code } movement_type { code }\n      }\n      profiles: catalog_pair_target_profiles(where: { target_muscle_id: { _eq: $m } }) {\n        muscle_group_id pair { muscle_group { code } movement_type { code } }\n      }\n    }"
+    },
+    {
       "name": "SupportTaxonomyMusclesByCodes",
-      "query": "query SupportTaxonomyMusclesByCodes($codes: [String!]!) { catalog_muscles(where: { code: { _in: $codes } }) { id code } }"
+      "query": "query SupportTaxonomyMusclesByCodes($codes: [String!]!) { catalog_muscles(where: { code: { _in: $codes } }) { id code home_muscle_group { code } } }"
     },
     {
       "name": "SupportTaxonomyReadBodyRegions",
@@ -852,7 +856,7 @@
     },
     {
       "name": "SupportXcatLibraryAdmin",
-      "query": "query SupportXcatLibraryAdmin {\n      catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {\n        id\n        exo_id\n        display_name\n        localizations(order_by: { locale: asc }) { locale display_name description }\n        taxonomy_status\n        taxonomy_notes\n        primary_muscle_group { code name }\n        target_muscle { code name }\n        muscles_inherited\n        resolved_muscles(order_by: { sort_order: asc }) { role source muscle { code name } }\n        movement_type { code name }\n        equipment { code name }\n        support_equipment { code name }\n        variation { code name }\n        position { code name }\n        grip { code name }\n        load_modality { code name }\n        logging_mode { code name }\n        body_mass_coefficient\n        wrist_imu_mode\n        default_pulley_ratio\n        secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }\n        extra_muscle_groups { muscle_group { code name } }\n      }\n      catalog_muscle_groups(where: { active: { _eq: true } }, order_by: { sort_order: asc }) {\n        id code name\n      }\n      catalog_muscles(where: { active: { _eq: true } }, order_by: { code: asc }) {\n        id code name\n      }\n      catalog_movement_types(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n      }\n      catalog_equipment(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_support_equipment(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_load_modalities(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n      }\n      catalog_logging_modes(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n      }\n    }"
+      "query": "query SupportXcatLibraryAdmin {\n      catalog_exercises(where: { active: { _eq: true } }, order_by: { exo_id: asc }) {\n        id\n        exo_id\n        display_name\n        localizations(order_by: { locale: asc }) { locale display_name description }\n        taxonomy_status\n        taxonomy_notes\n        primary_muscle_group { code name }\n        target_muscle { code name }\n        muscles_inherited\n        resolved_muscles(order_by: { sort_order: asc }) { role source muscle { code name } }\n        movement_type { code name }\n        equipment { code name }\n        support_equipment { code name }\n        variation { code name }\n        position { code name }\n        grip { code name }\n        load_modality { code name }\n        logging_mode { code name }\n        body_mass_coefficient\n        default_pulley_ratio\n        secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }\n        extra_muscle_groups { muscle_group { code name } }\n      }\n      catalog_muscle_groups(where: { active: { _eq: true } }, order_by: { sort_order: asc }) {\n        id code name\n      }\n      catalog_muscles(where: { active: { _eq: true } }, order_by: { code: asc }) {\n        id code name\n      }\n      catalog_movement_types(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n      }\n      catalog_equipment(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_support_equipment(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n        localizations(order_by: { locale: asc }) { locale display_name }\n      }\n      catalog_load_modalities(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n      }\n      catalog_logging_modes(where: { active: { _eq: true } }, order_by: { sort_order: asc, code: asc }) {\n        id code name\n      }\n    }"
     }
   ]
 }

@@ -9,6 +9,19 @@ import {
   updateLookup,
   upsertLookup,
 } from "@/lib/catalog";
+import { friendlyCatalogError, type CatalogErrorContext } from "@/lib/catalog/guard-rails";
+
+/** Which taxonomy action failed, for the message when the database gives no detail. */
+function errorContext(body: Record<string, unknown> | null): CatalogErrorContext {
+  if (body?.kind === "relation") {
+    const relation = body.relationKind ?? body.relation_kind;
+    if (relation === "movement") return "movement";
+    return body.action === "unlink" ? "unlink_muscle" : "link_muscle";
+  }
+  if (body?.kind === "pair_muscles" || body?.kind === "pair_strength_pattern") return "pair";
+  if (body?.table === "catalog_muscles" && body?.muscle_group_code) return "link_muscle";
+  return "lookup";
+}
 
 export async function GET(request: Request) {
   try {
@@ -23,8 +36,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let body: Record<string, unknown> | null = null;
   try {
-    const body = await request.json();
+    body = await request.json();
+    if (!body) throw new Error("Request body required");
     const kind = body.kind as string | undefined;
     const action = body.action as string | undefined;
 
@@ -73,6 +88,6 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Taxonomy action failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: friendlyCatalogError(message, errorContext(body)) }, { status: 400 });
   }
 }

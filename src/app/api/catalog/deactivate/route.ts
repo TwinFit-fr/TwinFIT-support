@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminToken } from "@/lib/api-auth";
 import { deactivateExercise } from "@/lib/catalog";
+import { friendlyCatalogError } from "@/lib/catalog/guard-rails";
 
 export async function POST(request: Request) {
   try {
@@ -11,6 +12,6 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Deactivate failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: friendlyCatalogError(message, "deactivate") }, { status: 400 });
   }
 }

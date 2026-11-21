@@ -170,6 +170,16 @@ export function TaxonomyGroupMovementsPanel({
     }
   }
 
+  /** A pair's target is one of its group's own muscles (home = role target, backend 2.10.0). */
+  const targetOptionsFor = (groupCode: string): MuscleOption[] => {
+    const home = new Set(
+      (groups.find((g) => g.code === groupCode)?.group_muscles ?? [])
+        .filter((m) => m.role === "target")
+        .map((m) => m.muscle.code),
+    );
+    return muscleOptions.filter((m) => home.has(m.code));
+  };
+
   function openMuscles(row: PairRow) {
     setDraft(row.muscles);
     setSaveError(null);
@@ -466,6 +476,8 @@ export function TaxonomyGroupMovementsPanel({
             </div>
             <MuscleSetEditor
               muscles={muscleOptions}
+              targetMuscles={targetOptionsFor(editing.groupCode)}
+              targetHint={`Targets: the muscles of ${editing.groupCode} (Taxonomy → Anatomy).`}
               value={draft}
               onChange={setDraft}
               disabled={saving}

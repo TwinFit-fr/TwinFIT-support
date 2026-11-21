@@ -74,7 +74,8 @@ export default function CatalogTaxonomyPage() {
     fields: {
       name?: string;
       sort_order: number;
-      active: boolean;
+      /** Left out for closed lists. */
+      active?: boolean;
       description?: string | null;
     } & LookupExtraFields,
   ) {
@@ -88,7 +89,7 @@ export default function CatalogTaxonomyPage() {
           id,
           ...(fields.name !== undefined ? { name: fields.name } : {}),
           sort_order: fields.sort_order,
-          active: fields.active,
+          ...(fields.active !== undefined ? { active: fields.active } : {}),
           ...(fields.description !== undefined ? { description: fields.description } : {}),
           ...(fields.body_region_code ? { body_region_code: fields.body_region_code } : {}),
         }),
