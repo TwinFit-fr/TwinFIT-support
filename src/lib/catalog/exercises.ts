@@ -63,7 +63,6 @@ export function listLibrary(token: string) {
         load_modality { code name }
         logging_mode { code name }
         body_mass_coefficient
-        wrist_imu_mode
         default_pulley_ratio
         secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }
         extra_muscle_groups { muscle_group { code name } }
