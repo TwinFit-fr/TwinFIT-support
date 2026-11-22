@@ -13,19 +13,29 @@ const selectClass =
 /**
  * Picks a target muscle and an ordered list of secondary muscles (pairs and custom exercises).
  * The target never appears among the secondaries: choosing it as target drops it from them.
+ * `targetMuscles` limits the target picker (the group's own muscles: the database refuses a
+ * target whose home is another group); a current target outside it stays listed, marked.
  */
 export function MuscleSetEditor({
   muscles,
+  targetMuscles,
+  targetHint,
   value,
   onChange,
   disabled = false,
 }: {
   muscles: MuscleOption[];
+  targetMuscles?: MuscleOption[];
+  /** Shown under the target picker (e.g. which group's muscles it offers). */
+  targetHint?: string;
   value: MuscleSet;
   onChange: (value: MuscleSet) => void;
   disabled?: boolean;
 }) {
   const nameOf = new Map(muscles.map((m) => [m.code, m.name]));
+  const targets = targetMuscles ?? muscles;
+  const outsideTarget =
+    value.target && !targets.some((m) => m.code === value.target) ? value.target : null;
   const addable = muscles.filter(
     (m) => m.code !== value.target && !value.secondary.includes(m.code),
   );
@@ -53,13 +63,19 @@ export function MuscleSetEditor({
           }
         >
           <option value="">Select…</option>
-          {muscles.map((m) => (
+          {outsideTarget && (
+            <option value={outsideTarget}>
+              {nameOf.get(outsideTarget) ?? outsideTarget} ({outsideTarget}) — not one of this group&apos;s muscles
+            </option>
+          )}
+          {targets.map((m) => (
             <option key={m.code} value={m.code}>
               {m.name} ({m.code})
             </option>
           ))}
         </select>
       </label>
+      {targetHint && <p className="text-xs text-zinc-500">{targetHint}</p>}
 
       <div>
         <p className="text-xs font-medium text-zinc-600">

@@ -81,6 +81,8 @@ export type MuscleGroupRow = {
   description?: string | null;
   active?: boolean;
   body_region_id: string;
+  /** `major`, `accessory` or `cardio` (backend 2.10.0); a cardio group is logged as TIME. */
+  kind?: string | null;
   localizations?: LocalizationRow[];
   group_muscles: Array<{
     role: string;
@@ -109,6 +111,14 @@ export type MuscleGroupRow = {
     /** false = the pair takes its movement type's pattern; true = `strength_pattern` (null = isolation). */
     strength_pattern_override?: boolean;
     strength_pattern?: { code: string; name: string } | null;
+    /**
+     * Target profiles of the pair (backend 2.10.0): another target with its own secondaries,
+     * inherited by the pair's exercises that keep that target. Edited by a backend migration.
+     */
+    target_profiles?: Array<{
+      target_muscle: { code: string; name: string };
+      secondary_muscles?: Array<{ muscle: { code: string; name: string } }>;
+    }>;
     exercises?: Array<{ muscles_inherited: boolean }>;
   }>;
 };

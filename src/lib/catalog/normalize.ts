@@ -1,3 +1,4 @@
+import { parseBodyMassCoefficient, parsePulleyRatio } from "./guard-rails.ts";
 import { CATALOG_LOCALES, type CatalogLocale } from "./locales.ts";
 
 type Code = string | null | undefined;
@@ -29,6 +30,8 @@ export type ExercisePayload = {
   secondary_muscle_codes?: string[];
   /** True: the exercise uses its pair's muscles; false: its own (custom). */
   muscles_inherited?: boolean;
+  /** Why a custom exercise does not use its pair's muscles; required when `muscles_inherited` is false. */
+  muscles_custom_reason?: string | null;
   taxonomy_status?: string;
   taxonomy_notes?: string | null;
   body_mass_coefficient?: number | string | null;
@@ -40,6 +43,11 @@ export type ExercisePayload = {
 
 export type TaxonomyStatus = "migrated" | "pending";
 
+/**
+ * A code as typed, for looking a row up: trimmed, single spaces, upper case. Spaces stay because
+ * the legacy movement codes `CALF RAISE`, `LEG RAISE` and `HIP THRUST` keep them; a new code is
+ * SCREAMING_SNAKE without spaces (`newTaxonomyCode`).
+ */
 export function normalizeTaxonomy(value: unknown): string {
   return String(value || "")
     .trim()
@@ -116,37 +124,21 @@ export function resolveTaxonomyStatus(
   return { status, requested, gaps };
 }
 
-const isBlank = (value: unknown) =>
-  value === undefined || value === null || String(value).trim() === "";
-
 export type BiomechanicalFields = {
   body_mass_coefficient: number | null;
   default_pulley_ratio: number;
 };
 
 /**
- * Validated biomechanics with the catalog defaults for blank values. No wrist IMU mode: backend
+ * Validated biomechanics with the catalog defaults for blank values: C_ex empty or in (0, 1]
+ * (backend 2.10.0, was [0, 1.5]), pulley ratio > 0. No wrist IMU mode: backend
  * 2.10.0 dropped `catalog.exercises.wrist_imu_mode` (migration 1790000000116) and refuses a write
  * that names it; a `wrist_imu_mode` key a caller still sends is ignored.
  */
 export function parseBiomechanicalFields(payload: ExercisePayload): BiomechanicalFields {
-  let body_mass_coefficient: number | null = null;
-  if (!isBlank(payload.body_mass_coefficient)) {
-    const n = Number(payload.body_mass_coefficient);
-    if (!Number.isFinite(n) || n < 0 || n > 1.5) {
-      throw new Error("body_mass_coefficient must be empty or a number in [0, 1.5]");
-    }
-    body_mass_coefficient = n;
-  }
-  let default_pulley_ratio = 1.0;
-  if (!isBlank(payload.default_pulley_ratio)) {
-    const p = Number(payload.default_pulley_ratio);
-    if (!Number.isFinite(p) || p <= 0) throw new Error("default_pulley_ratio must be > 0");
-    default_pulley_ratio = p;
-  }
   return {
-    body_mass_coefficient,
-    default_pulley_ratio,
+    body_mass_coefficient: parseBodyMassCoefficient(payload.body_mass_coefficient),
+    default_pulley_ratio: parsePulleyRatio(payload.default_pulley_ratio),
   };
 }
 

@@ -20,7 +20,19 @@ import {
   type ExercisePayload,
 } from "./normalize";
 import { parsePairStrengthPattern } from "./pair-strength-pattern";
-import { CLOSED_LOOKUP_MESSAGE, CLOSED_LOOKUP_TABLES } from "./closed-lookups";
+import {
+  CLOSED_LOOKUP_MESSAGE,
+  CLOSED_LOOKUP_TABLES,
+  NO_STAFF_INSERT_MESSAGE,
+  NO_STAFF_INSERT_TABLES,
+} from "./closed-lookups";
+import {
+  muscleMoveBlocker,
+  muscleUnlinkBlocker,
+  newTaxonomyCode,
+  targetHomeMessage,
+  type MuscleUse,
+} from "./guard-rails";
 import { findLookupRow, lookupCode, requireLookupRow, type LookupRef } from "./lookup-find";
 
 export const LOOKUP_TABLES = [
@@ -68,7 +80,10 @@ export function ensureLookup(token: string, table: LookupTable, code: unknown): 
   return requireLookupRow(finder(token, table), table, code);
 }
 
-/** Taxonomy panel only: inserts a new row (Title Case name unless given) and returns it. */
+/**
+ * Taxonomy panel only: inserts a new row (Title Case name unless given) and returns it. The code
+ * is SCREAMING_SNAKE without spaces (`newTaxonomyCode`), as the database requires of a new code.
+ */
 async function insertLookup(
   token: string,
   table: LookupTable,
@@ -77,8 +92,8 @@ async function insertLookup(
   columns?: Record<string, unknown>,
 ): Promise<LookupRef> {
   const insertDocument = LOOKUP_INSERT[table];
-  if (!insertDocument) throw new Error(`${table.replace("catalog_", "")}: ${CLOSED_LOOKUP_MESSAGE}`);
-  const c = lookupCode(table, code);
+  if (!insertDocument) throw new Error(`${table.replace("catalog_", "")}: ${NO_STAFF_INSERT_MESSAGE}`);
+  const c = newTaxonomyCode(table, table === "catalog_muscles" ? normalizeMuscleCode(code) : code);
   if (EXPLICIT_LOOKUP_TABLES.has(table) && !columns) {
     throw new Error(`Unknown ${table.replace("catalog_", "")} code: ${c}. Create it in Taxonomy first.`);
   }
@@ -288,14 +303,43 @@ async function setEnglishLabel(token: string, table: LookupTable, parentId: stri
   });
 }
 
-/** A muscle has one target home group: linking as target moves it out of any other group. */
+/** Where a muscle is the target and where its home is (for the move and unlink checks). */
+function muscleUse(token: string, muscleId: string) {
+  return staffGql<MuscleUse>(
+    token,
+    gql`query SupportTaxonomyMuscleUse($m: uuid!) {
+      muscle: catalog_muscles_by_pk(id: $m) { code active home_muscle_group_id }
+      exercises: catalog_exercises(where: { target_muscle_id: { _eq: $m } }, order_by: { exo_id: asc }) {
+        exo_id primary_muscle_group_id
+      }
+      pairs: catalog_muscle_group_movement_types(where: { target_muscle_id: { _eq: $m } }) {
+        muscle_group_id muscle_group { code } movement_type { code }
+      }
+      profiles: catalog_pair_target_profiles(where: { target_muscle_id: { _eq: $m } }) {
+        muscle_group_id pair { muscle_group { code } movement_type { code } }
+      }
+    }`,
+    { m: muscleId },
+  );
+}
+
+/**
+ * A muscle has one target home group: linking as target moves it out of any other group. The
+ * database refuses the move (at commit, without detail) while exercises, pairs or profiles of the
+ * old home target it, so that is checked first with a message that names them.
+ */
 async function linkMuscleToGroup(
   token: string,
-  groupId: string,
+  group: LookupRef,
   muscleId: string,
   roleRaw: unknown,
 ) {
+  const groupId = group.id;
   const role = roleRaw === "secondary" ? "secondary" : "target";
+  if (role === "target") {
+    const blocker = muscleMoveBlocker(await muscleUse(token, muscleId), groupId, group.code);
+    if (blocker) throw new Error(blocker);
+  }
   await staffGql(
     token,
     role === "target"
@@ -350,8 +394,13 @@ export async function upsertLookup(token: string, payload: UpsertLookupPayload) 
   if (CLOSED_LOOKUP_TABLES.has(table)) {
     throw new Error(`${table.replace("catalog_", "")}: ${CLOSED_LOOKUP_MESSAGE}`);
   }
+  if (NO_STAFF_INSERT_TABLES.has(table)) {
+    throw new Error(`${table.replace("catalog_", "")}: ${NO_STAFF_INSERT_MESSAGE}`);
+  }
+  // The code as typed (legacy codes keep their spaces), then the SCREAMING_SNAKE code it would get.
   const row =
     (await findLookup(token, table, payload.code)) ??
+    (await findLookup(token, table, newTaxonomyCode(table, lookupCode(table, payload.code)))) ??
     (await insertLookup(
       token,
       table,
@@ -368,7 +417,7 @@ export async function upsertLookup(token: string, payload: UpsertLookupPayload) 
   }
   if (table === "catalog_muscles" && payload.muscle_group_code) {
     const group = await ensureLookup(token, "catalog_muscle_groups", payload.muscle_group_code);
-    await linkMuscleToGroup(token, group.id, row.id, payload.role);
+    await linkMuscleToGroup(token, group, row.id, payload.role);
   }
   return row;
 }
@@ -402,7 +451,8 @@ export async function updateLookup(token: string, payload: UpdateLookupPayload) 
   const set: Record<string, unknown> = {};
   if (payload.name != null) set.name = String(payload.name).trim();
   if (labels) set.name = String(labels.en || payload.name || "").trim();
-  if (payload.active != null) set.active = Boolean(payload.active);
+  // Closed lists: `active` is never sent (their codes are written in SQL and the app).
+  if (payload.active != null && !CLOSED_LOOKUP_TABLES.has(table)) set.active = Boolean(payload.active);
   if (payload.sort_order != null) set.sort_order = Number(payload.sort_order);
   if (DESCRIBED_LOOKUP_TABLES.has(table) && payload.description !== undefined) {
     const text = String(payload.description ?? "").trim();
@@ -440,9 +490,11 @@ export async function manageRelation(token: string, payload: RelationPayload) {
   if (kind === "muscle") {
     const muscle = await ensureLookup(token, "catalog_muscles", payload.code);
     if (action === "link") {
-      await linkMuscleToGroup(token, group.id, muscle.id, payload.role);
+      await linkMuscleToGroup(token, group, muscle.id, payload.role);
       return;
     }
+    const blocker = muscleUnlinkBlocker(await muscleUse(token, muscle.id), group.id, group.code);
+    if (blocker) throw new Error(blocker);
     await staffGql(
       token,
       gql`mutation SupportTaxonomyUnlinkMuscle($mg: uuid!, $m: uuid!) {
@@ -568,14 +620,20 @@ export async function setPairMuscles(token: string, payload: PairMusclesPayload)
   }
 
   const codes = [targetCode, ...secondaryCodes];
-  const found = await staffGql<{ catalog_muscles: LookupRef[] }>(
+  const found = await staffGql<{
+    catalog_muscles: (LookupRef & { home_muscle_group?: { code: string } | null })[];
+  }>(
     token,
-    gql`query SupportTaxonomyMusclesByCodes($codes: [String!]!) { catalog_muscles(where: { code: { _in: $codes } }) { id code } }`,
+    gql`query SupportTaxonomyMusclesByCodes($codes: [String!]!) { catalog_muscles(where: { code: { _in: $codes } }) { id code home_muscle_group { code } } }`,
     { codes },
   );
   const idOf = new Map(found.catalog_muscles.map((row) => [row.code, row.id]));
   const unknown = codes.filter((code) => !idOf.has(code));
   if (unknown.length) throw new Error(`Unknown muscle code: ${unknown.join(", ")}`);
+  // The pair's target is one of its group's own muscles (target home guard of 1790000000100).
+  const groupCode = normalizeTaxonomy(payload.muscle_group_code);
+  const home = found.catalog_muscles.find((row) => row.code === targetCode)?.home_muscle_group?.code ?? null;
+  if (home !== groupCode) throw new Error(targetHomeMessage(targetCode, home, groupCode));
   const secondaryIds = secondaryCodes.map((code) => idOf.get(code)!);
 
   await staffGql(
@@ -664,7 +722,7 @@ export function fetchTaxonomy(token: string) {
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {
-        id code name description sort_order active body_region_id
+        id code name description sort_order active body_region_id kind
         localizations(order_by: { locale: asc }) { locale display_name }
         group_muscles { role muscle { id code name description active localizations(order_by: { locale: asc }) { locale display_name } } }
         group_movement_types {
@@ -674,6 +732,10 @@ export function fetchTaxonomy(token: string) {
           strength_pattern_override
           strength_pattern { code name }
           secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }
+          target_profiles {
+            target_muscle { code name }
+            secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }
+          }
           exercises { muscles_inherited }
         }
       }

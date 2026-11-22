@@ -10,7 +10,12 @@ export function lookupCode(table: string, code: unknown): string {
   return table === "catalog_muscles" ? normalizeMuscleCode(code) : normalizeTaxonomy(code);
 }
 
-/** Looks a row up by code; null when the code does not exist. Never writes. */
+/**
+ * Looks a row up by code; null when the code does not exist. Never writes. The code as typed is
+ * tried first (the legacy movement codes `CALF RAISE`, `LEG RAISE`, `HIP THRUST` keep their
+ * spaces), then its SCREAMING_SNAKE form (`smith machine` finds `SMITH_MACHINE`): every code
+ * created since backend 2.10.0 has no spaces.
+ */
 export async function findLookupRow(
   find: LookupFinder,
   table: string,
@@ -18,8 +23,10 @@ export async function findLookupRow(
 ): Promise<LookupRef | null> {
   const c = lookupCode(table, code);
   if (!c) throw new Error(`Empty code for ${table}`);
-  const data = await find(c);
-  return data[table]?.[0] ?? null;
+  const hit = (await find(c))[table]?.[0];
+  if (hit) return hit;
+  const snake = c.replace(/\s+/g, "_");
+  return snake === c ? null : ((await find(snake))[table]?.[0] ?? null);
 }
 
 /**
