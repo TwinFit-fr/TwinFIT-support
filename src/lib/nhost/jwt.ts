@@ -40,23 +40,35 @@ export function parseJwtRoles(accessToken: string): string[] {
   return [];
 }
 
-export function hasStaffRole(accessToken: string | null | undefined): boolean {
-  if (!accessToken) return false;
-  const roles = parseJwtRoles(accessToken);
-  return roles.includes("staff") || roles.includes("admin");
-}
-
-export function hasAdminRole(accessToken: string | null | undefined): boolean {
-  if (!accessToken) return false;
-  return parseJwtRoles(accessToken).includes("admin");
-}
-
-/** Hasura uses JWT defaultRole (user); Support must request staff/admin explicitly. */
-export function resolveSupportHasuraRole(accessToken: string): "admin" | "staff" {
-  const roles = parseJwtRoles(accessToken);
+/**
+ * The Support role of a set of roles: admin > staff, so an account holding both is admin
+ * everywhere in Support. Null when it has neither.
+ */
+export function supportRoleOf(roles: readonly string[]): "admin" | "staff" | null {
   if (roles.includes("admin")) return "admin";
   if (roles.includes("staff")) return "staff";
-  throw new Error("JWT has no staff or admin Hasura role");
+  return null;
+}
+
+export function hasStaffRole(accessToken: string | null | undefined): boolean {
+  if (!accessToken) return false;
+  return supportRoleOf(parseJwtRoles(accessToken)) !== null;
+}
+
+/** True for admin, and for an account holding both admin and staff (admin > staff). */
+export function hasAdminRole(accessToken: string | null | undefined): boolean {
+  if (!accessToken) return false;
+  return supportRoleOf(parseJwtRoles(accessToken)) === "admin";
+}
+
+/**
+ * Hasura and Storage use the JWT's default role (user) unless the request names one, so every
+ * Support request to them sends this as `x-hasura-role` (admin when the JWT has both).
+ */
+export function resolveSupportHasuraRole(accessToken: string): "admin" | "staff" {
+  const role = supportRoleOf(parseJwtRoles(accessToken));
+  if (!role) throw new Error("JWT has no staff or admin Hasura role");
+  return role;
 }
 
 /** Seconds before the token expires (0 when expired or unreadable). */

@@ -8,10 +8,10 @@ Stack: **Next.js (App Router) + React + TypeScript + Nhost Auth**.
 
 | Module | Routes | Capabilities |
 |--------|--------|--------------|
-| **Support** | `/support`, `/support/[userId]` | Lookup by email, @username, or UUID; view plan (Google Play / Support grant) & activity; verify email, grant or revoke Premium; disable account (admin only) |
+| **Support** | `/support`, `/support/[userId]` | Lookup by email, @username, or UUID; view plan (Google Play / Support grant) & activity; verify email, grant or revoke Premium; grant or revoke the `lab` and `staff` roles, disable account (admin only) |
 | **Catalog** | `/catalog`, `/catalog/compose`, `/catalog/taxonomy` | Browse, create, edit system exercises; manage taxonomy lookups; deactivate exercises (admin only) |
 
-Users with the Nhost **`staff`** or **`admin`** JWT role can sign in. Staff have read access and limited writes; admin retains destructive actions (disable account, deactivate exercise, unlink taxonomy).
+Users with the Nhost **`staff`** or **`admin`** JWT role can sign in. Staff have read access and limited writes; admin retains destructive actions (disable account, deactivate exercise, unlink taxonomy) and role changes. An account holding both is **admin** everywhere in Support (admin > staff). Every GraphQL, Storage and Function request names that role in `x-hasura-role`, since the JWT's default role is `user`.
 
 ## Prerequisites
 
@@ -87,6 +87,7 @@ Support write actions call backend Functions:
 - `admin-verify-email` (staff or admin)
 - `admin-grant-premium` (staff or admin): Premium until a date, or revoke the Support grants
 - `admin-set-user-disabled` (admin only)
+- `admin-set-role` (admin only): grants or revokes `lab` or `staff` on an account; it gets the change in its next access token (next sign-in or refresh)
 - `admin-accept-knowledge-candidate` (staff or admin): Coach → Knowledge → Candidates; drafts the source and cards of a PubMed candidate
 
 Catalog writes go straight to Hasura with the caller's JWT (`src/lib/catalog/`, on `staffGql` in
