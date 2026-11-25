@@ -14,7 +14,7 @@ const settingsSchema = z
     target_color: paintColor,
     secondary_color: paintColor,
     key_color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "The key color must be #RRGGBB"),
-    generation: z.record(z.unknown()),
+    generation: z.record(z.string(), z.unknown()),
     base_prompt: z.string().max(32000),
     mask_prompt: z.string().max(32000),
   })
