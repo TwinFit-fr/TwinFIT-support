@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { RoleBadges } from "@/components/support/role-badges";
+import { RoleManager } from "@/components/support/role-manager";
 import { SupportSectionTable } from "@/components/support/support-section-table";
 import {
   SupportUserTabs,
@@ -28,6 +29,11 @@ import { useToast } from "@/components/ui/toast";
 import { useIsAdmin } from "@/hooks/use-is-staff";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 import { formatDate, formatDuration } from "@/lib/support/format";
+import {
+  MANAGED_ROLE_LABELS,
+  setRoleSuccessMessage,
+  type ManagedRole,
+} from "@/lib/support/roles";
 import type {
   SupportUserCoachQuota,
   SupportUserLookup,
@@ -38,7 +44,8 @@ type PendingAction =
   | { type: "verify-email" }
   | { type: "grant-premium"; reason: string; endsAt: string | null }
   | { type: "revoke-premium" }
-  | { type: "set-disabled"; disabled: boolean };
+  | { type: "set-disabled"; disabled: boolean }
+  | { type: "set-role"; role: ManagedRole; granted: boolean };
 
 const SECTION_BY_TAB: Partial<Record<SupportUserTabId, SupportUserSectionData["section"]>> = {
   sessions: "sessions",
@@ -106,6 +113,11 @@ export default function SupportUserPage() {
   const [grantReason, setGrantReason] = useState("");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [lastRoleChange, setLastRoleChange] = useState<{
+    userId: string;
+    role: ManagedRole;
+    granted: boolean;
+  } | null>(null);
 
   async function load() {
     await mutate();
@@ -166,6 +178,15 @@ export default function SupportUserPage() {
         { action: "set-disabled", userId, disabled: pendingAction.disabled },
         pendingAction.disabled ? "Account disabled" : "Account re-enabled",
       );
+      return;
+    }
+    if (pendingAction.type === "set-role") {
+      const { role, granted } = pendingAction;
+      const changed = await runAction(
+        { action: "set-role", userId, role, granted },
+        setRoleSuccessMessage(role, granted, data.user.email),
+      );
+      if (changed) setLastRoleChange({ userId, role, granted });
     }
   }
 
@@ -196,6 +217,16 @@ export default function SupportUserPage() {
         title: "Revoke Support grants?",
         description: `End every running Support grant of ${data.user.email}. A Google Play subscription keeps its Premium.`,
         variant: "danger",
+      };
+    }
+    if (pendingAction.type === "set-role") {
+      const { label } = MANAGED_ROLE_LABELS[pendingAction.role];
+      return {
+        title: pendingAction.granted ? `Grant ${label}?` : `Revoke ${label}?`,
+        description: `${pendingAction.granted ? "Give" : "Take"} the ${pendingAction.role} role ${
+          pendingAction.granted ? "to" : "from"
+        } ${data.user.email}. The account gets the change at its next sign-in or token refresh.`,
+        variant: pendingAction.granted ? "default" : "danger",
       };
     }
     return {
@@ -338,6 +369,14 @@ export default function SupportUserPage() {
                 }
               />
             </dl>
+            <RoleManager
+              defaultRole={data.user.defaultRole}
+              roles={data.user.roles}
+              canEdit={isAdmin}
+              busy={actionLoading || loading}
+              lastChange={lastRoleChange?.userId === userId ? lastRoleChange : null}
+              onChange={(role, granted) => setPendingAction({ type: "set-role", role, granted })}
+            />
             <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-3">
               {!data.user.emailVerified && (
                 <Button type="button" onClick={() => setPendingAction({ type: "verify-email" })}>

@@ -1,3 +1,5 @@
+import type { ManagedRole } from "./roles";
+
 export type SupportUserRole = {
   role: string;
 };
@@ -193,4 +195,5 @@ export type AdminAction =
   | { action: "verify-email"; userId: string }
   | { action: "grant-premium"; userId: string; reason: string; endsAt?: string | null }
   | { action: "revoke-premium"; userId: string }
-  | { action: "set-disabled"; userId: string; disabled: boolean };
+  | { action: "set-disabled"; userId: string; disabled: boolean }
+  | { action: "set-role"; userId: string; role: ManagedRole; granted: boolean };

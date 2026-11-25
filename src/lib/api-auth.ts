@@ -1,4 +1,4 @@
-import { hasAdminRole, hasStaffRole } from "@/lib/nhost/jwt";
+import { hasAdminRole, hasStaffRole, resolveSupportHasuraRole } from "@/lib/nhost/jwt";
 
 export function getBearerToken(request: Request): string | null {
   const auth = request.headers.get("authorization");
@@ -45,6 +45,9 @@ export async function callStaffFunction(
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
+      // The Functions authorize from the JWT's allowed roles; the role is named anyway, as on
+      // every Support request, in case one forwards it to Hasura.
+      "x-hasura-role": resolveSupportHasuraRole(accessToken),
     },
     body: JSON.stringify(body),
   });
