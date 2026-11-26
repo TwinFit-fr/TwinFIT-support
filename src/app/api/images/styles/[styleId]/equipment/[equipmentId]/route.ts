@@ -25,7 +25,7 @@ type Ctx = { params: Promise<{ styleId: string; equipmentId: string }> };
 /** Uploads or generates a load equipment image of the style (the app's filter card). */
 export async function POST(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, equipmentId } = await context.params;
     const style = await getStyle(token, styleId);
     if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
@@ -83,7 +83,7 @@ export async function POST(request: Request, context: Ctx) {
 
 export async function DELETE(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, equipmentId } = await context.params;
     const previous = await deleteStyleEquipment(token, styleId, equipmentId);
     if (previous) await deleteImageFile(token, previous);

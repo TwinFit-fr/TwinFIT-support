@@ -14,7 +14,7 @@ export const maxDuration = 300;
  */
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const muscleId = z.string().uuid().parse(new URL(request.url).searchParams.get("muscle_id"));
     const raw = (await request.json()) as Record<string, unknown>;
     const upload = uploadOf(imageSourceSchema.parse(raw));

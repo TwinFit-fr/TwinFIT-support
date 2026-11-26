@@ -4,7 +4,7 @@ import { listTierPolicies, updateTierCapabilities } from "@/lib/coach";
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const policies = await listTierPolicies(token);
     return NextResponse.json({ policies });
   } catch (error) {
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = (await request.json()) as {
       tier_code?: string;
       personal_data_enabled?: boolean;

@@ -43,7 +43,7 @@ const enqueueSchema = z.object({
 /** Jobs of a style (active and recently finished), optionally one exercise. */
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const url = new URL(request.url);
     const styleId = z.string().uuid().parse(url.searchParams.get("style"));
     const kind = z
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
 /** Enqueues a run and starts processing it on the server once the response is sent. */
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, jobs } = enqueueSchema.parse(await request.json());
     const result = await enqueueJobs(token, styleId, jobs);
     const origin = new URL(request.url).origin;

@@ -6,7 +6,7 @@ import { friendlyCatalogError } from "@/lib/catalog/guard-rails";
 /** `?exo_id=N`: the editor's extra data (custom reason, change history). */
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const exoId = new URL(request.url).searchParams.get("exo_id");
     const data = await exerciseDetail(token, exoId);
     return NextResponse.json({ ok: true, data });
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = (await request.json()) as ExercisePayload;
     const exercise = await updateExercise(token, body);
     return NextResponse.json({ ok: true, exercise });

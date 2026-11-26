@@ -5,7 +5,7 @@ import { listImageExercises } from "@/lib/images/queries";
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const styleId = z.string().uuid().parse(new URL(request.url).searchParams.get("style"));
     const exercises = await listImageExercises(token, styleId);
     return NextResponse.json({ exercises, count: exercises.length });

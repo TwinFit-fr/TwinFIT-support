@@ -6,7 +6,7 @@ import { errorResponse } from "@/lib/muscle-map/request";
 /** Active exercises with their resolved muscles, for the muscle map preview. */
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     return NextResponse.json(await getPilotData(token));
   } catch (error) {
     return errorResponse(error, "Loading the exercises failed");

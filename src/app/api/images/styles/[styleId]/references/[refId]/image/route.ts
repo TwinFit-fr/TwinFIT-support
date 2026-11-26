@@ -14,7 +14,7 @@ type Ctx = { params: Promise<{ styleId: string; refId: string }> };
 /** Generate the reference image from its own prompt, or upload one. */
 export async function POST(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, refId } = await context.params;
     const [style, reference] = await Promise.all([
       getStyle(token, styleId),

@@ -12,7 +12,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     if (!isUuid(id)) {
       return NextResponse.json({ error: "Invalid set id" }, { status: 400 });

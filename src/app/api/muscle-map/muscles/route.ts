@@ -10,7 +10,7 @@ const muscleViewSchema = z.object({ muscle_id: z.string().uuid(), view: viewSche
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = muscleViewSchema.parse(await request.json());
     await insertMapMuscle(token, body.muscle_id, body.view);
     return NextResponse.json({ ok: true });
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = muscleViewSchema.parse(await request.json());
     await updateMapMuscleView(token, body.muscle_id, body.view);
     return NextResponse.json({ ok: true });
@@ -32,7 +32,7 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const muscleId = z.string().uuid().parse(new URL(request.url).searchParams.get("muscle_id"));
     await deleteMapMuscle(token, muscleId);
     return NextResponse.json({ ok: true });

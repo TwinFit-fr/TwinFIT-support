@@ -30,7 +30,7 @@ function parseSubject(raw: string): Subject {
 
 export async function POST(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, subject: subjectRaw } = await context.params;
     const subject = parseSubject(subjectRaw);
     const style = await getStyle(token, styleId);
@@ -89,7 +89,7 @@ export async function POST(request: Request, context: Ctx) {
 
 export async function DELETE(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, subject: subjectRaw } = await context.params;
     const subject = parseSubject(subjectRaw);
     const previous = await deleteStyleCharacter(token, styleId, subject);

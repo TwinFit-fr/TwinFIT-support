@@ -41,7 +41,7 @@ function failure(error: unknown, fallback: string): Response {
 /** Lists the bucket (`?prefix=lessons/app_overview` narrows to one folder subtree). */
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const prefix = new URL(request.url).searchParams.get("prefix") ?? undefined;
     if (prefix !== undefined && !isValidFolder(prefix)) throw new Error("Invalid prefix");
     const files = await listCoachMediaFiles(token, prefix);
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
 /** Uploads one image into `folder`. */
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const parsed = uploadSchema.parse(await request.json());
     if (!parsed.mimeType.startsWith("image/")) {
       throw new Error("Only image uploads are allowed");
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
 /** Moves or renames a file (`{ id, name }`); its URL stays the same. */
 export async function PATCH(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const parsed = renameSchema.parse(await request.json());
     const file = await renameCoachMediaFile(token, parsed.id, parsed.name);
     return NextResponse.json({ file });
@@ -86,7 +86,7 @@ export async function PATCH(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const params = new URL(request.url).searchParams;
     const id = fileIdSchema.parse(params.get("id"));
     const under = params.get("under") ?? undefined;

@@ -8,7 +8,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const prompt = await getImagePrompt(token, id);
     if (!prompt) {
@@ -33,7 +33,7 @@ export async function PUT(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const body = updateSchema.parse(await request.json());
     const prompt = await updateImagePrompt(token, id, body);

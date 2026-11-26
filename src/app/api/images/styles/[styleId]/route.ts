@@ -8,7 +8,7 @@ type Ctx = { params: Promise<{ styleId: string }> };
 
 export async function GET(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId } = await context.params;
     const style = await getStyle(token, styleId);
     if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
@@ -43,7 +43,7 @@ const putSchema = z.object({
 
 export async function PUT(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId } = await context.params;
     const current = await getStyle(token, styleId);
     if (!current) return NextResponse.json({ error: "Style not found" }, { status: 404 });
@@ -78,7 +78,7 @@ export async function PUT(request: Request, context: Ctx) {
 
 export async function DELETE(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId } = await context.params;
     await deleteStyle(token, styleId);
     return NextResponse.json({ status: "deleted", id: styleId });

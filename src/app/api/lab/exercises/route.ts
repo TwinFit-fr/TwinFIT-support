@@ -9,7 +9,7 @@ import {
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { searchParams } = new URL(request.url);
     if (searchParams.get("candidates") === "1") {
       const candidates = await listCatalogCandidates(token);
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = await request.json();
     if (body.action === "link_catalog") {
       const exoId = Number(body.catalog_exo_id);
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = await request.json();
     const catalogExoId = Number(body.catalog_exo_id ?? body.id);
     if (!Number.isFinite(catalogExoId)) {

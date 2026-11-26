@@ -1,4 +1,9 @@
-const HASURA_CLAIMS = "https://hasura.io/jwt/claims";
+/**
+ * Unverified reads of an access token's payload: fine for the browser (UI hints, refresh timing)
+ * and for a token a server route already verified. A server route authorizes only through
+ * `verifyAccessToken` (`./verify-jwt.ts`), via `requireStaffToken` / `requireAdminToken`.
+ */
+export const HASURA_CLAIMS = "https://hasura.io/jwt/claims";
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
@@ -22,8 +27,11 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 export function parseJwtRoles(accessToken: string): string[] {
   const payload = decodeJwtPayload(accessToken);
   if (!payload) return [];
+  return rolesFromHasuraClaims(payload[HASURA_CLAIMS] as Record<string, unknown> | undefined);
+}
 
-  const claims = payload[HASURA_CLAIMS] as Record<string, unknown> | undefined;
+/** `x-hasura-allowed-roles` of a payload's Hasura claims (array, JSON array or comma list). */
+export function rolesFromHasuraClaims(claims: Record<string, unknown> | undefined): string[] {
   const raw = claims?.["x-hasura-allowed-roles"];
   if (Array.isArray(raw)) return raw.map(String);
   if (typeof raw === "string") {

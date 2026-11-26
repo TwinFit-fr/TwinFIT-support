@@ -4,7 +4,7 @@ import { listToolNames, listTurnToolCalls } from "@/lib/coach";
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const url = new URL(request.url);
     const tool = url.searchParams.get("tool") || undefined;
     const zero = url.searchParams.get("zero_result");

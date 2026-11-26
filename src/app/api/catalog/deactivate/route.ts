@@ -5,7 +5,7 @@ import { friendlyCatalogError } from "@/lib/catalog/guard-rails";
 
 export async function POST(request: Request) {
   try {
-    const token = requireAdminToken(request);
+    const token = await requireAdminToken(request);
     const body = await request.json();
     const row = await deactivateExercise(token, body);
     return NextResponse.json({ ok: true, ...row });

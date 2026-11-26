@@ -7,7 +7,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const file = await downloadImageFile(token, id);
     return new NextResponse(new Uint8Array(file.bytes), {

@@ -33,7 +33,7 @@ const bodySchema = z.object({
  */
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { startId, midId, endId, expectedLive } = bodySchema.parse(await request.json());
 
     // Read the subject's live frames now: another tab may have published since the panel loaded.

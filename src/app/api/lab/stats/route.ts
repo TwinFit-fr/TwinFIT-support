@@ -4,7 +4,7 @@ import { listLabGlobalStats, listLabUserStats } from "@/lib/lab/queries";
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const [globalStats, userStats] = await Promise.all([
       listLabGlobalStats(token),
       listLabUserStats(token),

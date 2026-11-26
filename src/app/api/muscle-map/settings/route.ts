@@ -22,7 +22,7 @@ const settingsSchema = z
 
 export async function PATCH(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const set = settingsSchema.parse(await request.json());
     if (set.generation) {
       const params = { ...DEFAULT_GENERATION_PARAMS, ...set.generation };

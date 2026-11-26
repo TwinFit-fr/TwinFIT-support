@@ -28,7 +28,7 @@ type Ctx = { params: Promise<{ styleId: string; supportId: string }> };
 
 export async function POST(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, supportId } = await context.params;
     const style = await getStyle(token, styleId);
     if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
@@ -90,7 +90,7 @@ export async function POST(request: Request, context: Ctx) {
 
 export async function DELETE(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, supportId } = await context.params;
     const previous = await deleteStyleSupport(token, styleId, supportId);
     if (previous) await deleteImageFile(token, previous);

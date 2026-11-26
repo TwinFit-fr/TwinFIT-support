@@ -10,7 +10,7 @@ function parseExoId(raw: string): number | null {
 
 export async function GET(request: Request, context: { params: Promise<{ exoId: string }> }) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const exoId = parseExoId((await context.params).exoId);
     if (exoId == null) {
       return NextResponse.json({ error: "Invalid exo id" }, { status: 400 });
@@ -37,7 +37,7 @@ const patchSchema = z.object({ two_frames: z.boolean() });
 
 export async function PATCH(request: Request, context: { params: Promise<{ exoId: string }> }) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const exoId = parseExoId((await context.params).exoId);
     if (exoId == null) {
       return NextResponse.json({ error: "Invalid exo id" }, { status: 400 });

@@ -8,7 +8,7 @@ export const maxDuration = 300;
 /** How many jobs wait or run, across every style. */
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     return NextResponse.json(await countPendingJobs(token));
   } catch (error) {
     return assetErrorResponse(error, "Failed to count jobs", 500);
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const origin = new URL(request.url).origin;
     after(() => drainJobs(token, origin));
     return NextResponse.json({ status: "draining" }, { status: 202 });

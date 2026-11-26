@@ -7,7 +7,7 @@ type Ctx = { params: Promise<{ styleId: string }> };
 
 export async function GET(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId } = await context.params;
     return NextResponse.json({ references: await listStyleReferences(token, styleId) });
   } catch (error) {
@@ -17,7 +17,7 @@ export async function GET(request: Request, context: Ctx) {
 
 export async function POST(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId } = await context.params;
     const input = referenceSchema.parse(await request.json());
     return NextResponse.json({ reference: await createStyleReference(token, styleId, input) });
