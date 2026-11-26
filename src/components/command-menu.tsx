@@ -15,6 +15,7 @@ import {
   X,
   Image as ImageIcon,
   Languages,
+  TextSearch,
 } from "lucide-react";
 import { RoleBadges } from "@/components/support/role-badges";
 import { useStaffSWR } from "@/hooks/use-staff-fetch";
@@ -121,6 +122,14 @@ export function CommandMenu({
         category: "Navigation",
         icon: <Languages className="h-4 w-4 text-zinc-500" />,
         perform: () => router.push("/catalog/localizations"),
+      },
+      {
+        id: "nav-search-synonyms",
+        title: "Catalog Search Synonyms",
+        subtitle: "Words people search for: exercise aliases and filter synonyms per locale",
+        category: "Navigation",
+        icon: <TextSearch className="h-4 w-4 text-zinc-500" />,
+        perform: () => router.push("/catalog/search-synonyms"),
       },
       {
         id: "nav-images",

@@ -33,6 +33,7 @@ const catalogSubNav: NavItem[] = [
   { href: "/catalog/compose", label: "New exercise" },
   { href: "/catalog/taxonomy", label: "Taxonomy" },
   { href: "/catalog/localizations", label: "Localizations" },
+  { href: "/catalog/search-synonyms", label: "Search synonyms" },
 ];
 
 const imagesSubNav: NavItem[] = [

@@ -31,6 +31,10 @@
       "query": "mutation SupportCatalogDeactivateExercise($id: uuid!) {\n      update_catalog_exercises_by_pk(pk_columns: { id: $id }, _set: { active: false }) { id }\n    }"
     },
     {
+      "name": "SupportCatalogDeleteSearchSynonym",
+      "query": "mutation SupportCatalogDeleteSearchSynonym($locale: String!, $phrase: String!, $kind: String!, $code: String!) {\n      delete_catalog_search_synonyms(\n        where: { locale: { _eq: $locale }, phrase: { _eq: $phrase }, kind: { _eq: $kind }, code: { _eq: $code } }\n      ) { affected_rows }\n    }"
+    },
+    {
       "name": "SupportCatalogExerciseForSave",
       "query": "query SupportCatalogExerciseForSave($exo_id: Int!) {\n      catalog_exercises(where: { exo_id: { _eq: $exo_id } }, limit: 1) {\n        id exo_id taxonomy_status active display_name\n        muscles_inherited muscles_custom_reason body_mass_coefficient default_pulley_ratio\n        primary_muscle_group { code } movement_type { code } equipment { code }\n        load_modality { code } logging_mode { code } target_muscle { code }\n      }\n    }"
     },
@@ -57,6 +61,18 @@
     {
       "name": "SupportCatalogInsertExerciseGivingPairMuscles",
       "query": "mutation SupportCatalogInsertExerciseGivingPairMuscles(\n        $o: catalog_exercises_insert_input!\n        $g: uuid!\n        $m: uuid!\n      ) {\n        insert_catalog_exercises_one(object: $o) { id exo_id display_name taxonomy_status }\n        update_catalog_exercises(\n          where: {\n            primary_muscle_group_id: { _eq: $g }\n            movement_type_id: { _eq: $m }\n            active: { _eq: true }\n            muscles_inherited: { _eq: false }\n            muscles_custom_reason: { _is_null: true }\n          }\n          _set: { muscles_inherited: true }\n        ) { affected_rows }\n      }"
+    },
+    {
+      "name": "SupportCatalogInsertSearchSynonyms",
+      "query": "mutation SupportCatalogInsertSearchSynonyms($rows: [catalog_search_synonyms_insert_input!]!) {\n      insert_catalog_search_synonyms(objects: $rows) { returning { locale phrase kind code } }\n    }"
+    },
+    {
+      "name": "SupportCatalogSearchSynonymKeys",
+      "query": "query SupportCatalogSearchSynonymKeys($locale: String!, $phrase: String!, $kind: String!) {\n  catalog_search_synonyms(where: { locale: { _eq: $locale }, phrase: { _eq: $phrase }, kind: { _eq: $kind } }) {\n    locale phrase kind code\n  }\n}"
+    },
+    {
+      "name": "SupportCatalogSearchSynonyms",
+      "query": "query SupportCatalogSearchSynonyms {\n      catalog_search_synonyms(order_by: [{ locale: asc }, { phrase: asc }, { kind: asc }, { code: asc }]) {\n        locale phrase kind code\n      }\n      catalog_exercises(order_by: { exo_id: asc }) { exo_id display_name active }\n      catalog_muscle_groups(order_by: { code: asc }) { code name active }\n      catalog_muscles(order_by: { code: asc }) { code name active }\n      catalog_equipment(order_by: { code: asc }) { code name active }\n      catalog_support_equipment(order_by: { code: asc }) { code name active }\n      catalog_movement_types(order_by: { code: asc }) { code name active }\n      catalog_load_modalities(order_by: { code: asc }) { code name active }\n    }"
     },
     {
       "name": "SupportCatalogUpdateExercise",
