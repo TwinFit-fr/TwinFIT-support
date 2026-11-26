@@ -3,20 +3,34 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, Input } from "@/components/ui/primitives";
 import {
-  buildPathFromForm,
   exerciseFingerprintFromCatalog,
-  exerciseTaxonomyPath,
   formCreateFingerprint,
   fullPathFromSelection,
-  pathsEqual,
   withExercisePaths,
   type ExerciseWithPath,
 } from "@/lib/catalog/exercise-path";
 import {
   CATALOG_LOCALES,
   emptyLocaleFields,
+  resolveLocalizedName,
   type CatalogLocale,
+  type LocalizationRow,
 } from "@/lib/catalog/locales";
+import {
+  DEFAULT_GRIP_CODE,
+  FACET_DEFAULTS,
+  FACET_HINTS,
+  INCLINATIONS,
+  LATERALITIES,
+  UNCLASSIFIED_GRIP_CODE,
+  WIDTHS,
+  findFacetTupleDuplicate,
+  gripEvidence,
+  selectableOptions,
+  type Inclination,
+  type Laterality,
+  type Width,
+} from "@/lib/catalog/facets";
 import {
   MuscleSetChips,
   MuscleSetEditor,
@@ -33,7 +47,16 @@ import { inferLoggingModeCode } from "@/lib/catalog/normalize";
 import { useIsAdmin } from "@/hooks/use-is-staff";
 import { useStaffFetch } from "@/hooks/use-staff-fetch";
 
-export type LookupRow = { code: string; name: string };
+export type LookupRow = {
+  code: string;
+  name: string;
+  active?: boolean;
+  sort_order?: number;
+  /** Grips (backend 2.10.0): names per locale. */
+  localizations?: LocalizationRow[];
+};
+
+type PoseRow = { position: number; pose: string };
 
 type MuscleGroup = {
   code: string;
@@ -73,6 +96,10 @@ type CatalogExerciseRow = {
   variation?: { code: string };
   load_modality?: { code: string };
   logging_mode?: { code: string };
+  width?: string | null;
+  inclination?: string | null;
+  laterality?: string | null;
+  app_visible?: boolean | null;
   body_mass_coefficient?: number | null;
   default_pulley_ratio?: number | null;
   target_muscle?: { code: string };
@@ -95,6 +122,12 @@ export type ExerciseFormState = {
   grip_code: string;
   variation_code: string;
   load_modality_code: string;
+  /** Facets of backend 2.10.0 (closed lists). */
+  width: Width;
+  inclination: Inclination;
+  laterality: Laterality;
+  /** false: the app does not list it (Resting); the Lab and set history still see it. */
+  app_visible: boolean;
   target_muscle_code: string;
   /** Custom muscles only; an inherited exercise shows its pair's. */
   secondary_muscle_codes: string[];
@@ -119,9 +152,10 @@ const DEFAULT_FORM: ExerciseFormState = {
   equipment_code: "BARBELL",
   support_equipment_code: "",
   position_code: "",
-  grip_code: "STANDARD",
+  grip_code: DEFAULT_GRIP_CODE,
   variation_code: "STANDARD",
   load_modality_code: "",
+  ...FACET_DEFAULTS,
   target_muscle_code: "",
   secondary_muscle_codes: [],
   muscles_inherited: true,
@@ -183,12 +217,15 @@ export function ExerciseComposeForm({
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [localeTab, setLocaleTab] = useState<CatalogLocale>("en");
+  /** The pose texts of the edited exercise: the evidence for a grip left STANDARD. */
+  const [poses, setPoses] = useState<PoseRow[]>([]);
 
   const isCreate = !editExoId;
   const isCopy = isCreate && copyFromExoId != null;
 
   useEffect(() => {
     async function loadLookups() {
+      setPoses([]);
       const [libRes, taxRes] = await Promise.all([
         staffFetch("/api/catalog/library") as Promise<{
           data: {
@@ -256,6 +293,11 @@ export function ExerciseComposeForm({
         setOriginal(ex ?? null);
         setDetail(extra.data);
         setCopySource(null);
+        // Optional: the editor works without them (no poses yet, images not set up).
+        const poseRes = (await staffFetch(`/api/images/exercises/${editExoId}/poses`).catch(
+          () => null,
+        )) as { poses?: PoseRow[] } | null;
+        setPoses(poseRes?.poses ?? []);
       } else if (copyFromExoId != null) {
         const ex = libRes.data.catalog_exercises.find((row) => row.exo_id === copyFromExoId);
         if (ex) {
@@ -281,7 +323,7 @@ export function ExerciseComposeForm({
           movement_type_code: fullPath[1] || DEFAULT_FORM.movement_type_code,
           equipment_code: fullPath[2] || DEFAULT_FORM.equipment_code,
           position_code: fullPath[3] || "",
-          grip_code: fullPath[4] || "STANDARD",
+          grip_code: fullPath[4] || DEFAULT_GRIP_CODE,
           variation_code: fullPath[5] || "STANDARD",
           load_modality_code: fullPath[6] || "",
           target_muscle_code: firstTarget,
@@ -313,16 +355,6 @@ export function ExerciseComposeForm({
       warnings.push("Display name must differ from the copied exercise");
     }
 
-    const formPath = buildPathFromForm(form);
-    const pathDup = allExercises.find((ex) =>
-      pathsEqual(formPath, exerciseTaxonomyPath(ex)),
-    );
-    if (pathDup) {
-      warnings.push(
-        `This taxonomy combination already exists on #${pathDup.exo_id}: ${pathDup.display_name}`,
-      );
-    }
-
     const formFp = formCreateFingerprint(form);
     const sourceFp = exerciseFingerprintFromCatalog(copySource);
     if (formFp === sourceFp) {
@@ -335,7 +367,13 @@ export function ExerciseComposeForm({
       formFp !== sourceFp;
 
     return { warnings, canCreate };
-  }, [isCopy, copySource, form, allExercises]);
+  }, [isCopy, copySource, form]);
+
+  /** Another active exercise with the same facet tuple (backend 2.10.0); a warning, not a block. */
+  const tupleDuplicate = useMemo(
+    () => findFacetTupleDuplicate(form, allExercises, editExoId),
+    [form, allExercises, editExoId],
+  );
 
   const pair = pairMuscles.get(pairKey(form.primary_muscle_group_code, form.movement_type_code));
   /** The pair's target profile for the current target, if any (an inherited exercise keeps it). */
@@ -616,10 +654,10 @@ export function ExerciseComposeForm({
           options={lookups.positions}
           onChange={(value) => setForm({ ...form, position_code: value })}
         />
-        <LookupSelect
-          label="Grip"
+        <GripSelect
           value={form.grip_code}
           options={lookups.grips}
+          poses={poses}
           onChange={(value) => setForm({ ...form, grip_code: value })}
         />
         <LookupSelect
@@ -628,6 +666,38 @@ export function ExerciseComposeForm({
           options={lookups.variations}
           onChange={(value) => setForm({ ...form, variation_code: value })}
         />
+        <FacetSelect
+          label="Width"
+          value={form.width}
+          values={WIDTHS}
+          onChange={(value) => setForm({ ...form, width: value })}
+        />
+        <FacetSelect
+          label="Inclination"
+          value={form.inclination}
+          values={INCLINATIONS}
+          onChange={(value) => setForm({ ...form, inclination: value })}
+        />
+        <FacetSelect
+          label="Laterality"
+          value={form.laterality}
+          values={LATERALITIES}
+          onChange={(value) => setForm({ ...form, laterality: value })}
+        />
+        <Field label="App">
+          <label className="flex items-center gap-2 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.app_visible}
+              onChange={(e) => setForm({ ...form, app_visible: e.target.checked })}
+            />
+            Listed in the app
+          </label>
+          <span className="block text-xs text-zinc-500">
+            Off only for an entry that is not an exercise (Resting): the app does not list it, the
+            Lab and the set history still see it.
+          </span>
+        </Field>
         <LookupSelect
           label="Load modality"
           required
@@ -726,6 +796,14 @@ export function ExerciseComposeForm({
           )}
         </div>
       </Card>
+      {tupleDuplicate && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Same facets as #{tupleDuplicate.exo_id} {tupleDuplicate.display_name} (group, movement,
+          equipment, support, grip, position, variation, width, inclination and laterality are
+          unique among active exercises). Change one of them, or keep it only if the backend
+          whitelists this pair.
+        </p>
+      )}
       {guardErrors.length > 0 && (
         <ul className="space-y-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {guardErrors.map((error) => (
@@ -773,9 +851,13 @@ function formFromExercise(ex: CatalogExerciseRow): ExerciseFormState {
     equipment_code: ex.equipment?.code ?? "BARBELL",
     support_equipment_code: ex.support_equipment?.code ?? "",
     position_code: ex.position?.code ?? "",
-    grip_code: ex.grip?.code ?? "STANDARD",
+    grip_code: ex.grip?.code ?? DEFAULT_GRIP_CODE,
     variation_code: ex.variation?.code ?? "STANDARD",
     load_modality_code: ex.load_modality?.code ?? "",
+    width: oneOf(WIDTHS, ex.width, FACET_DEFAULTS.width),
+    inclination: oneOf(INCLINATIONS, ex.inclination, FACET_DEFAULTS.inclination),
+    laterality: oneOf(LATERALITIES, ex.laterality, FACET_DEFAULTS.laterality),
+    app_visible: ex.app_visible ?? FACET_DEFAULTS.app_visible,
     body_mass_coefficient: ex.body_mass_coefficient == null ? "" : String(ex.body_mass_coefficient),
     default_pulley_ratio: String(ex.default_pulley_ratio ?? 1),
     muscles_custom_reason: "",
@@ -783,6 +865,11 @@ function formFromExercise(ex: CatalogExerciseRow): ExerciseFormState {
     taxonomy_status: ex.taxonomy_status,
     localizations,
   };
+}
+
+/** `value` when it is one of `list`, else `fallback`. */
+function oneOf<T extends string>(list: readonly T[], value: string | null | undefined, fallback: T): T {
+  return (list as readonly string[]).includes(value ?? "") ? (value as T) : fallback;
 }
 
 /** The exercise's resolved muscles (its pair's when inherited) and its mode. */
@@ -873,12 +960,102 @@ function LookupSelect({
       >
         {required && <option value="">Select…</option>}
         {allowEmpty && <option value="">{emptyLabel ?? "— (none)"}</option>}
-        {options.map((opt) => (
+        {selectableOptions(options, value).map((opt) => (
           <option key={opt.code} value={opt.code}>
             {opt.code} — {opt.name}
+            {opt.retired ? " (retired)" : ""}
           </option>
         ))}
       </select>
+    </Field>
+  );
+}
+
+/** A facet with a closed CHECK list (width, inclination, laterality), with what each value means. */
+function FacetSelect<T extends string>({
+  label,
+  value,
+  values,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  values: readonly T[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <Field label={label}>
+      <select
+        className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+      >
+        {values.map((code) => (
+          <option key={code} value={code}>
+            {code} — {FACET_HINTS[code as keyof typeof FACET_HINTS] ?? code}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
+/**
+ * The orientation of the hand, named in every catalog language. A grip left STANDARD (not
+ * classified) gets a notice with what the exercise's poses say about the hands.
+ */
+function GripSelect({
+  value,
+  options,
+  poses,
+  onChange,
+}: {
+  value: string;
+  options: LookupRow[];
+  poses: PoseRow[];
+  onChange: (value: string) => void;
+}) {
+  const current = options.find((opt) => opt.code === value);
+  const unclassified = value === UNCLASSIFIED_GRIP_CODE;
+  const evidence = unclassified
+    ? poses.map((p) => ({ position: p.position, lines: gripEvidence(p.pose) }))
+    : [];
+  return (
+    <Field label="Grip (orientation of the hand)">
+      <select
+        className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {selectableOptions(options, value).map((opt) => (
+          <option key={opt.code} value={opt.code}>
+            {opt.code} — {resolveLocalizedName(opt, "en")}
+            {opt.code === UNCLASSIFIED_GRIP_CODE ? " (not classified)" : ""}
+            {opt.retired ? " (retired)" : ""}
+          </option>
+        ))}
+      </select>
+      {current && (
+        <span className="mt-1 block text-xs text-zinc-500">
+          {CATALOG_LOCALES.map((loc) => `${loc.toUpperCase()}: ${resolveLocalizedName(current, loc)}`).join(
+            " · ",
+          )}
+          {" · NONE when no grip applies; the width of the hands is Width"}
+        </span>
+      )}
+      {unclassified && (
+        <span className="mt-2 block rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          STANDARD means the orientation is not settled yet. Pick Pronated, Supinated, Neutral,
+          Rotating or No grip from the how-to and the poses.
+          {evidence.length === 0 && " This exercise has no pose texts."}
+          {evidence.map((p) => (
+            <span key={p.position} className="mt-1 block">
+              <span className="font-medium">Pose {p.position}:</span>{" "}
+              {p.lines.length ? p.lines.join(" ") : "says nothing about the hands."}
+            </span>
+          ))}
+        </span>
+      )}
     </Field>
   );
 }

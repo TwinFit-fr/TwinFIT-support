@@ -1,10 +1,15 @@
 import { parseBodyMassCoefficient, parsePulleyRatio } from "./guard-rails.ts";
+import type { ExerciseFacetFields } from "./facets.ts";
 import { CATALOG_LOCALES, type CatalogLocale } from "./locales.ts";
 
 type Code = string | null | undefined;
 
-/** Body of the compose / update requests; legacy aliases (`muscle_group`, …) still accepted. */
-export type ExercisePayload = {
+/**
+ * Body of the compose / update requests; legacy aliases (`muscle_group`, …) still accepted. The
+ * facets of backend 2.10.0 (`width`, `inclination`, `laterality`, `app_visible`) come from
+ * `ExerciseFacetFields`.
+ */
+export type ExercisePayload = ExerciseFacetFields & {
   exo_id?: number | string;
   display_name?: string;
   description?: string | null;

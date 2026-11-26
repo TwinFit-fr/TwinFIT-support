@@ -33,6 +33,7 @@ import {
   targetHomeMessage,
   type MuscleUse,
 } from "./guard-rails";
+import { DEFAULT_GRIP_CODE } from "./facets";
 import { findLookupRow, lookupCode, requireLookupRow, type LookupRef } from "./lookup-find";
 
 export const LOOKUP_TABLES = [
@@ -188,7 +189,8 @@ const LOOKUP_COLUMNS: ColumnSource[] = [
     label: "grip",
     table: "catalog_grips",
     keys: ["grip_code", "grip"],
-    fallback: () => "STANDARD",
+    // A new exercise has no grip until staff pick the hand orientation (STANDARD = not classified).
+    fallback: () => DEFAULT_GRIP_CODE,
   },
   {
     column: "load_modality_id",
@@ -761,7 +763,10 @@ export function fetchTaxonomy(token: string) {
       }
       catalog_variations(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
       catalog_positions(order_by: { sort_order: asc, code: asc }) { id code name sort_order active }
-      catalog_grips(order_by: { sort_order: asc, code: asc }) { id code name description sort_order active }
+      catalog_grips(order_by: { sort_order: asc, code: asc }) {
+        id code name description sort_order active
+        localizations(order_by: { locale: asc }) { locale display_name }
+      }
       catalog_load_modalities(order_by: { sort_order: asc, code: asc }) {
         id code name sort_order active
         localizations(order_by: { locale: asc }) { locale display_name }

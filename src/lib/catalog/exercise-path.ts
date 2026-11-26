@@ -63,6 +63,8 @@ export type ExerciseWithPath = {
   grip?: { code: string };
   variation?: { code: string };
   load_modality?: { code: string };
+  /** false: hidden from the app's catalog (backend 2.10.0, Resting). */
+  app_visible?: boolean | null;
   localizations?: Array<{
     locale: string;
     display_name?: string | null;
@@ -327,7 +329,9 @@ export function fullPathFromSelection(selection: Record<string, string>): string
   return CATALOG_LEVELS.map((level) => {
     const sel = selection[level.key];
     if (sel) return normTaxonomy(sel);
-    if (level.key === "grip" || level.key === "variation") return "STANDARD";
+    // A new exercise has no grip until staff pick one (STANDARD = not classified, backend 2.10.0).
+    if (level.key === "grip") return "NONE";
+    if (level.key === "variation") return "STANDARD";
     return "";
   });
 }
@@ -366,6 +370,21 @@ export function exerciseTaxonomyPath(ex: ExerciseWithPath): string[] {
   return ex.path?.length ? ex.path : buildExercisePath(ex);
 }
 
+/** The facets of backend 2.10.0 in a fingerprint, with their defaults when unset. */
+function facetFingerprint(x: {
+  width?: string | null;
+  inclination?: string | null;
+  laterality?: string | null;
+  app_visible?: boolean | null;
+}) {
+  return {
+    width: normTaxonomy(x.width) || "STANDARD",
+    inclination: normTaxonomy(x.inclination) || "FLAT",
+    laterality: normTaxonomy(x.laterality) || "BILATERAL",
+    app_visible: x.app_visible ?? true,
+  };
+}
+
 export function formCreateFingerprint(form: {
   display_name: string;
   description?: string;
@@ -381,6 +400,10 @@ export function formCreateFingerprint(form: {
   grip_code: string;
   variation_code: string;
   load_modality_code: string;
+  width?: string;
+  inclination?: string;
+  laterality?: string;
+  app_visible?: boolean;
   target_muscle_code: string;
   secondary_muscle_codes: string[];
   muscles_inherited: boolean;
@@ -400,6 +423,7 @@ export function formCreateFingerprint(form: {
     grip_code: normTaxonomy(form.grip_code),
     variation_code: normTaxonomy(form.variation_code),
     load_modality_code: normTaxonomy(form.load_modality_code),
+    ...facetFingerprint(form),
     target_muscle_code: normTaxonomy(form.target_muscle_code),
     taxonomy_status: form.taxonomy_status || "migrated",
     secondary_muscle_codes: form.secondary_muscle_codes.map(normTaxonomy),
@@ -418,6 +442,10 @@ export function exerciseFingerprintFromCatalog(ex: {
   grip?: { code: string };
   variation?: { code: string };
   load_modality?: { code: string };
+  width?: string | null;
+  inclination?: string | null;
+  laterality?: string | null;
+  app_visible?: boolean | null;
   target_muscle?: { code: string };
   muscles_inherited?: boolean;
   resolved_muscles?: Array<{ role: string; muscle: { code: string } }>;
@@ -446,6 +474,7 @@ export function exerciseFingerprintFromCatalog(ex: {
     grip_code: normTaxonomy(ex.grip?.code),
     variation_code: normTaxonomy(ex.variation?.code),
     load_modality_code: normTaxonomy(ex.load_modality?.code),
+    ...facetFingerprint(ex),
     target_muscle_code: normTaxonomy(ex.target_muscle?.code),
     taxonomy_status: ex.taxonomy_status || "migrated",
     secondary_muscle_codes: (ex.resolved_muscles ?? [])
