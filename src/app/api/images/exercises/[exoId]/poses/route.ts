@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { POSE_MODEL, generateExercisePoses } from "@/lib/images/poses";
 import {
   getExerciseSummary,
@@ -44,7 +45,7 @@ export async function PUT(request: Request, context: { params: Promise<{ exoId: 
     if (exoId == null) {
       return NextResponse.json({ error: "Invalid exo id" }, { status: 400 });
     }
-    const body = putSchema.parse(await request.json());
+    const body = await readJsonBody(request, putSchema);
     const poses = await upsertExercisePoses(token, exoId, [body]);
     return NextResponse.json({ poses });
   } catch (error) {

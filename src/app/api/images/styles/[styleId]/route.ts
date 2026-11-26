@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { validateGenerationParams } from "@/lib/images/capabilities";
 import { deleteStyle, getStyle, updateStyle } from "@/lib/images/queries";
 
@@ -48,7 +49,7 @@ export async function PUT(request: Request, context: Ctx) {
     const current = await getStyle(token, styleId);
     if (!current) return NextResponse.json({ error: "Style not found" }, { status: 404 });
 
-    const body = putSchema.parse(await request.json());
+    const body = await readJsonBody(request, putSchema);
     const issues = validateGenerationParams(body.params);
     if (issues.length) {
       return NextResponse.json({ error: issues.join(" ") }, { status: 400 });

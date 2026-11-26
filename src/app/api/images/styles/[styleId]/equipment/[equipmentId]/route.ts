@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import {
   assetErrorResponse,
   decodeAssetUpload,
   equipmentAssetBodySchema,
+  UPLOAD_BODY_MAX_BYTES,
 } from "@/lib/images/asset-request";
 import { flipImage } from "@/lib/images/flip";
 import { generateImage } from "@/lib/images/openai";
@@ -33,7 +35,11 @@ export async function POST(request: Request, context: Ctx) {
     const equipment = (await listActiveEquipment(token)).find((e) => e.id === equipmentId);
     if (!equipment) return NextResponse.json({ error: "Equipment not found" }, { status: 404 });
 
-    const body = equipmentAssetBodySchema.parse(await request.json());
+    const body = await readJsonBody(
+      request,
+      equipmentAssetBodySchema,
+      { maxBytes: UPLOAD_BODY_MAX_BYTES },
+    );
     const previous = style.equipment.find((e) => e.equipment_id === equipmentId)?.file_id ?? null;
 
     let bytes: Buffer;

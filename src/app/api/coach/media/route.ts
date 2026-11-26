@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { base64BodyLimit, readJsonBody } from "@/lib/api-body";
 import {
   deleteCoachMediaFile,
   listCoachMediaFiles,
@@ -64,7 +65,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const parsed = uploadSchema.parse(await request.json());
+    const parsed = await readJsonBody(
+      request,
+      uploadSchema,
+      { maxBytes: base64BodyLimit(COACH_MEDIA_MAX_BYTES) },
+    );
     const bytes = Buffer.from(parsed.data, "base64");
     // PNG, WebP or JPEG only, checked on the bytes: an SVG or HTML file is refused whatever type
     // the client declares, and the stored name always carries the real extension.
@@ -83,7 +88,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const parsed = renameSchema.parse(await request.json());
+    const parsed = await readJsonBody(request, renameSchema);
     const file = await renameCoachMediaFile(token, parsed.id, parsed.name);
     return NextResponse.json({ file });
   } catch (error) {

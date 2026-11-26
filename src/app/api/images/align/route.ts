@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { isIdentityNudge } from "@/lib/images/nudge";
 import { repositionFrame } from "@/lib/images/reposition";
 import {
@@ -39,7 +40,7 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = bodySchema.parse(await request.json());
+    const body = await readJsonBody(request, bodySchema);
     const { exoId, styleId, subject } = body;
 
     const [exercise, style] = await Promise.all([

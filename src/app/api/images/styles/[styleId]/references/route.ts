@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { assetErrorResponse, referenceSchema } from "@/lib/images/asset-request";
 import { createStyleReference, listStyleReferences } from "@/lib/images/references";
 
@@ -19,7 +20,7 @@ export async function POST(request: Request, context: Ctx) {
   try {
     const token = await requireStaffToken(request);
     const { styleId } = await context.params;
-    const input = referenceSchema.parse(await request.json());
+    const input = await readJsonBody(request, referenceSchema);
     return NextResponse.json({ reference: await createStyleReference(token, styleId, input) });
   } catch (error) {
     return assetErrorResponse(error, "Could not create reference", 500);

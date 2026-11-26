@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { deleteMapMuscle, insertMapMuscle, updateMapMuscleView } from "@/lib/muscle-map/queries";
 import { errorResponse, viewSchema } from "@/lib/muscle-map/request";
 
@@ -11,7 +12,7 @@ const muscleViewSchema = z.object({ muscle_id: z.string().uuid(), view: viewSche
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = muscleViewSchema.parse(await request.json());
+    const body = await readJsonBody(request, muscleViewSchema);
     await insertMapMuscle(token, body.muscle_id, body.view);
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = muscleViewSchema.parse(await request.json());
+    const body = await readJsonBody(request, muscleViewSchema);
     await updateMapMuscleView(token, body.muscle_id, body.view);
     return NextResponse.json({ ok: true });
   } catch (error) {

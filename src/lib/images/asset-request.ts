@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { base64BodyLimit } from "@/lib/api-body";
 import { ALLOWED_IMAGE_MIME_TYPES, imageUploadProblem } from "./image-type";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
+/** Cap of a request carrying one upload: refused before it is read and decoded. */
+export const UPLOAD_BODY_MAX_BYTES = base64BodyLimit(MAX_UPLOAD_BYTES);
 
 export const IMAGE_MIME_TYPES = z.enum(ALLOWED_IMAGE_MIME_TYPES);
 

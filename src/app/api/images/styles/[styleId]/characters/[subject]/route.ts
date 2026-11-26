@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
-import { assetBodySchema, assetErrorResponse, decodeAssetUpload } from "@/lib/images/asset-request";
+import { readJsonBody } from "@/lib/api-body";
+import {
+  assetBodySchema,
+  assetErrorResponse,
+  decodeAssetUpload,
+  UPLOAD_BODY_MAX_BYTES,
+} from "@/lib/images/asset-request";
 import { loadLogoInput } from "@/lib/images/logo";
 import { editImage, generateImage } from "@/lib/images/openai";
 import { fillPromptTemplate } from "@/lib/images/prompt";
@@ -36,7 +42,7 @@ export async function POST(request: Request, context: Ctx) {
     const style = await getStyle(token, styleId);
     if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
 
-    const body = assetBodySchema.parse(await request.json());
+    const body = await readJsonBody(request, assetBodySchema, { maxBytes: UPLOAD_BODY_MAX_BYTES });
     const previous = style.characters.find((c) => c.subject === subject)?.file_id ?? null;
 
     let bytes: Buffer;

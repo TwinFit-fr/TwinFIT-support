@@ -1,6 +1,7 @@
 import { getKnowledgeCard, setCardEmbedding } from "./queries";
 
 const DIMS = 1024;
+const EMBED_TIMEOUT_MS = 30_000;
 
 /** Text the embedding represents — keep aligned with backend knowledge/embed.mjs. */
 export function embedInput(card: {
@@ -30,6 +31,7 @@ async function embedText(text: string): Promise<{ vector: number[]; model: strin
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({ model, input: [text] }),
+    signal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
   });
   const json = (await res.json().catch(() => null)) as {
     data?: Array<{ embedding?: number[] }>;

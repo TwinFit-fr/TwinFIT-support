@@ -1,18 +1,10 @@
 import { HasuraStorageClient } from "@nhost/nhost-js";
 import { resolveSupportHasuraRole } from "@/lib/nhost/jwt";
+import { UPSTREAM_TIMEOUT_MS, nhostUrl } from "@/lib/nhost/urls";
 import { IMAGES_BUCKET } from "./types";
 
-function storageBaseUrl(): string {
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  if (!subdomain || !region) {
-    throw new Error("NEXT_PUBLIC_NHOST_SUBDOMAIN and NEXT_PUBLIC_NHOST_REGION are required");
-  }
-  return `https://${subdomain}.storage.${region}.nhost.run/v1`;
-}
-
 export function publicFileUrl(fileId: string): string {
-  return `${storageBaseUrl()}/files/${fileId}`;
+  return `${nhostUrl("storage")}/files/${fileId}`;
 }
 
 export async function uploadImageFile(input: {
@@ -22,7 +14,7 @@ export async function uploadImageFile(input: {
   name: string;
 }): Promise<{ id: string; url: string }> {
   // Per-request client: a shared one would leak one user's token into another's request.
-  const storage = new HasuraStorageClient({ url: storageBaseUrl() });
+  const storage = new HasuraStorageClient({ url: nhostUrl("storage") });
   storage.setAccessToken(input.token);
 
   const { fileMetadata, error } = await storage.upload({
@@ -47,6 +39,7 @@ export async function downloadImageFile(
       Authorization: `Bearer ${token}`,
       "x-hasura-role": role,
     },
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Storage download failed (${res.status})`);
@@ -66,6 +59,7 @@ export async function deleteImageFile(token: string, fileId: string): Promise<vo
       Authorization: `Bearer ${token}`,
       "x-hasura-role": role,
     },
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   });
   if (!res.ok && res.status !== 404) {
     throw new Error(`Storage delete failed (${res.status})`);

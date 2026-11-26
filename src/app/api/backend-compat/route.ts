@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { PROBE_HEADERS, evaluateCompatibility, parseApiInfo } from "@/lib/backend-compatibility";
+import { optionalNhostUrl } from "@/lib/nhost/urls";
 
 export const dynamic = "force-dynamic";
 
 /** Probes the backend's public `api-info` Function (server side: no CORS preflight for the headers). */
 export async function GET() {
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  if (!subdomain || !region) return NextResponse.json({ status: "unknown" });
+  const functionsUrl = optionalNhostUrl("functions");
+  if (!functionsUrl) return NextResponse.json({ status: "unknown" });
   try {
-    const res = await fetch(`https://${subdomain}.functions.${region}.nhost.run/v1/api-info`, {
+    const res = await fetch(`${functionsUrl}/api-info`, {
       headers: PROBE_HEADERS,
       cache: "no-store",
       signal: AbortSignal.timeout(5_000),

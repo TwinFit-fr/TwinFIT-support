@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { callStaffFunction, requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import {
   CANDIDATE_STATUSES,
   acceptErrorMessage,
@@ -8,11 +9,13 @@ import {
   setKnowledgeCandidateStatus,
   type CandidateStatus,
 } from "@/lib/coach";
+import { candidateActionSchema } from "@/lib/coach/request-schemas";
 
 // Accepting drafts cards with the model from the paper text: typically 10 to 40 s.
 export const maxDuration = 120;
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The Function's budget: under maxDuration, so a slow draft still answers. */
+const ACCEPT_TIMEOUT_MS = 110_000;
 
 function parseStatus(value: string | null): CandidateStatus {
   const status = value ?? "pending";
@@ -43,10 +46,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = (await request.json()) as Record<string, unknown>;
-    const action = String(body.action ?? "");
-    const id = String(body.id ?? "");
-    if (!UUID.test(id)) throw new Error("id must be a candidate uuid");
+    const { action, id } = await readJsonBody(request, candidateActionSchema);
 
     if (action === "dismiss" || action === "restore") {
       const candidate = await setKnowledgeCandidateStatus(
@@ -58,9 +58,12 @@ export async function POST(request: Request) {
     }
 
     if (action === "accept") {
-      const result = await callStaffFunction(token, "admin-accept-knowledge-candidate", {
-        candidateId: id,
-      });
+      const result = await callStaffFunction(
+        token,
+        "admin-accept-knowledge-candidate",
+        { candidateId: id },
+        { timeoutMs: ACCEPT_TIMEOUT_MS },
+      );
       if (result.status < 200 || result.status >= 300) {
         return NextResponse.json(
           { error: acceptErrorMessage(result.status, result.body) },

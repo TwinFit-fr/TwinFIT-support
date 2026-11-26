@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * Roles an admin grants or revokes from Support through the backend Function `admin-set-role`.
  * `admin` itself is not managed here (provisioned from the backend), and `user` / `me` are every
@@ -33,23 +35,30 @@ export function sortRoleNames(roles: readonly string[]): string[] {
   );
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** An account id as the backend's `parseUuid` takes it (any 8-4-4-4-12 hex). */
+export const ACCOUNT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const accountIdSchema = z
+  .string({ error: "userId must be an account UUID" })
+  .trim()
+  .regex(ACCOUNT_ID_RE, "userId must be an account UUID");
 
 /** Body of `admin-set-role`, as Support sends it. */
-export type SetRoleRequest = { userId: string; role: ManagedRole; granted: boolean };
+export const setRoleRequestSchema = z.object({
+  userId: accountIdSchema,
+  role: z.enum(MANAGED_ROLES, { error: `role must be one of: ${MANAGED_ROLES.join(", ")}` }),
+  granted: z.boolean({ error: "granted must be true or false" }),
+});
+
+export type SetRoleRequest = z.infer<typeof setRoleRequestSchema>;
 
 /** Checks the `set-role` action body before it reaches the Function. */
 export function parseSetRoleRequest(
   body: unknown,
 ): { ok: true; value: SetRoleRequest } | { ok: false; error: string } {
-  const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  const userId = typeof input.userId === "string" ? input.userId.trim() : "";
-  if (!UUID_RE.test(userId)) return { ok: false, error: "userId must be an account UUID" };
-  if (!isManagedRole(input.role)) {
-    return { ok: false, error: `role must be one of: ${MANAGED_ROLES.join(", ")}` };
-  }
-  if (typeof input.granted !== "boolean") return { ok: false, error: "granted must be true or false" };
-  return { ok: true, value: { userId, role: input.role, granted: input.granted } };
+  const result = setRoleRequestSchema.safeParse(body && typeof body === "object" ? body : {});
+  if (result.success) return { ok: true, value: result.data };
+  return { ok: false, error: result.error.issues[0]?.message ?? "Invalid set-role request" };
 }
 
 function functionError(body: unknown): string | null {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { base64BodyLimit, readJsonBody } from "@/lib/api-body";
 import { IMAGE_MIME_TYPES } from "@/lib/images/asset-request";
 import { imageUploadProblem } from "@/lib/images/image-type";
 import { getStyle, updateStyle } from "@/lib/images/queries";
@@ -24,7 +25,11 @@ export async function POST(request: Request, context: Ctx) {
     const style = await getStyle(token, styleId);
     if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
 
-    const { mimeType, data } = bodySchema.parse(await request.json());
+    const { mimeType, data } = await readJsonBody(
+      request,
+      bodySchema,
+      { maxBytes: base64BodyLimit(MAX_UPLOAD_BYTES) },
+    );
     const bytes = Buffer.from(data, "base64");
     const problem = imageUploadProblem(bytes, mimeType, MAX_UPLOAD_BYTES);
     if (problem) return NextResponse.json({ error: problem }, { status: 400 });

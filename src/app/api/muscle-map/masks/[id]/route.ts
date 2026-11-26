@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { DEFAULT_ADJUST, UPLOAD_ADJUST, normalizeAdjust } from "@/lib/muscle-map/mask-ops";
 import { getBase, getMask, setMaskActive } from "@/lib/muscle-map/queries";
 import { errorResponse } from "@/lib/muscle-map/request";
@@ -21,7 +22,7 @@ export async function PATCH(request: Request, context: Ctx) {
   try {
     const token = await requireStaffToken(request);
     const { id } = await context.params;
-    const body = patchSchema.parse(await request.json());
+    const body = await readJsonBody(request, patchSchema);
     const mask = await getMask(token, id);
     if (!mask) return NextResponse.json({ error: "Mask not found" }, { status: 404 });
     if (body.action === "adjust") {

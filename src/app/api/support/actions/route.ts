@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { callStaffFunction, requireStaffAuth } from "@/lib/api-auth";
-import { parseSetRoleRequest, setRoleErrorMessage } from "@/lib/support/roles";
-import type { AdminAction } from "@/lib/support/types";
+import { readJsonBody } from "@/lib/api-body";
+import { adminActionSchema } from "@/lib/support/actions";
+import { setRoleErrorMessage } from "@/lib/support/roles";
 
 export async function POST(request: Request) {
   try {
-    const { token, role } = await requireStaffAuth(request);
-    const body = (await request.json()) as AdminAction;
+    const { token, role: callerRole } = await requireStaffAuth(request);
+    const body = await readJsonBody(request, adminActionSchema);
 
     switch (body.action) {
       case "verify-email": {
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
         const result = await callStaffFunction(token, "admin-grant-premium", {
           userId: body.userId,
           reason: body.reason,
-          endsAt: body.endsAt ?? null,
+          endsAt: body.endsAt,
         });
         return NextResponse.json(result.body, { status: result.status });
       }
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
         return NextResponse.json(result.body, { status: result.status });
       }
       case "set-disabled": {
-        if (role !== "admin") {
+        if (callerRole !== "admin") {
           return NextResponse.json({ error: "Admin role required" }, { status: 403 });
         }
         const result = await callStaffFunction(token, "admin-set-user-disabled", {
@@ -41,17 +42,14 @@ export async function POST(request: Request) {
         return NextResponse.json(result.body, { status: result.status });
       }
       case "set-role": {
-        if (role !== "admin") {
+        if (callerRole !== "admin") {
           return NextResponse.json(
             { error: setRoleErrorMessage(403, null) },
             { status: 403 },
           );
         }
-        const parsed = parseSetRoleRequest(body);
-        if (!parsed.ok) {
-          return NextResponse.json({ error: parsed.error }, { status: 400 });
-        }
-        const result = await callStaffFunction(token, "admin-set-role", parsed.value);
+        const { userId, role, granted } = body;
+        const result = await callStaffFunction(token, "admin-set-role", { userId, role, granted });
         if (result.status < 200 || result.status >= 300) {
           return NextResponse.json(
             { error: setRoleErrorMessage(result.status, result.body) },
@@ -60,9 +58,8 @@ export async function POST(request: Request) {
         }
         return NextResponse.json(result.body, { status: result.status });
       }
-      default:
-        return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
+    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Action failed";

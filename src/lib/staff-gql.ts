@@ -1,15 +1,7 @@
 import { ClientError, GraphQLClient } from "graphql-request";
 import type { GqlDocument } from "@/lib/gql";
 import { resolveSupportHasuraRole } from "@/lib/nhost/jwt";
-
-function graphqlUrl(): string {
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  if (!subdomain || !region) {
-    throw new Error("NEXT_PUBLIC_NHOST_SUBDOMAIN and NEXT_PUBLIC_NHOST_REGION are required");
-  }
-  return `https://${subdomain}.graphql.${region}.nhost.run/v1`;
-}
+import { nhostUrl } from "@/lib/nhost/urls";
 
 type HasuraError = {
   message?: string;
@@ -43,7 +35,7 @@ export async function staffGql<T = Record<string, unknown>>(
   query: GqlDocument,
   variables?: Record<string, unknown>,
 ): Promise<T> {
-  const client = new GraphQLClient(graphqlUrl(), {
+  const client = new GraphQLClient(nhostUrl("graphql"), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "x-hasura-role": resolveSupportHasuraRole(accessToken),

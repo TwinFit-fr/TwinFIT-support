@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { createStyle, listStyles } from "@/lib/images/queries";
 
 export async function GET(request: Request) {
@@ -26,7 +27,7 @@ const createSchema = z.object({
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = createSchema.parse(await request.json());
+    const body = await readJsonBody(request, createSchema);
     const style = await createStyle(token, body);
     return NextResponse.json({ style });
   } catch (error) {

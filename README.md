@@ -38,6 +38,7 @@ npm run dev
 | `NEXT_PUBLIC_NHOST_SUBDOMAIN` | Public | Nhost project subdomain |
 | `NEXT_PUBLIC_NHOST_REGION` | Public | Nhost region (e.g. `eu-central-1`) |
 | `NHOST_JWT_ISSUER` | Server, optional | When set, API routes also require this exact `iss` (Nhost Auth signs `https://<subdomain>.auth.<region>.nhost.run/v1`). Unset: no issuer check, as in the backend Functions (the project's JWKS already binds the token to the project) |
+| `SUPPORT_BASE_URL` | Server | Origin of this Support deploy (e.g. `https://support.example.com`; https, or http on localhost). A long Images generation run continues in a fresh request on this URL; it is never taken from the request. Without it in production, the run stops after one request and open Images pages restart it. Defaults to `http://localhost:$PORT` in development. |
 
 Support does **not** use `HASURA_GRAPHQL_ADMIN_SECRET`. All GraphQL reads and catalog writes go through the user's JWT (`staff` or `admin` role). Sensitive support writes call backend Functions that validate the JWT server-side.
 
@@ -123,6 +124,8 @@ document Support sends is a fixed, named operation written with the `gql` tag
   `staff` / `admin` gets 403 (admin-only routes: without `admin`); 503 when the JWKS cannot be read.
   New routes must call one of these first, before any server key (OpenAI, Mistral, …) is used.
 - Non-staff users are rejected at login (UI hint only, unverified decode) and on API routes (403).
+- Every API route reads its JSON body through `readJsonBody` (`src/lib/api-body.ts`): size-capped before parsing (1 MB, or the upload limit for base64 uploads) and checked with a zod schema; a bad body is a 400, an oversized one a 413.
+- Server-side calls to Functions, Storage and the embeddings API have timeouts; Nhost URLs come from `nhostUrl()` (`src/lib/nhost/urls.ts`), which throws when the project is not configured.
 - Deploy behind VPN or IP allowlist for production; do not expose publicly without additional hardening.
 
 ## Related repos

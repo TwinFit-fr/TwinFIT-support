@@ -1,5 +1,6 @@
 import { HasuraStorageClient } from "@nhost/nhost-js";
 import { resolveSupportHasuraRole } from "@/lib/nhost/jwt";
+import { UPSTREAM_TIMEOUT_MS, nhostUrl } from "@/lib/nhost/urls";
 import { publicFileUrl } from "@/lib/images/storage";
 import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
@@ -17,13 +18,7 @@ export async function uploadCoachMediaFile(input: {
     throw new Error(`File exceeds the ${COACH_MEDIA_MAX_BYTES / (1024 * 1024)} MiB coach-media limit`);
   }
 
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  if (!subdomain || !region) {
-    throw new Error("NEXT_PUBLIC_NHOST_SUBDOMAIN and NEXT_PUBLIC_NHOST_REGION are required");
-  }
-  const url = `https://${subdomain}.storage.${region}.nhost.run/v1`;
-  const storage = new HasuraStorageClient({ url });
+  const storage = new HasuraStorageClient({ url: nhostUrl("storage") });
   storage.setAccessToken(input.token);
 
   const { fileMetadata, error } = await storage.upload({
@@ -115,6 +110,7 @@ export async function deleteCoachMediaFile(
       Authorization: `Bearer ${token}`,
       "x-hasura-role": resolveSupportHasuraRole(token),
     },
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   });
   if (res.status === 404) return { deleted: false, reason: "missing" };
   if (!res.ok) {

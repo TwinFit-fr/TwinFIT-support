@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { DEFAULT_ADJUST, UPLOAD_ADJUST, normalizeAdjust } from "@/lib/muscle-map/mask-ops";
+import { UPLOAD_BODY_MAX_BYTES } from "@/lib/images/asset-request";
 import { errorResponse, imageSourceSchema, uploadOf } from "@/lib/muscle-map/request";
 import { createMask } from "@/lib/muscle-map/service";
+
+/** Generate or upload, with optional extraction settings (`normalizeAdjust` checks each field). */
+const createSchema = z.intersection(
+  imageSourceSchema,
+  z.object({ adjust: z.record(z.string(), z.unknown()).optional() }),
+);
 
 export const maxDuration = 300;
 
@@ -16,10 +24,10 @@ export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
     const muscleId = z.string().uuid().parse(new URL(request.url).searchParams.get("muscle_id"));
-    const raw = (await request.json()) as Record<string, unknown>;
-    const upload = uploadOf(imageSourceSchema.parse(raw));
+    const body = await readJsonBody(request, createSchema, { maxBytes: UPLOAD_BODY_MAX_BYTES });
+    const upload = uploadOf(body);
     if (upload instanceof NextResponse) return upload;
-    const adjust = normalizeAdjust(raw.adjust, upload ? UPLOAD_ADJUST : DEFAULT_ADJUST);
+    const adjust = normalizeAdjust(body.adjust, upload ? UPLOAD_ADJUST : DEFAULT_ADJUST);
     const mask = await createMask(token, { muscleId, adjust, upload });
     return NextResponse.json({ mask });
   } catch (error) {

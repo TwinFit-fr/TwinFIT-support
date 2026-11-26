@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { MAX_CONCURRENCY_LIMIT, validateMaxConcurrency } from "@/lib/images/capabilities";
 import { loadSettings, updateImageSettings } from "@/lib/images/queries";
 
@@ -24,7 +25,7 @@ const bodySchema = z.object({
 export async function PUT(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = bodySchema.parse(await request.json());
+    const body = await readJsonBody(request, bodySchema);
     const concurrencyIssue = validateMaxConcurrency(body.max_concurrency);
     if (concurrencyIssue) {
       return NextResponse.json({ error: concurrencyIssue }, { status: 400 });

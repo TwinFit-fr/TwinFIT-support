@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import {
   deleteExerciseImageRow,
   getExerciseImage,
@@ -28,7 +29,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const token = await requireStaffToken(request);
     const { id } = await context.params;
-    const body = patchSchema.parse(await request.json());
+    const body = await readJsonBody(request, patchSchema);
     if (body.active === true) {
       return NextResponse.json(
         { error: "Frames are activated by publishing a sequence (Start, Mid and End together)" },

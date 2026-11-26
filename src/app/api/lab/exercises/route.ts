@@ -1,11 +1,28 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import {
   linkCatalogExercise,
   listCatalogCandidates,
   listLabExercises,
   updateLabExercise,
 } from "@/lib/lab/queries";
+
+const exoId = z.coerce.number({ error: "catalog_exo_id required" }).int().positive();
+
+const linkSchema = z.object({ action: z.literal("link_catalog", { error: "Unknown action" }), catalog_exo_id: exoId });
+
+/** `id` is the older name of `catalog_exo_id`. */
+const patchSchema = z
+  .object({
+    catalog_exo_id: exoId.optional(),
+    id: exoId.optional(),
+    active: z.boolean().optional(),
+    notes: z.string().max(5000).nullish(),
+    sort_order: z.int().optional(),
+  })
+  .refine((body) => (body.catalog_exo_id ?? body.id) !== undefined, "catalog_exo_id required");
 
 export async function GET(request: Request) {
   try {
@@ -27,16 +44,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = await request.json();
-    if (body.action === "link_catalog") {
-      const exoId = Number(body.catalog_exo_id);
-      if (!Number.isFinite(exoId)) {
-        return NextResponse.json({ error: "catalog_exo_id required" }, { status: 400 });
-      }
-      const exercise = await linkCatalogExercise(token, exoId);
-      return NextResponse.json({ ok: true, exercise });
-    }
-    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    const body = await readJsonBody(request, linkSchema);
+    const exercise = await linkCatalogExercise(token, body.catalog_exo_id);
+    return NextResponse.json({ ok: true, exercise });
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Lab exercise mutation failed";
@@ -47,11 +57,8 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = await request.json();
-    const catalogExoId = Number(body.catalog_exo_id ?? body.id);
-    if (!Number.isFinite(catalogExoId)) {
-      return NextResponse.json({ error: "catalog_exo_id required" }, { status: 400 });
-    }
+    const body = await readJsonBody(request, patchSchema);
+    const catalogExoId = (body.catalog_exo_id ?? body.id) as number;
     const exercise = await updateLabExercise(token, catalogExoId, {
       active: body.active,
       notes: body.notes,
