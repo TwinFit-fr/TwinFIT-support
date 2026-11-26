@@ -80,7 +80,6 @@ export function listLibrary(token: string) {
         body_mass_coefficient
         default_pulley_ratio
         secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }
-        extra_muscle_groups { muscle_group { code name } }
       }
       catalog_muscle_groups(where: { active: { _eq: true } }, order_by: { sort_order: asc }) {
         id code name
