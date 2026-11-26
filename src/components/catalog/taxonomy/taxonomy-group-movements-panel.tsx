@@ -11,6 +11,13 @@ import {
   type MuscleSet,
 } from "@/components/catalog/muscle-set-editor";
 import { resolveLocalizedName, type LocalizedLookup } from "@/lib/catalog/locales";
+import {
+  pairTargetCodes,
+  profileUserCount,
+  type PairExerciseRef,
+  type ProfileRef,
+} from "@/lib/catalog/pair-profiles";
+import { PairProfilesEditor, type ProfileDraft } from "./pair-profiles-editor";
 import type { LookupRowFull, MuscleGroupRow, StrengthPatternRow } from "./types";
 
 type PairRow = {
@@ -20,6 +27,9 @@ type PairRow = {
   movementCode: string;
   movementName: string;
   muscles: MuscleSet;
+  /** Target profiles (another target of the group with its own secondaries). */
+  profiles: ProfileRef[];
+  exercises: PairExerciseRef[];
   exerciseCount: number;
   inheritingCount: number;
   /** Pair-level pattern: "inherit" (movement type's), "none" (isolation) or a pattern code. */
@@ -51,7 +61,15 @@ type Props = {
     movementCode: string,
     strengthPattern: string,
   ) => Promise<string | null>;
+  /** Creates or edits a (pair, target) profile. Same contract. */
+  onSaveProfile: (groupCode: string, movementCode: string, profile: ProfileDraft) => Promise<string | null>;
+  onDeleteProfile: (groupCode: string, movementCode: string, target: string) => Promise<string | null>;
 };
+
+const toOption = (m: LookupRowFull): MuscleOption => ({
+  code: m.code,
+  name: resolveLocalizedName(m as LocalizedLookup, "en"),
+});
 
 function selectClass(extra = "") {
   return `rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm ${extra}`;
@@ -70,6 +88,8 @@ export function TaxonomyGroupMovementsPanel({
   onUnlink,
   onSaveMuscles,
   onSaveStrengthPattern,
+  onSaveProfile,
+  onDeleteProfile,
 }: Props) {
   const [filter, setFilter] = useState("");
   const confirm = useConfirm();
@@ -84,12 +104,19 @@ export function TaxonomyGroupMovementsPanel({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [patternRow, setPatternRow] = useState<PairRow | null>(null);
   const [patternDraft, setPatternDraft] = useState(INHERIT);
+  const [profilesKey, setProfilesKey] = useState<string | null>(null);
 
+  /** Every muscle, for names (chips of existing rows). */
+  const allMuscleOptions = useMemo(
+    (): MuscleOption[] => muscles.map(toOption).sort((a, b) => a.name.localeCompare(b.name)),
+    [muscles],
+  );
+  /** Pickers: active anatomical muscles (no sentinel such as CARDIOVASCULAR, no merged muscle). */
   const muscleOptions = useMemo(
     (): MuscleOption[] =>
       muscles
-        .filter((m) => m.active !== false)
-        .map((m) => ({ code: m.code, name: resolveLocalizedName(m as LocalizedLookup, "en") }))
+        .filter((m) => m.active !== false && m.is_anatomical !== false)
+        .map(toOption)
         .sort((a, b) => a.name.localeCompare(b.name)),
     [muscles],
   );
@@ -97,6 +124,7 @@ export function TaxonomyGroupMovementsPanel({
   const pairs = useMemo((): PairRow[] => {
     const rows: PairRow[] = [];
     for (const group of groups) {
+      if (group.active === false) continue;
       for (const x of group.group_movement_types) {
         const movementPattern =
           movements.find((m) => m.code === x.movement_type.code)?.strength_pattern?.code ?? "";
@@ -112,6 +140,12 @@ export function TaxonomyGroupMovementsPanel({
             target: x.target_muscle?.code ?? "",
             secondary: (x.secondary_muscles ?? []).map((s) => s.muscle.code),
           },
+          profiles: (x.target_profiles ?? []).map((p) => ({
+            target: p.target_muscle.code,
+            secondary: (p.secondary_muscles ?? []).map((s) => s.muscle.code),
+            reason: p.reason ?? null,
+          })),
+          exercises: x.exercises ?? [],
           exerciseCount: x.exercises?.length ?? 0,
           inheritingCount: (x.exercises ?? []).filter((e) => e.muscles_inherited).length,
           patternChoice: override ? pairPattern || ISOLATION : INHERIT,
@@ -170,15 +204,27 @@ export function TaxonomyGroupMovementsPanel({
     }
   }
 
-  /** A pair's target is one of its group's own muscles (home = role target, backend 2.10.0). */
-  const targetOptionsFor = (groupCode: string): MuscleOption[] => {
+  /**
+   * The group's own muscles (home = role target, backend 2.10.0), active. A sentinel such as
+   * CARDIOVASCULAR stays here: it is the only target its cardio group has.
+   */
+  const homeMusclesOf = (groupCode: string): MuscleOption[] => {
     const home = new Set(
       (groups.find((g) => g.code === groupCode)?.group_muscles ?? [])
-        .filter((m) => m.role === "target")
+        .filter((m) => m.role === "target" && m.muscle.active !== false)
         .map((m) => m.muscle.code),
     );
-    return muscleOptions.filter((m) => home.has(m.code));
+    return allMuscleOptions.filter((m) => home.has(m.code));
   };
+
+  /** A pair's target: one of its group's muscles without a profile on the pair. */
+  const targetOptionsFor = (row: PairRow): MuscleOption[] => {
+    const home = homeMusclesOf(row.groupCode);
+    const allowed = new Set(pairTargetCodes(home.map((m) => m.code), row.profiles, row.muscles.target));
+    return home.filter((m) => allowed.has(m.code));
+  };
+
+  const profilesRow = profilesKey ? pairs.find((p) => p.key === profilesKey) ?? null : null;
 
   function openMuscles(row: PairRow) {
     setDraft(row.muscles);
@@ -253,11 +299,13 @@ export function TaxonomyGroupMovementsPanel({
                 setLinkMovement("");
               }}
             >
-              {groups.map((g) => (
-                <option key={g.id} value={g.code}>
-                  {g.code}
-                </option>
-              ))}
+              {groups
+                .filter((g) => g.active !== false)
+                .map((g) => (
+                  <option key={g.id} value={g.code}>
+                    {g.code}
+                  </option>
+                ))}
             </select>
           </label>
           <label className="text-xs font-medium text-zinc-600">
@@ -298,11 +346,13 @@ export function TaxonomyGroupMovementsPanel({
           onChange={(e) => setGroupFilter(e.target.value)}
         >
           <option value="">All groups</option>
-          {groups.map((g) => (
-            <option key={g.id} value={g.code}>
-              {g.code}
-            </option>
-          ))}
+          {groups
+            .filter((g) => g.active !== false)
+            .map((g) => (
+              <option key={g.id} value={g.code}>
+                {g.code}
+              </option>
+            ))}
         </select>
         <span className="text-xs text-zinc-500">
           {filtered.length} / {pairs.length} pairs
@@ -342,7 +392,21 @@ export function TaxonomyGroupMovementsPanel({
                       <div className="text-xs text-zinc-500">{row.movementName}</div>
                     </td>
                     <td className="px-3 py-2">
-                      <MuscleSetChips muscles={muscleOptions} value={row.muscles} />
+                      <MuscleSetChips muscles={allMuscleOptions} value={row.muscles} />
+                      {row.profiles.map((p) => (
+                        <div key={p.target} className="mt-1 flex items-start gap-1">
+                          <span
+                            className="pt-0.5 text-[11px] text-zinc-400"
+                            title="Target profile: inherited exercises with this target use these secondaries"
+                          >
+                            profile
+                          </span>
+                          <MuscleSetChips muscles={allMuscleOptions} value={p} />
+                          <span className="pt-0.5 text-[11px] text-zinc-400">
+                            {profileUserCount(row.exercises, p.target)} inherit
+                          </span>
+                        </div>
+                      ))}
                     </td>
                     <td className="px-3 py-2 text-xs text-zinc-600">
                       <div className="font-mono">{row.effectivePattern || "Isolation"}</div>
@@ -365,6 +429,15 @@ export function TaxonomyGroupMovementsPanel({
                           onClick={() => openMuscles(row)}
                         >
                           Muscles
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy}
+                          className="h-8 px-2 text-xs"
+                          onClick={() => setProfilesKey(row.key)}
+                        >
+                          Profiles ({row.profiles.length})
                         </Button>
                         <Button
                           type="button"
@@ -455,6 +528,44 @@ export function TaxonomyGroupMovementsPanel({
         </Modal>
       )}
 
+      {profilesRow && (
+        <Modal
+          onClose={() => setProfilesKey(null)}
+          labelledBy="pair-profiles-title"
+          className="max-w-lg"
+        >
+          <div className="space-y-4 p-6">
+            <div>
+              <h2 id="pair-profiles-title" className="text-lg font-semibold">
+                {profilesRow.groupName} + {profilesRow.movementName}: target profiles
+              </h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                An exercise of this pair that keeps another of {profilesRow.groupCode}&apos;s muscles
+                as target inherits that target&apos;s profile (its secondaries) instead of the
+                pair&apos;s. Pair target: {profilesRow.muscles.target || "not set"}.
+              </p>
+            </div>
+            <PairProfilesEditor
+              // Drafts belong to one pair.
+              key={profilesRow.key}
+              groupCode={profilesRow.groupCode}
+              pairTarget={profilesRow.muscles.target}
+              profiles={profilesRow.profiles}
+              exercises={profilesRow.exercises}
+              homeMuscles={homeMusclesOf(profilesRow.groupCode)}
+              muscles={muscleOptions}
+              onSave={(profile) => onSaveProfile(profilesRow.groupCode, profilesRow.movementCode, profile)}
+              onDelete={(target) => onDeleteProfile(profilesRow.groupCode, profilesRow.movementCode, target)}
+            />
+            <div className="flex justify-end">
+              <Button type="button" variant="secondary" onClick={() => setProfilesKey(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {editing && (
         <Modal
           onClose={() => setEditing(null)}
@@ -476,8 +587,12 @@ export function TaxonomyGroupMovementsPanel({
             </div>
             <MuscleSetEditor
               muscles={muscleOptions}
-              targetMuscles={targetOptionsFor(editing.groupCode)}
-              targetHint={`Targets: the muscles of ${editing.groupCode} (Taxonomy → Anatomy).`}
+              targetMuscles={targetOptionsFor(editing)}
+              targetHint={`Targets: the muscles of ${editing.groupCode} (Taxonomy → Anatomy)${
+                editing.profiles.length
+                  ? `, except the targets with a profile on this pair (${editing.profiles.map((p) => p.target).join(", ")})`
+                  : ""
+              }. Secondaries of another home get a picker row in ${editing.groupCode}.`}
               value={draft}
               onChange={setDraft}
               disabled={saving}

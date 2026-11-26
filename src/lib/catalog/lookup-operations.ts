@@ -42,6 +42,9 @@ export const LOOKUP_FIND: Record<LookupTable, GqlDocument> = {
   catalog_logging_modes: gql`query SupportTaxonomyFindLoggingModes($code: String!) {
     catalog_logging_modes(where: { code: { _eq: $code } }, limit: 1) { id code }
   }`,
+  catalog_strength_patterns: gql`query SupportTaxonomyFindStrengthPatterns($code: String!) {
+    catalog_strength_patterns(where: { code: { _eq: $code } }, limit: 1) { id code }
+  }`,
 };
 
 /**
@@ -81,7 +84,7 @@ export const LOOKUP_UPDATE: Record<LookupTable, GqlDocument> = {
     row: update_catalog_muscles_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description }
   }`,
   catalog_movement_types: gql`mutation SupportTaxonomyUpdateMovementTypes($id: uuid!, $set: catalog_movement_types_set_input!) {
-    row: update_catalog_movement_types_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order }
+    row: update_catalog_movement_types_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description }
   }`,
   catalog_equipment: gql`mutation SupportTaxonomyUpdateEquipment($id: uuid!, $set: catalog_equipment_set_input!) {
     row: update_catalog_equipment_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description }
@@ -104,6 +107,9 @@ export const LOOKUP_UPDATE: Record<LookupTable, GqlDocument> = {
   catalog_logging_modes: gql`mutation SupportTaxonomyUpdateLoggingModes($id: uuid!, $set: catalog_logging_modes_set_input!) {
     row: update_catalog_logging_modes_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order }
   }`,
+  catalog_strength_patterns: gql`mutation SupportTaxonomyUpdateStrengthPatterns($id: uuid!, $set: catalog_strength_patterns_set_input!) {
+    row: update_catalog_strength_patterns_by_pk(pk_columns: { id: $id }, _set: $set) { id code name active sort_order description }
+  }`,
 };
 
 /** Reads a row by id with the same fields as the update; the row comes back as `row`. */
@@ -118,7 +124,7 @@ export const LOOKUP_READ: Record<LookupTable, GqlDocument> = {
     row: catalog_muscles_by_pk(id: $id) { id code name active sort_order description }
   }`,
   catalog_movement_types: gql`query SupportTaxonomyReadMovementTypes($id: uuid!) {
-    row: catalog_movement_types_by_pk(id: $id) { id code name active sort_order }
+    row: catalog_movement_types_by_pk(id: $id) { id code name active sort_order description }
   }`,
   catalog_equipment: gql`query SupportTaxonomyReadEquipment($id: uuid!) {
     row: catalog_equipment_by_pk(id: $id) { id code name active sort_order description }
@@ -141,6 +147,9 @@ export const LOOKUP_READ: Record<LookupTable, GqlDocument> = {
   catalog_logging_modes: gql`query SupportTaxonomyReadLoggingModes($id: uuid!) {
     row: catalog_logging_modes_by_pk(id: $id) { id code name active sort_order }
   }`,
+  catalog_strength_patterns: gql`query SupportTaxonomyReadStrengthPatterns($id: uuid!) {
+    row: catalog_strength_patterns_by_pk(id: $id) { id code name active sort_order description }
+  }`,
 };
 
 /** Taxonomy tables that have a localizations table, with that table's foreign key. */
@@ -153,6 +162,7 @@ export const TAXONOMY_LOCALIZATION_FK: Partial<Record<LookupTable, string>> = {
   catalog_muscles: "muscle_id",
   catalog_load_modalities: "load_modality_id",
   catalog_grips: "grip_id",
+  catalog_strength_patterns: "strength_pattern_id",
 };
 
 /** Sets every locale of a row: filled ones upserted, emptied ones deleted. */
@@ -261,6 +271,19 @@ export const LOCALIZATIONS_SET: Partial<Record<LookupTable, GqlDocument>> = {
       where: { grip_id: { _eq: $id }, locale: { _in: $cleared } }
     ) { affected_rows }
   }`,
+  catalog_strength_patterns: gql`mutation SupportTaxonomySetStrengthPatternsLabels(
+    $objects: [catalog_strength_pattern_localizations_insert_input!]!
+    $id: uuid!
+    $cleared: [String!]!
+  ) {
+    insert_catalog_strength_pattern_localizations(
+      objects: $objects
+      on_conflict: { constraint: strength_pattern_localizations_strength_pattern_id_locale_key, update_columns: [display_name] }
+    ) { affected_rows }
+    delete_catalog_strength_pattern_localizations(
+      where: { strength_pattern_id: { _eq: $id }, locale: { _in: $cleared } }
+    ) { affected_rows }
+  }`,
 };
 
 /** Upserts the English label of a row. */
@@ -311,6 +334,12 @@ export const LOCALIZATION_SET_ENGLISH: Partial<Record<LookupTable, GqlDocument>>
     insert_catalog_grip_localizations_one(
       object: $object
       on_conflict: { constraint: grip_localizations_grip_id_locale_key, update_columns: [display_name] }
+    ) { locale }
+  }`,
+  catalog_strength_patterns: gql`mutation SupportTaxonomySetStrengthPatternsEnglishLabel($object: catalog_strength_pattern_localizations_insert_input!) {
+    insert_catalog_strength_pattern_localizations_one(
+      object: $object
+      on_conflict: { constraint: strength_pattern_localizations_strength_pattern_id_locale_key, update_columns: [display_name] }
     ) { locale }
   }`,
 };

@@ -190,11 +190,31 @@ const GENERIC_BY_CONTEXT: Record<CatalogErrorContext, string> = {
   unlink_muscle:
     "The database refused the unlink: an active muscle cannot be left without a home group. Link it as target of another group first (that moves it), or deactivate it.",
   movement: "The database refused this change to the group's movements. Nothing changed.",
-  pair: "The database refused the pair change (target muscles must belong to the group). Nothing changed.",
+  pair: "The database refused the pair change (targets must be muscles of the group; a profile's target is not the pair's, and a profile in use by inherited exercises cannot be deleted). Nothing changed.",
   synonym: "The database refused this search synonym change. Nothing changed.",
 };
 
 type Rule = { test: RegExp; message: (m: RegExpMatchArray) => string };
+
+/**
+ * Database messages that hold "; " themselves (the profile guards of 1790000000107): matched on
+ * the error and the parts after it, so their second clause is not shown as another error.
+ */
+const SPANNING_RULES: Rule[] = [
+  {
+    test: /^catalog\.pair_target_profiles: (\S+) is the pair's own target; a profile is for another target of the pair/,
+    message: (m) => `${m[1]} is the pair's own target: a profile is for another target of the pair`,
+  },
+  {
+    test: /^catalog\.muscle_group_movement_types: the pair has a target profile for (\S+); delete the profile before making it the pair's target/,
+    message: (m) =>
+      `The pair has a target profile for ${m[1]}: delete that profile before making ${m[1]} the pair's target`,
+  },
+  {
+    test: /^catalog\.pair_target_profiles: exercise exo_id (\d+) inherits its muscles through this profile; give it its own muscles \(muscles_inherited = false, with muscles_custom_reason\) or another target first/,
+    message: (m) => `Exercise #${m[1]} inherits its muscles through this target profile: change it first`,
+  },
+];
 
 /** Database guard-rail messages (written for staff already) reworded for the Support UI. */
 const RULES: Rule[] = [
@@ -289,15 +309,25 @@ const RULES: Rule[] = [
 export function friendlyCatalogError(raw: unknown, context: CatalogErrorContext): string {
   const message = (raw instanceof Error ? raw.message : String(raw ?? "")).trim();
   if (!message || GENERIC_DB_ERROR.test(message)) return GENERIC_BY_CONTEXT[context];
-  const parts = message.split("; ").map((whole) => {
-    const part = whole.trim().replace(HASURA_PREFIX, "");
-    if (GENERIC_DB_ERROR.test(part)) return GENERIC_BY_CONTEXT[context];
-    for (const rule of RULES) {
-      const match = part.match(rule.test);
-      if (match) return rule.message(match);
+  const pieces = message.split("; ");
+  const parts: string[] = [];
+  for (let i = 0; i < pieces.length; i++) {
+    const part = pieces[i].trim().replace(HASURA_PREFIX, "");
+    if (GENERIC_DB_ERROR.test(part)) {
+      parts.push(GENERIC_BY_CONTEXT[context]);
+      continue;
     }
-    return part;
-  });
+    const rest = [part, ...pieces.slice(i + 1)].join("; ");
+    const spanning = SPANNING_RULES.find((r) => r.test.test(rest));
+    if (spanning) {
+      const match = rest.match(spanning.test)!;
+      parts.push(spanning.message(match));
+      i += match[0].split("; ").length - 1;
+      continue;
+    }
+    const rule = RULES.find((r) => r.test.test(part));
+    parts.push(rule ? rule.message(part.match(rule.test)!) : part);
+  }
   return [...new Set(parts)].join("; ");
 }
 
