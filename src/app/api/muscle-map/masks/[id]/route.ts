@@ -11,7 +11,7 @@ export const maxDuration = 120;
 type Ctx = { params: Promise<{ id: string }> };
 
 const patchSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("adjust"), adjust: z.record(z.unknown()) }),
+  z.object({ action: z.literal("adjust"), adjust: z.record(z.string(), z.unknown()) }),
   z.object({ action: z.literal("activate") }),
   z.object({ action: z.literal("deactivate") }),
 ]);
