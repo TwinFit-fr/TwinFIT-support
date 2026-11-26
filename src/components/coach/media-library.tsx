@@ -24,6 +24,7 @@ import {
   type MediaFile,
 } from "@/lib/coach/media";
 import type { Suggestion } from "@/lib/coach/types";
+import { IMAGE_FILE_ACCEPT } from "@/lib/images/image-type";
 
 /**
  * The coach-media library: every image in the bucket, grouped by folder (`lessons/{slug}`,
@@ -294,7 +295,7 @@ export function MediaLibraryDialog({ suggestions: givenSuggestions, defaultFolde
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="image/*"
+                  accept={IMAGE_FILE_ACCEPT}
                   multiple
                   className="hidden"
                   aria-label={`Upload images to ${uploadTarget}`}

@@ -4,6 +4,7 @@
  * prefix. Pending images (picked in the editor, not uploaded yet) are uploaded on Save into the
  * suggestion's own folder; the library can also upload straight into any folder for reuse.
  */
+import { isAllowedImageMimeType } from "../images/image-type.ts";
 import { COACH_MEDIA_MAX_BYTES, type Suggestion, type SuggestionKind } from "./types.ts";
 
 /** An image picked in the editor and not uploaded yet; `objectUrl` previews it locally. */
@@ -24,8 +25,8 @@ export type MediaFile = {
 
 /** Checks a picked file before it enters the draft; returns the error to show, or null. */
 export function validateImageFile(file: Pick<File, "name" | "type" | "size">): string | null {
-  if (!file.type.startsWith("image/")) {
-    return `${file.name || "This file"} is not an image. Only image files can be embedded.`;
+  if (!isAllowedImageMimeType(file.type)) {
+    return `${file.name || "This file"} is not a PNG, WebP or JPEG image. Only those can be embedded.`;
   }
   if (file.size > COACH_MEDIA_MAX_BYTES) {
     const mb = (file.size / (1024 * 1024)).toFixed(1);

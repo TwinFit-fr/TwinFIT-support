@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { IMAGE_MIME_TYPES } from "@/lib/images/asset-request";
+import { imageUploadProblem } from "@/lib/images/image-type";
 import { getStyle, updateStyle } from "@/lib/images/queries";
 import { logoFileName } from "@/lib/images/reference";
 import { deleteImageFile } from "@/lib/images/storage";
@@ -11,7 +13,7 @@ const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 type Ctx = { params: Promise<{ styleId: string }> };
 
 const bodySchema = z.object({
-  mimeType: z.enum(["image/png", "image/webp", "image/jpeg"]),
+  mimeType: IMAGE_MIME_TYPES,
   data: z.string().min(1),
 });
 
@@ -24,9 +26,8 @@ export async function POST(request: Request, context: Ctx) {
 
     const { mimeType, data } = bodySchema.parse(await request.json());
     const bytes = Buffer.from(data, "base64");
-    if (bytes.length > MAX_UPLOAD_BYTES) {
-      return NextResponse.json({ error: "Logo must be under 3 MB" }, { status: 400 });
-    }
+    const problem = imageUploadProblem(bytes, mimeType, MAX_UPLOAD_BYTES);
+    if (problem) return NextResponse.json({ error: problem }, { status: 400 });
     const uploaded = await replaceUploadedFile({
       token,
       bytes,

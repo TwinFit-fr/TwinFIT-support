@@ -34,6 +34,7 @@ import { blocksOf, bodyText, isEditableBody, isTextBody, KIND_LABELS, type Chunk
 import { LOCALES, type Locale } from "@/lib/coach/types";
 import { appColors, appType, Block, ListRow, type ResolveImage } from "./phone-preview";
 import type { ChunkEditor } from "./use-chunk-editor";
+import { IMAGE_FILE_ACCEPT } from "@/lib/images/image-type";
 
 /**
  * The answer of a lesson drawn chunk by chunk inside the phone, exactly as `AppMarkdown` draws it
@@ -667,7 +668,7 @@ function Toolbar({
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
+          accept={IMAGE_FILE_ACCEPT}
           multiple
           className="hidden"
           aria-label={`Image files to insert after chunk ${index + 1} (${locale})`}

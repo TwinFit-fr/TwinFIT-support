@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { ALLOWED_IMAGE_MIME_TYPES, imageUploadProblem } from "./image-type";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
-export const IMAGE_MIME_TYPES = z.enum(["image/png", "image/webp", "image/jpeg"]);
+export const IMAGE_MIME_TYPES = z.enum(ALLOWED_IMAGE_MIME_TYPES);
 
 const generateBody = z.object({ action: z.literal("generate") });
 const uploadBody = z.object({
@@ -28,14 +29,13 @@ export const equipmentAssetBodySchema = z.discriminatedUnion("action", [
 export type AssetBody = z.infer<typeof assetBodySchema>;
 export type AssetUpload = Extract<AssetBody, { action: "upload" }>;
 
-/** Decoded upload bytes, or a 400 response when the file is too large. */
+/** Decoded upload bytes, or a 400 response when the file is too large or not the declared image. */
 export function decodeAssetUpload(
   body: AssetUpload,
 ): { bytes: Buffer; mimeType: string } | NextResponse {
   const bytes = Buffer.from(body.data, "base64");
-  if (bytes.length > MAX_UPLOAD_BYTES) {
-    return NextResponse.json({ error: "Image must be under 20 MB" }, { status: 400 });
-  }
+  const problem = imageUploadProblem(bytes, body.mimeType, MAX_UPLOAD_BYTES);
+  if (problem) return NextResponse.json({ error: problem }, { status: 400 });
   return { bytes, mimeType: body.mimeType };
 }
 
