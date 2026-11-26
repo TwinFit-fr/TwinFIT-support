@@ -7,7 +7,10 @@ import {
   renameCoachMediaFile,
   uploadCoachMediaFile,
 } from "@/lib/coach";
-import { isValidFolder, isValidObjectName, mediaObjectName } from "@/lib/coach/media";
+import { isValidFolder, isValidObjectName, mediaObjectName, safeFileName } from "@/lib/coach/media";
+import { COACH_MEDIA_MAX_BYTES } from "@/lib/coach/types";
+import { IMAGE_MIME_TYPES } from "@/lib/images/asset-request";
+import { imageUploadProblem, withImageExtension } from "@/lib/images/image-type";
 
 /**
  * The coach-media library. Folders are name prefixes in the bucket (`lessons/{slug}/…`,
@@ -18,9 +21,12 @@ import { isValidFolder, isValidObjectName, mediaObjectName } from "@/lib/coach/m
 const folderSchema = z.string().refine(isValidFolder, "Folder must look like lessons/app_overview");
 
 const uploadSchema = z.object({
-  mimeType: z.string().min(1),
-  /** Base64 file content. */
-  data: z.string().min(1),
+  mimeType: IMAGE_MIME_TYPES,
+  /** Base64 file content; base64 is 4/3 of the bytes, so longer strings are over the limit. */
+  data: z
+    .string()
+    .min(1)
+    .max(Math.ceil(COACH_MEDIA_MAX_BYTES / 3) * 4, `Image must be under ${COACH_MEDIA_MAX_BYTES / (1024 * 1024)} MB`),
   folder: folderSchema,
   fileName: z.string().min(1).optional(),
 });
@@ -34,6 +40,9 @@ const fileIdSchema = z.string().uuid();
 
 function failure(error: unknown, fallback: string): Response {
   if (error instanceof Response) return error;
+  if (error instanceof z.ZodError) {
+    return NextResponse.json({ error: error.issues.map((i) => i.message).join("; ") }, { status: 400 });
+  }
   const message = error instanceof Error ? error.message : fallback;
   return NextResponse.json({ error: message }, { status: 400 });
 }
@@ -56,11 +65,13 @@ export async function POST(request: Request) {
   try {
     const token = requireStaffToken(request);
     const parsed = uploadSchema.parse(await request.json());
-    if (!parsed.mimeType.startsWith("image/")) {
-      throw new Error("Only image uploads are allowed");
-    }
     const bytes = Buffer.from(parsed.data, "base64");
-    const name = mediaObjectName(parsed.folder, parsed.fileName || "image.png");
+    // PNG, WebP or JPEG only, checked on the bytes: an SVG or HTML file is refused whatever type
+    // the client declares, and the stored name always carries the real extension.
+    const problem = imageUploadProblem(bytes, parsed.mimeType, COACH_MEDIA_MAX_BYTES);
+    if (problem) throw new Error(problem);
+    const fileName = withImageExtension(safeFileName(parsed.fileName || "image").slice(0, 100), parsed.mimeType);
+    const name = mediaObjectName(parsed.folder, fileName);
     const uploaded = await uploadCoachMediaFile({ token, bytes, mimeType: parsed.mimeType, name });
     return NextResponse.json({ id: uploaded.id, url: uploaded.url, name });
   } catch (error) {

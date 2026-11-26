@@ -45,6 +45,7 @@ import { LOCALES, type Locale } from "@/lib/coach/types";
 import { MediaLibraryDialog, type LibraryPick } from "@/components/coach/media-library";
 import { AppMarkdown, appColors, appType } from "@/components/coach/phone-preview";
 import { useImageUpload } from "./use-image-upload";
+import { IMAGE_FILE_ACCEPT } from "@/lib/images/image-type";
 
 export const STATUS_STYLES: Record<ArticleStatus, string> = {
   draft: "bg-zinc-100 text-zinc-700",
@@ -413,7 +414,7 @@ export function ArticleWorkspace({ article, initialKind, onDirtyChange, onSaved,
               <input
                 ref={coverFileRef}
                 type="file"
-                accept="image/*"
+                accept={IMAGE_FILE_ACCEPT}
                 className="hidden"
                 aria-label="Upload cover image"
                 onChange={(event) => {
@@ -558,7 +559,7 @@ export function ArticleWorkspace({ article, initialKind, onDirtyChange, onSaved,
         <input
           ref={bodyFileRef}
           type="file"
-          accept="image/*"
+          accept={IMAGE_FILE_ACCEPT}
           className="hidden"
           aria-label="Upload body image"
           onChange={(event) => {

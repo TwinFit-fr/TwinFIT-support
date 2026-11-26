@@ -19,7 +19,9 @@ import type { Suggestion } from "./types.ts";
 describe("image files", () => {
   it("accepts images under the limit and refuses the rest", () => {
     assert.equal(validateImageFile({ name: "a.png", type: "image/png", size: 10 }), null);
-    assert.match(validateImageFile({ name: "a.pdf", type: "application/pdf", size: 10 }) ?? "", /not an image/);
+    assert.match(validateImageFile({ name: "a.pdf", type: "application/pdf", size: 10 }) ?? "", /not a PNG, WebP or JPEG/);
+    assert.match(validateImageFile({ name: "a.svg", type: "image/svg+xml", size: 10 }) ?? "", /not a PNG, WebP or JPEG/);
+    assert.match(validateImageFile({ name: "a.gif", type: "image/gif", size: 10 }) ?? "", /not a PNG, WebP or JPEG/);
     assert.match(validateImageFile({ name: "big.png", type: "image/png", size: 6 * 1024 * 1024 }) ?? "", /limit is 5 MB/);
   });
 

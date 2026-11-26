@@ -18,6 +18,7 @@ import { bodyText, isTextBody, KIND_LABELS, lintBody, type ChunkKind } from "@/l
 import { LOCALES, type Locale } from "@/lib/coach/types";
 import type { ResolveImage } from "./phone-preview";
 import type { ChunkEditor } from "./use-chunk-editor";
+import { IMAGE_FILE_ACCEPT } from "@/lib/images/image-type";
 
 export type LibraryTarget = { mode: "insert"; afterIndex: number } | { mode: "replace"; id: string };
 
@@ -244,7 +245,7 @@ export function ChunkInspector({ draft, locale, editor, resolveImage, disabled, 
                       <input
                         ref={fileRef}
                         type="file"
-                        accept="image/*"
+                        accept={IMAGE_FILE_ACCEPT}
                         className="hidden"
                         aria-label="Replacement image file"
                         onChange={(event) => {
