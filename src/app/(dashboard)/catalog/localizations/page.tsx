@@ -28,6 +28,7 @@ const TAB_ORDER: LocalizationTabId[] = [
   "catalog_muscles",
   "catalog_movement_types",
   "group_movements",
+  "catalog_strength_patterns",
   "catalog_equipment",
   "catalog_support_equipment",
   "catalog_grips",

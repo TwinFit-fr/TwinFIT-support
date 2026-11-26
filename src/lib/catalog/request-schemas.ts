@@ -101,6 +101,18 @@ export const taxonomyActionSchema = z.discriminatedUnion("kind", [
     secondary_muscle_codes: z.array(code).max(50).optional(),
   }),
   z.object({
+    kind: z.literal("pair_target_profile"),
+    ...pairKeys,
+    target_muscle_code: code,
+    secondary_muscle_codes: z.array(code).max(50).optional(),
+    reason: z.string().max(2000),
+  }),
+  z.object({
+    kind: z.literal("pair_target_profile_delete"),
+    ...pairKeys,
+    target_muscle_code: code,
+  }),
+  z.object({
     kind: z.literal("pair_strength_pattern"),
     ...pairKeys,
     strength_pattern: z.string().max(100).nullish(),

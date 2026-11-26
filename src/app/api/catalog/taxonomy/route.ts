@@ -10,6 +10,7 @@ import {
   updateLookup,
   upsertLookup,
 } from "@/lib/catalog";
+import { deletePairTargetProfile, setPairTargetProfile } from "@/lib/catalog/pair-profile-writes";
 import { friendlyCatalogError, type CatalogErrorContext } from "@/lib/catalog/guard-rails";
 import { taxonomyActionSchema, type TaxonomyAction } from "@/lib/catalog/request-schemas";
 
@@ -20,7 +21,14 @@ function errorContext(body: TaxonomyAction | null): CatalogErrorContext {
     if (relation === "movement") return "movement";
     return body.action === "unlink" ? "unlink_muscle" : "link_muscle";
   }
-  if (body?.kind === "pair_muscles" || body?.kind === "pair_strength_pattern") return "pair";
+  if (
+    body?.kind === "pair_muscles" ||
+    body?.kind === "pair_strength_pattern" ||
+    body?.kind === "pair_target_profile" ||
+    body?.kind === "pair_target_profile_delete"
+  ) {
+    return "pair";
+  }
   if (body && (body.kind === undefined || body.kind === "upsert")) {
     if (body.table === "catalog_muscles" && body.muscle_group_code) return "link_muscle";
   }
@@ -68,6 +76,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
       case "pair_strength_pattern":
         await setPairStrengthPattern(token, body);
+        return NextResponse.json({ ok: true });
+      case "pair_target_profile":
+        await setPairTargetProfile(token, body);
+        return NextResponse.json({ ok: true });
+      case "pair_target_profile_delete":
+        await deletePairTargetProfile(token, body);
         return NextResponse.json({ ok: true });
       case "update": {
         const row = await updateLookup(token, body);

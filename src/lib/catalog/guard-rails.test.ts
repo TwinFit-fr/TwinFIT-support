@@ -284,8 +284,29 @@ describe("database errors in staff words", () => {
       ["Foreign key violation. catalog.equipment: BARBELL cannot be deactivated, it is used by active exercises (30)", /^BARBELL cannot be deactivated: it is used by active exercises \(30\)$/],
       ["Uniqueness violation. duplicate key value violates unique constraint \"exercises_display_name_active_key\"", /English name/],
       ["field 'insert_catalog_grips_one' not found in type: 'mutation_root'", /new values only by backend migration/],
+      [
+        "Check constraint violation. catalog.pair_target_profiles: UPPER_ABS is the pair's own target; a profile is for another target of the pair",
+        /^UPPER_ABS is the pair's own target: a profile is for another target of the pair$/,
+      ],
+      [
+        "Check constraint violation. catalog.muscle_group_movement_types: the pair has a target profile for OBLIQUES; delete the profile before making it the pair's target",
+        /^The pair has a target profile for OBLIQUES: delete that profile before making OBLIQUES the pair's target$/,
+      ],
+      [
+        "Foreign key violation. catalog.pair_target_profiles: exercise exo_id 101 inherits its muscles through this profile; give it its own muscles (muscles_inherited = false, with muscles_custom_reason) or another target first",
+        /^Exercise #101 inherits its muscles through this target profile: change it first$/,
+      ],
     ];
     for (const [raw, expected] of cases) assert.match(friendlyCatalogError(raw, "exercise"), expected);
+  });
+  it("keeps an error that follows a spanning message", () => {
+    assert.equal(
+      friendlyCatalogError(
+        "catalog.pair_target_profiles: UPPER_ABS is the pair's own target; a profile is for another target of the pair; display_name is required",
+        "pair",
+      ),
+      "UPPER_ABS is the pair's own target: a profile is for another target of the pair; display_name is required",
+    );
   });
   it("leaves other messages as they are", () => {
     assert.equal(friendlyCatalogError("display_name is required", "exercise"), "display_name is required");

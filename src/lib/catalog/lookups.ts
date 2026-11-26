@@ -35,6 +35,7 @@ import {
 } from "./guard-rails";
 import { DEFAULT_GRIP_CODE } from "./facets";
 import { findLookupRow, lookupCode, requireLookupRow, type LookupRef } from "./lookup-find";
+import { homeLinkBlocker, pickerRowMuscles, type MuscleHomeRef } from "./pair-profiles";
 
 export const LOOKUP_TABLES = [
   "catalog_body_regions",
@@ -48,6 +49,7 @@ export const LOOKUP_TABLES = [
   "catalog_grips",
   "catalog_load_modalities",
   "catalog_logging_modes",
+  "catalog_strength_patterns",
 ] as const;
 
 export type LookupTable = (typeof LOOKUP_TABLES)[number];
@@ -338,10 +340,22 @@ async function linkMuscleToGroup(
 ) {
   const groupId = group.id;
   const role = roleRaw === "secondary" ? "secondary" : "target";
-  if (role === "target") {
-    const blocker = muscleMoveBlocker(await muscleUse(token, muscleId), groupId, group.code);
-    if (blocker) throw new Error(blocker);
-  }
+  const use = await muscleUse(token, muscleId);
+  const blocker =
+    role === "target"
+      ? muscleMoveBlocker(use, groupId, group.code)
+      : // Turning the home row into a secondary would leave the muscle without a home (checked at commit).
+        use.muscle &&
+        homeLinkBlocker(
+          {
+            code: use.muscle.code,
+            active: use.muscle.active,
+            home: use.muscle.home_muscle_group_id === groupId ? group.code : null,
+          },
+          group.code,
+          "secondary",
+        );
+  if (blocker) throw new Error(blocker);
   await staffGql(
     token,
     role === "target"
@@ -438,6 +452,8 @@ export type UpdateLookupPayload = {
 
 const DESCRIBED_LOOKUP_TABLES = new Set([
   "catalog_body_regions",
+  "catalog_movement_types",
+  "catalog_strength_patterns",
   "catalog_equipment",
   "catalog_grips",
   "catalog_support_equipment",
@@ -531,7 +547,7 @@ export async function manageRelation(token: string, payload: RelationPayload) {
 type PairKey = { muscle_group_id: string; movement_type_id: string };
 
 /** A linked group + movement pair by codes; unknown pair → error. */
-async function requirePair(
+export async function requirePair(
   token: string,
   rawGroup: unknown,
   rawMovement: unknown,
@@ -637,6 +653,11 @@ export async function setPairMuscles(token: string, payload: PairMusclesPayload)
   const home = found.catalog_muscles.find((row) => row.code === targetCode)?.home_muscle_group?.code ?? null;
   if (home !== groupCode) throw new Error(targetHomeMessage(targetCode, home, groupCode));
   const secondaryIds = secondaryCodes.map((code) => idOf.get(code)!);
+  const pickers = pickerRows(
+    pair.muscle_group_id,
+    groupCode,
+    found.catalog_muscles.filter((row) => secondaryCodes.includes(row.code)),
+  );
 
   await staffGql(
     token,
@@ -646,6 +667,7 @@ export async function setPairMuscles(token: string, payload: PairMusclesPayload)
       $target: uuid!
       $keep: [uuid!]!
       $secondary: [catalog_muscle_group_movement_type_secondary_muscles_insert_input!]!
+      $pickers: [catalog_muscle_group_muscles_insert_input!]!
     ) {
       update_catalog_muscle_group_movement_types_by_pk(
         pk_columns: { muscle_group_id: $g, movement_type_id: $m }
@@ -665,6 +687,10 @@ export async function setPairMuscles(token: string, payload: PairMusclesPayload)
           update_columns: [sort_order]
         }
       ) { affected_rows }
+      insert_catalog_muscle_group_muscles(
+        objects: $pickers
+        on_conflict: { constraint: muscle_group_muscles_pkey, update_columns: [] }
+      ) { affected_rows }
     }`,
     {
       g: pair.muscle_group_id,
@@ -672,8 +698,28 @@ export async function setPairMuscles(token: string, payload: PairMusclesPayload)
       target: idOf.get(targetCode)!,
       keep: secondaryIds,
       secondary: secondaryIds.map((muscle_id, sort_order) => ({ ...pair, muscle_id, sort_order })),
+      pickers,
     },
   );
+}
+
+/**
+ * Picker rows (`muscle_group_muscles` role secondary) for the secondaries of another home that a
+ * pair or profile of the group now uses (1790000000110: the group lists them). Inserted with the
+ * secondaries, in the same mutation; an existing row is left as it is. Rows a pair stops using
+ * are not removed here: an exercise with its own muscles may still use them.
+ */
+export function pickerRows(
+  groupId: string,
+  groupCode: string,
+  muscles: (LookupRef & { home_muscle_group?: { code: string } | null })[],
+) {
+  const refs: MuscleHomeRef[] = muscles.map((m) => ({ id: m.id, code: m.code, home: m.home_muscle_group?.code ?? null }));
+  return pickerRowMuscles(groupCode, refs).map((m) => ({
+    muscle_group_id: groupId,
+    muscle_id: m.id,
+    role: "secondary",
+  }));
 }
 
 export type PairStrengthPatternPayload = {
@@ -726,7 +772,7 @@ export function fetchTaxonomy(token: string) {
       catalog_muscle_groups(order_by: { sort_order: asc, code: asc }) {
         id code name description sort_order active body_region_id kind
         localizations(order_by: { locale: asc }) { locale display_name }
-        group_muscles { role muscle { id code name description active localizations(order_by: { locale: asc }) { locale display_name } } }
+        group_muscles { role muscle { id code name description active is_anatomical localizations(order_by: { locale: asc }) { locale display_name } } }
         group_movement_types {
           movement_type { id code name active localizations(order_by: { locale: asc }) { locale display_name } }
           localizations(order_by: { locale: asc }) { locale display_name }
@@ -734,24 +780,26 @@ export function fetchTaxonomy(token: string) {
           strength_pattern_override
           strength_pattern { code name }
           secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }
-          target_profiles {
+          target_profiles(order_by: { target_muscle: { code: asc } }) {
+            reason
             target_muscle { code name }
             secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }
           }
-          exercises { muscles_inherited }
+          exercises { muscles_inherited target_muscle { code } }
         }
       }
       catalog_muscles(order_by: { code: asc }) {
-        id code name description sort_order active
+        id code name description sort_order active is_anatomical home_muscle_group { code }
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_movement_types(order_by: { sort_order: asc, code: asc }) {
-        id code name sort_order active
+        id code name description sort_order active
         strength_pattern { code name }
         localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_strength_patterns(order_by: { sort_order: asc, code: asc }) {
-        id code name sort_order active
+        id code name description sort_order active
+        localizations(order_by: { locale: asc }) { locale display_name }
       }
       catalog_equipment(order_by: { sort_order: asc, code: asc }) {
         id code name description sort_order active

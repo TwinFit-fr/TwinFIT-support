@@ -51,10 +51,39 @@ const TABLE_HINTS: Partial<Record<TaxonomyTabId, string>> = {
   catalog_grips: "optional description feeds image-generation prompts",
   catalog_muscles: "optional description feeds muscle-map mask prompts",
   catalog_muscle_groups:
-    "every group belongs to one region; optional description feeds muscle-map prompts",
+    "every group belongs to one region; kind (major / accessory / cardio) is set by backend migration, a new group is accessory; optional description feeds muscle-map prompts",
   catalog_body_regions:
     "app catalog carousel; optional description feeds muscle-map prompts",
+  catalog_movement_types:
+    "the main joint action, always read with its group (pair); new codes are UPPER_SNAKE (no spaces or -); the description is its operational definition",
+  catalog_strength_patterns:
+    "Strength Focus Fit patterns; labels name the Focus Fit strength units in the app",
 };
+
+/** What the description of a row is for, as the field's placeholder. */
+const DESCRIPTION_PLACEHOLDERS: Partial<Record<TaxonomyTabId, string>> = {
+  catalog_movement_types: "Operational definition: which joint action, which exercises",
+  catalog_strength_patterns: "What the pattern covers",
+};
+
+/** Kind of a muscle group, read-only (a migration sets it; see DATABASE_CONTRACT "Muscle group kinds"). */
+const KIND_STYLES: Record<string, string> = {
+  major: "border-blue-300 bg-blue-50 text-blue-800",
+  accessory: "border-zinc-300 bg-zinc-50 text-zinc-700",
+  cardio: "border-amber-300 bg-amber-50 text-amber-800",
+};
+
+export function GroupKindBadge({ kind }: { kind?: string | null }) {
+  if (!kind) return null;
+  return (
+    <span
+      title="Set by backend migration: major = dose group (Focus Fit, radar), accessory = set credits only, cardio = endurance minutes"
+      className={`inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium ${KIND_STYLES[kind] ?? KIND_STYLES.accessory}`}
+    >
+      {kind}
+    </span>
+  );
+}
 
 export function TaxonomyLookupTable({
   table,
@@ -69,6 +98,11 @@ export function TaxonomyLookupTable({
   /** Staff cannot add values (closed lists, grips, variations, positions: backend migrations). */
   const canAdd = !NO_STAFF_INSERT_TABLES.has(table);
   const hasRegion = table === "catalog_muscle_groups";
+  const hasKind = table === "catalog_muscle_groups";
+  const hasHome = table === "catalog_muscles";
+  const isMovement = table === "catalog_movement_types";
+  const [showInactive, setShowInactive] = useState(false);
+  const inactiveCount = rows.filter((r) => r.active === false).length;
   const regionCodeOf = (id: string | undefined) => regions.find((r) => r.id === id)?.code ?? "";
   const [filter, setFilter] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -86,6 +120,7 @@ export function TaxonomyLookupTable({
   const filtered = useMemo(
     () =>
       rows.filter((r) => {
+        if (!showInactive && r.active === false) return false;
         if (!q) return true;
         if (r.code.toLowerCase().includes(q)) return true;
         if ((r.name || "").toLowerCase().includes(q)) return true;
@@ -94,7 +129,7 @@ export function TaxonomyLookupTable({
           (loc.display_name || "").toLowerCase().includes(q),
         );
       }),
-    [rows, q],
+    [rows, q, showInactive],
   );
 
   function getDraft(row: LookupRowFull): DraftFields {
@@ -129,7 +164,10 @@ export function TaxonomyLookupTable({
             {!isClosed && !canAdd && " · new values only by backend migration"}
             {" · a value in use cannot be deactivated"}
             {isLocalized && " · names in every language on Catalog → Localizations"}
-            {hasDescription && " · description is internal (image prompts)"}
+            {hasDescription &&
+              (DESCRIPTION_PLACEHOLDERS[table]
+                ? " · description is staff only"
+                : " · description is internal (image prompts)")}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -139,6 +177,16 @@ export function TaxonomyLookupTable({
             onChange={(e) => setFilter(e.target.value)}
             className="max-w-[200px]"
           />
+          {inactiveCount > 0 && (
+            <label className="flex items-center gap-1 text-xs text-zinc-600">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+              />
+              Show inactive ({inactiveCount})
+            </label>
+          )}
           {canAdd && (
             <Button type="button" variant="secondary" onClick={() => setShowAdd(true)}>
               + Add
@@ -150,9 +198,11 @@ export function TaxonomyLookupTable({
       {showAdd && canAdd && (
         <div className="mt-4 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
           <Input
-            placeholder="CODE (upper case, digits, _; no spaces)"
+            placeholder={isMovement ? "CODE (UPPER_SNAKE: upper case, digits, _)" : "CODE (upper case, digits, _; no spaces)"}
             value={newCode}
-            onChange={(e) => setNewCode(e.target.value.toUpperCase().replace(/\s+/g, "_"))}
+            onChange={(e) =>
+              setNewCode(e.target.value.toUpperCase().replace(isMovement ? /[\s-]+/g : /\s+/g, "_"))
+            }
           />
           {/* A translated entry gets a Title Case name from its code; edit it on Localizations. */}
           {!isLocalized && (
@@ -201,6 +251,8 @@ export function TaxonomyLookupTable({
               <th className="px-3 py-2">Code</th>
               {!isLocalized && <th className="px-3 py-2">Name</th>}
               {hasRegion && <th className="px-3 py-2">Region</th>}
+              {hasKind && <th className="px-3 py-2">Kind</th>}
+              {hasHome && <th className="px-3 py-2">Home group</th>}
               {hasDescription && <th className="px-3 py-2">Description</th>}
               <th className="px-3 py-2">Sort</th>
               <th className="px-3 py-2">Active</th>
@@ -233,12 +285,29 @@ export function TaxonomyLookupTable({
                       />
                     </td>
                   )}
+                  {hasKind && (
+                    <td className="px-3 py-2 align-top">
+                      <GroupKindBadge kind={row.kind} />
+                    </td>
+                  )}
+                  {hasHome && (
+                    <td className="px-3 py-2 align-top text-xs">
+                      <span className="font-mono">{row.home_muscle_group?.code ?? "—"}</span>
+                      {row.is_anatomical === false && (
+                        <span className="block text-zinc-500" title="Not a muscle: kept out of the muscle map and the pickers">
+                          not anatomical
+                        </span>
+                      )}
+                    </td>
+                  )}
                   {hasDescription && (
                     <td className="px-3 py-2 align-top">
                       <textarea
                         className="min-h-[4.5rem] w-72 rounded-md border border-zinc-300 px-2 py-1 text-sm"
                         value={draft.description}
-                        placeholder="Optional — how this looks for image prompts"
+                        placeholder={
+                          DESCRIPTION_PLACEHOLDERS[table] ?? "Optional — how this looks for image prompts"
+                        }
                         onChange={(e) => setDraft(row.id, { description: e.target.value })}
                       />
                     </td>

@@ -97,3 +97,31 @@ describe("taxonomyActionSchema", () => {
     assert.equal(taxonomyActionSchema.safeParse({ table: "catalog_equipment", code: ["A"] }).success, false);
   });
 });
+
+describe("taxonomyActionSchema: target profiles", () => {
+  const pair = { muscle_group_code: "CORE", movement_type_code: "CRUNCH" };
+  it("accepts a profile with ordered secondaries and a reason", () => {
+    const parsed = taxonomyActionSchema.parse({
+      kind: "pair_target_profile",
+      ...pair,
+      target_muscle_code: "OBLIQUES",
+      secondary_muscle_codes: ["UPPER_ABS"],
+      reason: "Trunk rotation",
+    });
+    assert.equal(parsed.kind, "pair_target_profile");
+  });
+  it("requires the reason field and a target", () => {
+    assert.equal(
+      taxonomyActionSchema.safeParse({ kind: "pair_target_profile", ...pair, target_muscle_code: "OBLIQUES" }).success,
+      false,
+    );
+    assert.equal(taxonomyActionSchema.safeParse({ kind: "pair_target_profile_delete", ...pair }).success, false);
+  });
+  it("accepts a delete by target", () => {
+    assert.equal(
+      taxonomyActionSchema.safeParse({ kind: "pair_target_profile_delete", ...pair, target_muscle_code: "OBLIQUES" })
+        .success,
+      true,
+    );
+  });
+});

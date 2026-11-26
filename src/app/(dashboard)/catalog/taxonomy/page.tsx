@@ -10,10 +10,12 @@ import {
 } from "@/components/catalog/taxonomy/taxonomy-lookup-table";
 import { TaxonomySubnav } from "@/components/catalog/taxonomy/taxonomy-subnav";
 import type { LookupRowFull, TaxonomyData, TaxonomyTabId } from "@/components/catalog/taxonomy/types";
+import type { ProfileDraft } from "@/components/catalog/taxonomy/pair-profiles-editor";
 import { useStaffFetch, useStaffSWR } from "@/hooks/use-staff-fetch";
 
 const LOOKUP_TABLES: TaxonomyTabId[] = [
   "catalog_movement_types",
+  "catalog_strength_patterns",
   "catalog_equipment",
   "catalog_support_equipment",
   "catalog_variations",
@@ -48,7 +50,7 @@ export default function CatalogTaxonomyPage() {
     table: string,
     code: string,
     name: string,
-    extra?: LookupExtraFields,
+    extra?: LookupExtraFields & { home_group_code?: string },
   ) {
     setMessage(null);
     try {
@@ -59,9 +61,11 @@ export default function CatalogTaxonomyPage() {
           code,
           name,
           ...(extra?.body_region_code ? { body_region_code: extra.body_region_code } : {}),
+          // A new muscle linked as target of a group: that group is its home.
+          ...(extra?.home_group_code ? { muscle_group_code: extra.home_group_code, role: "target" } : {}),
         }),
       });
-      setMessage(`Added ${code}`);
+      setMessage(extra?.home_group_code ? `Added ${code} (home ${extra.home_group_code})` : `Added ${code}`);
       await load();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Add entry failed");
@@ -101,6 +105,7 @@ export default function CatalogTaxonomyPage() {
     }
   }
 
+  /** One relation write; throws the API's message (callers report it and reload). */
   async function postRelation(
     muscleGroupCode: string,
     relationKind: "muscle" | "movement",
@@ -108,23 +113,29 @@ export default function CatalogTaxonomyPage() {
     action: "link" | "unlink",
     role?: string,
   ) {
+    await staffFetch("/api/catalog/taxonomy", {
+      method: "POST",
+      body: JSON.stringify({
+        kind: "relation",
+        relationKind,
+        action,
+        muscle_group_code: muscleGroupCode,
+        code,
+        ...(action === "link" && relationKind === "muscle" ? { role: role || "target" } : {}),
+      }),
+    });
+  }
+
+  /** A movement link or unlink, reported on the page. */
+  async function changeMovement(groupCode: string, movementCode: string, action: "link" | "unlink") {
     setMessage(null);
     try {
-      await staffFetch("/api/catalog/taxonomy", {
-        method: "POST",
-        body: JSON.stringify({
-          kind: "relation",
-          relationKind,
-          action,
-          muscle_group_code: muscleGroupCode,
-          code,
-          ...(action === "link" && relationKind === "muscle" ? { role: role || "target" } : {}),
-        }),
-      });
-      await load();
+      await postRelation(groupCode, "movement", movementCode, action);
+      setMessage(`${action === "link" ? "Linked" : "Unlinked"} ${groupCode} + ${movementCode}`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Relation update failed");
     }
+    await load();
   }
 
   async function savePairMuscles(
@@ -176,6 +187,10 @@ export default function CatalogTaxonomyPage() {
     }
   }
 
+  /**
+   * Links, re-roles or unlinks each selected muscle, one request each; every failure is reported
+   * (a refused one does not stop the others, and is not hidden by a later "Saved").
+   */
   async function applyRelations(
     muscleGroupCode: string,
     relationKind: "muscle" | "movement",
@@ -183,8 +198,9 @@ export default function CatalogTaxonomyPage() {
     linkRole?: string,
   ) {
     setMessage(null);
-    try {
-      for (const item of items) {
+    const errors: string[] = [];
+    for (const item of items) {
+      try {
         if (!item.linked) {
           await postRelation(muscleGroupCode, relationKind, item.code, "link", linkRole);
         } else if (
@@ -196,11 +212,61 @@ export default function CatalogTaxonomyPage() {
         } else {
           await postRelation(muscleGroupCode, relationKind, item.code, "unlink");
         }
+      } catch (err) {
+        errors.push(`${item.code}: ${err instanceof Error ? err.message : "save failed"}`);
       }
-      setMessage("Saved");
+    }
+    setMessage(errors.length ? errors.join(" · ") : "Saved");
+    await load();
+  }
+
+  async function savePairProfile(
+    muscleGroupCode: string,
+    movementTypeCode: string,
+    profile: ProfileDraft,
+  ): Promise<string | null> {
+    setMessage(null);
+    try {
+      await staffFetch("/api/catalog/taxonomy", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "pair_target_profile",
+          muscle_group_code: muscleGroupCode,
+          movement_type_code: movementTypeCode,
+          target_muscle_code: profile.target,
+          secondary_muscle_codes: profile.secondary,
+          reason: profile.reason,
+        }),
+      });
+      setMessage(`Saved profile ${profile.target} of ${muscleGroupCode} + ${movementTypeCode}`);
       await load();
+      return null;
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Save failed");
+      return err instanceof Error ? err.message : "Target profile update failed";
+    }
+  }
+
+  async function deletePairProfile(
+    muscleGroupCode: string,
+    movementTypeCode: string,
+    target: string,
+  ): Promise<string | null> {
+    setMessage(null);
+    try {
+      await staffFetch("/api/catalog/taxonomy", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "pair_target_profile_delete",
+          muscle_group_code: muscleGroupCode,
+          movement_type_code: movementTypeCode,
+          target_muscle_code: target,
+        }),
+      });
+      setMessage(`Deleted profile ${target} of ${muscleGroupCode} + ${movementTypeCode}`);
+      await load();
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Target profile delete failed";
     }
   }
 
@@ -214,7 +280,9 @@ export default function CatalogTaxonomyPage() {
       <div>
         <h1 className="text-2xl font-semibold">Taxonomy</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Anatomy links muscles to groups. Group movements links movement types to groups.
+          Anatomy links muscles to groups (a muscle&apos;s home is the group it is target of).
+          Group movements links movement types to groups and edits each pair&apos;s muscles, target
+          profiles and strength pattern.
           Regions group muscle groups for the app catalog. Other tabs edit lookup codes, names
           and sort order. Names of translated entries, in every language, are on{" "}
           <Link href="/catalog/localizations" className="underline">
@@ -240,8 +308,8 @@ export default function CatalogTaxonomyPage() {
             })
           }
           onApplyRelations={applyRelations}
-          onAddMuscle={async (code) => {
-            await addEntry("catalog_muscles", code, "");
+          onAddMuscle={async (code, homeGroupCode) => {
+            await addEntry("catalog_muscles", code, "", { home_group_code: homeGroupCode });
           }}
         />
       )}
@@ -252,16 +320,12 @@ export default function CatalogTaxonomyPage() {
           movements={data.catalog_movement_types}
           muscles={data.catalog_muscles}
           strengthPatterns={data.catalog_strength_patterns}
-          onLink={async (groupCode, movementCode) => {
-            await postRelation(groupCode, "movement", movementCode, "link");
-            setMessage(`Linked ${groupCode} + ${movementCode}`);
-          }}
-          onUnlink={async (groupCode, movementCode) => {
-            await postRelation(groupCode, "movement", movementCode, "unlink");
-            setMessage(`Unlinked ${groupCode} + ${movementCode}`);
-          }}
+          onLink={(groupCode, movementCode) => changeMovement(groupCode, movementCode, "link")}
+          onUnlink={(groupCode, movementCode) => changeMovement(groupCode, movementCode, "unlink")}
           onSaveMuscles={savePairMuscles}
           onSaveStrengthPattern={savePairStrengthPattern}
+          onSaveProfile={savePairProfile}
+          onDeleteProfile={deletePairProfile}
         />
       )}
 
