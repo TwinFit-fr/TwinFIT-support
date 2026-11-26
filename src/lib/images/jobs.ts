@@ -5,6 +5,7 @@ import { staffGql } from "@/lib/staff-gql";
 import { editExerciseFrame } from "./edit-image";
 import { generateExerciseFrame } from "./generate-frame";
 import { errorMessage, isRetryable } from "./generation-error";
+import { drainUrl } from "./drain-url";
 import { busyFrameGroups } from "./job-types";
 import type { GenerationJob, JobSpec } from "./job-types";
 import { getUserIdFromToken } from "./queries";
@@ -21,6 +22,8 @@ const WORK_BUDGET_MS = 200_000;
 const WORKERS_PER_DRAIN = 3;
 /** A drain only chains with a token that outlives one more job. */
 const MIN_TOKEN_SECONDS = 90;
+/** The kick only waits for the 202; the work runs after that response. */
+const KICK_TIMEOUT_MS = 10_000;
 /** Finished jobs stay listed this long, so a run's outcome remains on screen; failed ones stay until dismissed. */
 const FINISHED_VISIBLE_MINUTES = 30;
 /** Seconds before a failed attempt is retried, times the attempt number. */
@@ -289,12 +292,22 @@ async function work(token: string, deadline: number): Promise<boolean> {
   return true;
 }
 
-/** Asks a fresh request to continue draining (its own time budget), with the same token. */
-export async function kickDrain(origin: string, token: string): Promise<void> {
+/**
+ * Asks a fresh request to continue draining (its own time budget), with the same token. The URL is
+ * this deploy's own (`SUPPORT_BASE_URL`), never one from a request, and redirects are not followed.
+ */
+export async function kickDrain(token: string): Promise<void> {
   if (jwtSecondsLeft(token) <= MIN_TOKEN_SECONDS) return;
-  await fetch(new URL("/api/images/jobs/drain", origin), {
+  const url = drainUrl();
+  if (!url) {
+    console.warn("SUPPORT_BASE_URL is missing or invalid: the drain stops here; open Images pages restart it");
+    return;
+  }
+  await fetch(url, {
     method: "POST",
     headers: { authorization: `Bearer ${token}` },
+    redirect: "manual",
+    signal: AbortSignal.timeout(KICK_TIMEOUT_MS),
   }).catch(() => {
     /* open Images pages kick the drain again */
   });
@@ -305,10 +318,10 @@ export async function kickDrain(origin: string, token: string): Promise<void> {
  * caps how many run at once) until none is runnable. When the time budget runs out first, a new
  * request takes over, so long runs span several requests.
  */
-export async function drainJobs(token: string, origin: string): Promise<void> {
+export async function drainJobs(token: string): Promise<void> {
   const deadline = Date.now() + WORK_BUDGET_MS;
   const outOfTime = await Promise.all(
     Array.from({ length: WORKERS_PER_DRAIN }, () => work(token, deadline).catch(() => false)),
   );
-  if (outOfTime.some(Boolean)) await kickDrain(origin, token);
+  if (outOfTime.some(Boolean)) await kickDrain(token);
 }

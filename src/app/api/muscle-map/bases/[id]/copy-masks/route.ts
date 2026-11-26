@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { getBase } from "@/lib/muscle-map/queries";
 import { errorResponse } from "@/lib/muscle-map/request";
 import { copyMasks } from "@/lib/muscle-map/service";
@@ -14,7 +15,10 @@ export async function POST(request: Request, context: Ctx) {
   try {
     const token = await requireStaffToken(request);
     const { id } = await context.params;
-    const { from_base_id } = z.object({ from_base_id: z.string().uuid() }).parse(await request.json());
+    const { from_base_id } = await readJsonBody(
+      request,
+      z.object({ from_base_id: z.string().uuid() }),
+    );
     const [to, from] = await Promise.all([getBase(token, id), getBase(token, from_base_id)]);
     if (!to || !from) return NextResponse.json({ error: "Base not found" }, { status: 404 });
     return NextResponse.json(await copyMasks(token, from, to));

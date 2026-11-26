@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { getImagePrompt, updateImagePrompt } from "@/lib/images/queries";
 
 export async function GET(
@@ -35,7 +36,7 @@ export async function PUT(
   try {
     const token = await requireStaffToken(request);
     const { id } = await context.params;
-    const body = updateSchema.parse(await request.json());
+    const body = await readJsonBody(request, updateSchema);
     const prompt = await updateImagePrompt(token, id, body);
     return NextResponse.json({ prompt });
   } catch (error) {

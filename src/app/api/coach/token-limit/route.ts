@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { callStaffFunction, requireAdminToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
+import { tokenLimitSchema } from "@/lib/coach/request-schemas";
 
 /** Admin-only proxy to `admin-set-coach-token-limit`. Staff receives 403. */
 export async function GET(request: Request) {
@@ -17,12 +19,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireAdminToken(request);
-    const body = (await request.json()) as {
-      tierCode?: string;
-      monthlyTokenLimit?: number;
-      weeklyTokenLimit?: number | null;
-      hourlyBurstLimit?: number | null;
-    };
+    const body = await readJsonBody(request, tokenLimitSchema);
     // The cycle budget is an integer ≥ 0 (the Function refuses null); the weekly and hourly caps are an
     // integer ≥ 0 or null (no cap). The Function checks the bounds. A limit left undefined is dropped by
     // JSON.stringify, so only the limits being set are sent. `dailyBurstLimit` is never forwarded: backend

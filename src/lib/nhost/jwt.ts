@@ -91,9 +91,3 @@ export function parseJwtUserId(accessToken: string): string | null {
   const claims = payload[HASURA_CLAIMS] as Record<string, string> | undefined;
   return claims?.["x-hasura-user-id"] ?? (payload.sub as string) ?? null;
 }
-
-export function functionsBaseUrl(): string {
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  return `https://${subdomain}.functions.${region}.nhost.run/v1`;
-}

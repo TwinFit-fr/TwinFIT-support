@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import {
   deleteKnowledgeCard,
   deleteKnowledgeSource,
@@ -9,20 +10,20 @@ import {
   upsertKnowledgeCard,
   upsertKnowledgeSource,
 } from "@/lib/coach";
+import { knowledgeActionSchema } from "@/lib/coach/request-schemas";
 
-function emptyToNull(value: unknown): string | null {
-  if (value == null) return null;
-  const text = String(value).trim();
-  return text === "" ? null : text;
+function emptyToNull(value: string | null | undefined): string | null {
+  const text = value?.trim();
+  return text ? text : null;
 }
 
-function parseStringList(value: unknown): string[] | null {
+function parseStringList(value: string | string[] | null | undefined): string[] | null {
   if (value == null) return null;
   if (Array.isArray(value)) {
-    const list = value.map((item) => String(item).trim()).filter(Boolean);
+    const list = value.map((item) => item.trim()).filter(Boolean);
     return list.length ? list : null;
   }
-  const text = String(value).trim();
+  const text = value.trim();
   if (!text) return null;
   return text
     .split(/[\n,]/)
@@ -48,18 +49,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = (await request.json()) as Record<string, unknown>;
-    const action = String(body.action ?? "");
+    const body = await readJsonBody(request, knowledgeActionSchema);
 
-    if (action === "upsert_source") {
-      const title = String(body.title ?? "").trim();
-      if (!title) throw new Error("title is required");
+    if (body.action === "upsert_source") {
       const source = await upsertKnowledgeSource(token, {
-        id: body.id ? String(body.id) : undefined,
-        kind: String(body.kind ?? "paper").trim() || "paper",
-        title,
+        id: body.id,
+        kind: body.kind || "paper",
+        title: body.title,
         authors: emptyToNull(body.authors),
-        year: body.year == null || body.year === "" ? null : Number(body.year),
+        year: body.year,
         doi: emptyToNull(body.doi),
         url: emptyToNull(body.url),
         license: emptyToNull(body.license),
@@ -67,22 +65,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ source });
     }
 
-    if (action === "delete_source") {
-      if (!body.id) throw new Error("id is required");
-      await deleteKnowledgeSource(token, String(body.id));
-      return NextResponse.json({ ok: true });
-    }
-
-    if (action === "upsert_card") {
-      const title = String(body.title ?? "").trim();
-      if (!title) throw new Error("title is required");
-      if (!body.source_id) throw new Error("source_id is required");
+    if (body.action === "upsert_card") {
       const card = await upsertKnowledgeCard(token, {
-        id: body.id ? String(body.id) : undefined,
-        source_id: String(body.source_id),
+        id: body.id,
+        source_id: body.source_id,
         topic: emptyToNull(body.topic),
-        locale: String(body.locale ?? "en"),
-        title,
+        locale: body.locale || "en",
+        title: body.title,
         summary_md: emptyToNull(body.summary_md),
         key_claims: parseStringList(body.key_claims),
         evidence_level: emptyToNull(body.evidence_level),
@@ -90,24 +79,23 @@ export async function POST(request: Request) {
         practical_takeaway: emptyToNull(body.practical_takeaway),
         caveats: emptyToNull(body.caveats),
         tags: parseStringList(body.tags),
-        status: String(body.status ?? "draft"),
+        status: body.status ?? "draft",
       });
       return NextResponse.json({ card });
     }
 
-    if (action === "delete_card") {
-      if (!body.id) throw new Error("id is required");
-      await deleteKnowledgeCard(token, String(body.id));
+    if (body.action === "delete_source") {
+      await deleteKnowledgeSource(token, body.id);
       return NextResponse.json({ ok: true });
     }
 
-    if (action === "embed_card") {
-      if (!body.id) throw new Error("id is required");
-      const result = await embedKnowledgeCard(token, String(body.id));
-      return NextResponse.json({ result });
+    if (body.action === "delete_card") {
+      await deleteKnowledgeCard(token, body.id);
+      return NextResponse.json({ ok: true });
     }
 
-    throw new Error(`Unknown action ${action}`);
+    const result = await embedKnowledgeCard(token, body.id);
+    return NextResponse.json({ result });
   } catch (error) {
     if (error instanceof Response) return error;
     const message = error instanceof Error ? error.message : "Knowledge action failed";

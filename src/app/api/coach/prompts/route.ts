@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { insertPromptVersion, listPromptVersions, setPromptVersionActive } from "@/lib/coach";
+import { promptActionSchema } from "@/lib/coach/request-schemas";
 
 export async function GET(request: Request) {
   try {
@@ -17,28 +19,17 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = (await request.json()) as {
-      action?: string;
-      prompt_key?: string;
-      locale?: string;
-      body_md?: string;
-      id?: string;
-      is_active?: boolean;
-    };
+    const body = await readJsonBody(request, promptActionSchema);
 
-    if (body.action === "activate" || body.action === "deactivate") {
-      if (!body.id) throw new Error("id is required");
+    if ("id" in body) {
       const version = await setPromptVersionActive(token, body.id, body.action === "activate");
       return NextResponse.json({ version });
     }
 
-    if (!body.prompt_key || !body.locale || !body.body_md?.trim()) {
-      throw new Error("prompt_key, locale and body_md are required");
-    }
     const version = await insertPromptVersion(token, {
       prompt_key: body.prompt_key,
       locale: body.locale,
-      body_md: body.body_md.trim(),
+      body_md: body.body_md,
     });
     return NextResponse.json({ version });
   } catch (error) {

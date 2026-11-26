@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { getImageExercise, setTwoFrames } from "@/lib/images/queries";
 
 function parseExoId(raw: string): number | null {
@@ -43,7 +44,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ exoId
       return NextResponse.json({ error: "Invalid exo id" }, { status: 400 });
     }
     const styleId = z.string().uuid().parse(new URL(request.url).searchParams.get("style"));
-    const { two_frames } = patchSchema.parse(await request.json());
+    const { two_frames } = await readJsonBody(request, patchSchema);
     await setTwoFrames(token, exoId, two_frames);
     return NextResponse.json({ exercise: await getImageExercise(token, exoId, styleId) });
   } catch (error) {

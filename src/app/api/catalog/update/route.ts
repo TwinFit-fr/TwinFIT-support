@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
-import { exerciseDetail, updateExercise, type ExercisePayload } from "@/lib/catalog";
+import { readJsonBody } from "@/lib/api-body";
+import { exerciseDetail, updateExercise } from "@/lib/catalog";
 import { friendlyCatalogError } from "@/lib/catalog/guard-rails";
+import { exercisePayloadSchema } from "@/lib/catalog/request-schemas";
 
 /** `?exo_id=N`: the editor's extra data (custom reason, change history). */
 export async function GET(request: Request) {
@@ -20,7 +22,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = (await request.json()) as ExercisePayload;
+    const body = await readJsonBody(request, exercisePayloadSchema);
     const exercise = await updateExercise(token, body);
     return NextResponse.json({ ok: true, exercise });
   } catch (error) {

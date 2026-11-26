@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
-import { assetBodySchema, assetErrorResponse, decodeAssetUpload } from "@/lib/images/asset-request";
+import { readJsonBody } from "@/lib/api-body";
+import {
+  assetBodySchema,
+  assetErrorResponse,
+  decodeAssetUpload,
+  UPLOAD_BODY_MAX_BYTES,
+} from "@/lib/images/asset-request";
 import { generateImage } from "@/lib/images/openai";
 import { getStyle } from "@/lib/images/queries";
 import { libraryReferenceFileName } from "@/lib/images/reference";
@@ -24,7 +30,7 @@ export async function POST(request: Request, context: Ctx) {
       return NextResponse.json({ error: "Reference not found" }, { status: 404 });
     }
 
-    const body = assetBodySchema.parse(await request.json());
+    const body = await readJsonBody(request, assetBodySchema, { maxBytes: UPLOAD_BODY_MAX_BYTES });
     let image: { bytes: Buffer; mimeType: string };
     if (body.action === "upload") {
       const decoded = decodeAssetUpload(body);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { getBase, setBaseActive } from "@/lib/muscle-map/queries";
 import { errorResponse } from "@/lib/muscle-map/request";
 import { deleteBase } from "@/lib/muscle-map/service";
@@ -12,7 +13,7 @@ export async function PATCH(request: Request, context: Ctx) {
   try {
     const token = await requireStaffToken(request);
     const { id } = await context.params;
-    const { active } = z.object({ active: z.boolean() }).parse(await request.json());
+    const { active } = await readJsonBody(request, z.object({ active: z.boolean() }));
     const base = await getBase(token, id);
     if (!base) return NextResponse.json({ error: "Base not found" }, { status: 404 });
     await setBaseActive(token, base, active);

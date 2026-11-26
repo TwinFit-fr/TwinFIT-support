@@ -22,8 +22,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const origin = new URL(request.url).origin;
-    after(() => drainJobs(token, origin));
+    after(() => drainJobs(token));
     return NextResponse.json({ status: "draining" }, { status: 202 });
   } catch (error) {
     return assetErrorResponse(error, "Failed to drain", 500);

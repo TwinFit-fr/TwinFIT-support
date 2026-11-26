@@ -4,6 +4,7 @@ import {
   InvalidAccessTokenError,
   verifyAccessToken,
 } from "./nhost/verify-jwt.ts";
+import { UPSTREAM_TIMEOUT_MS, nhostUrl } from "./nhost/urls.ts";
 
 export function getBearerToken(request: Request): string | null {
   const auth = request.headers.get("authorization");
@@ -72,10 +73,9 @@ export async function callStaffFunction(
   accessToken: string,
   name: string,
   body: Record<string, unknown>,
+  options: { timeoutMs?: number } = {},
 ): Promise<{ status: number; body: unknown }> {
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  const url = `https://${subdomain}.functions.${region}.nhost.run/v1/${name}`;
+  const url = `${nhostUrl("functions")}/${name}`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -86,6 +86,7 @@ export async function callStaffFunction(
       "x-hasura-role": resolveSupportHasuraRole(accessToken),
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(options.timeoutMs ?? UPSTREAM_TIMEOUT_MS),
   });
   const text = await res.text();
   let parsed: unknown = null;

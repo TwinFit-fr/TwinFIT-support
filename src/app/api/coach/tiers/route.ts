@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { listTierPolicies, updateTierCapabilities } from "@/lib/coach";
+import { tierCapabilitiesSchema } from "@/lib/coach/request-schemas";
 
 export async function GET(request: Request) {
   try {
@@ -17,23 +19,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = (await request.json()) as {
-      tier_code?: string;
-      personal_data_enabled?: boolean;
-      plan_builder_enabled?: boolean;
-      max_tool_rounds?: number;
-    };
-    if (!body.tier_code) throw new Error("tier_code is required");
-    if (
-      typeof body.personal_data_enabled !== "boolean" ||
-      typeof body.plan_builder_enabled !== "boolean" ||
-      typeof body.max_tool_rounds !== "number"
-    ) {
-      throw new Error("personal_data_enabled, plan_builder_enabled and max_tool_rounds are required");
-    }
-    if (!Number.isInteger(body.max_tool_rounds) || body.max_tool_rounds < 1 || body.max_tool_rounds > 8) {
-      throw new Error("max_tool_rounds must be an integer from 1 to 8");
-    }
+    const body = await readJsonBody(request, tierCapabilitiesSchema);
     const policy = await updateTierCapabilities(token, body.tier_code, {
       personal_data_enabled: body.personal_data_enabled,
       plan_builder_enabled: body.plan_builder_enabled,

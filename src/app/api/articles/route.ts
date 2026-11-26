@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import {
   createArticle,
   deleteArticle,
@@ -103,7 +104,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const body = actionSchema.parse(await request.json());
+    const body = await readJsonBody(request, actionSchema);
 
     switch (body.action) {
       case "create": {

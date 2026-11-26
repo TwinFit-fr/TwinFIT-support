@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import {
   getActiveImageAtPosition,
   getExerciseImage,
@@ -34,7 +35,7 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const { startId, midId, endId, expectedLive } = bodySchema.parse(await request.json());
+    const { startId, midId, endId, expectedLive } = await readJsonBody(request, bodySchema);
 
     // Read the subject's live frames now: another tab may have published since the panel loaded.
     const start = await getExerciseImage(token, startId);

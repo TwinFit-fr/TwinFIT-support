@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAccessToken } from "@nhost/react";
+import { optionalNhostUrl } from "@/lib/nhost/urls";
 import { cn } from "@/lib/utils";
 
 export function AuthedImage({
@@ -17,12 +18,8 @@ export function AuthedImage({
   published?: boolean;
 }) {
   const token = useAccessToken();
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  const publicSrc =
-    published && fileId && subdomain && region
-      ? `https://${subdomain}.storage.${region}.nhost.run/v1/files/${fileId}`
-      : null;
+  const storageUrl = optionalNhostUrl("storage");
+  const publicSrc = published && fileId && storageUrl ? `${storageUrl}/files/${fileId}` : null;
   // Tagged with its file so a stale blob is never shown for a new fileId.
   const [blob, setBlob] = useState<{ fileId: string; url: string } | null>(null);
 

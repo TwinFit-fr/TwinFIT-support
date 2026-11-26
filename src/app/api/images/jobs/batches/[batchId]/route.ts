@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { assetErrorResponse } from "@/lib/images/asset-request";
 import { cancelBatch, dismissBatch, drainJobs, retryBatch } from "@/lib/images/jobs";
 
@@ -18,13 +19,12 @@ export async function POST(request: Request, context: Ctx) {
       .string()
       .uuid()
       .parse((await context.params).batchId);
-    const { action } = actionSchema.parse(await request.json());
+    const { action } = await readJsonBody(request, actionSchema);
     if (action === "cancel") {
       return NextResponse.json({ cancelled: await cancelBatch(token, batchId) });
     }
     const retried = await retryBatch(token, batchId);
-    const origin = new URL(request.url).origin;
-    if (retried) after(() => drainJobs(token, origin));
+    if (retried) after(() => drainJobs(token));
     return NextResponse.json({ retried });
   } catch (error) {
     return assetErrorResponse(error, "Batch update failed", 400);

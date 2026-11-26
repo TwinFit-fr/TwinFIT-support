@@ -1,6 +1,7 @@
 import { gql } from "@/lib/gql";
 import { staffGql } from "@/lib/staff-gql";
 import { resolveSupportHasuraRole } from "@/lib/nhost/jwt";
+import { nhostUrl } from "@/lib/nhost/urls";
 
 export type LabExerciseRow = {
   catalog_exo_id: number;
@@ -471,13 +472,10 @@ export function isUuid(value: string): boolean {
   return UUID_RE.test(value);
 }
 
+const LAB_FILE_TIMEOUT_MS = 120_000;
+
 function storageUrl(fileId: string): string {
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  if (!subdomain || !region) {
-    throw new Error("NEXT_PUBLIC_NHOST_SUBDOMAIN and NEXT_PUBLIC_NHOST_REGION are required");
-  }
-  return `https://${subdomain}.storage.${region}.nhost.run/v1/files/${fileId}`;
+  return `${nhostUrl("storage")}/files/${fileId}`;
 }
 
 function safeFilenamePart(value: string): string {
@@ -556,6 +554,8 @@ export async function downloadLabSetFile(
       Authorization: `Bearer ${token}`,
       "x-hasura-role": role,
     },
+    // Covers the streamed body too: sensor files can be large.
+    signal: AbortSignal.timeout(LAB_FILE_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Storage download failed (${res.status})`);

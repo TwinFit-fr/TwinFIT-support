@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { DEFAULT_GENERATION_PARAMS, validateGenerationParams } from "@/lib/images/capabilities";
 import { updateSettings } from "@/lib/muscle-map/queries";
 import { errorResponse } from "@/lib/muscle-map/request";
@@ -23,7 +24,7 @@ const settingsSchema = z
 export async function PATCH(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const set = settingsSchema.parse(await request.json());
+    const set = await readJsonBody(request, settingsSchema);
     if (set.generation) {
       const params = { ...DEFAULT_GENERATION_PARAMS, ...set.generation };
       const issues = validateGenerationParams(params);

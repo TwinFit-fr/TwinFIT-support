@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { assetErrorResponse } from "@/lib/images/asset-request";
 import { drainJobs, enqueueJobs, listJobs } from "@/lib/images/jobs";
 import { MAX_RUN_REFERENCES } from "@/lib/images/types";
@@ -66,10 +67,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const token = await requireStaffToken(request);
-    const { styleId, jobs } = enqueueSchema.parse(await request.json());
+    const { styleId, jobs } = await readJsonBody(request, enqueueSchema);
     const result = await enqueueJobs(token, styleId, jobs);
-    const origin = new URL(request.url).origin;
-    after(() => drainJobs(token, origin));
+    after(() => drainJobs(token));
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return assetErrorResponse(error, "Failed to enqueue", 400);

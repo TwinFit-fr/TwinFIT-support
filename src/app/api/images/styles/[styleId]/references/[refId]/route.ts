@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireStaffToken } from "@/lib/api-auth";
+import { readJsonBody } from "@/lib/api-body";
 import { assetErrorResponse, referenceSchema } from "@/lib/images/asset-request";
 import {
   deleteStyleReference,
@@ -22,7 +23,7 @@ export async function PATCH(request: Request, context: Ctx) {
     if (!(await ownedReference(token, styleId, refId))) {
       return NextResponse.json({ error: "Reference not found" }, { status: 404 });
     }
-    const input = referenceSchema.partial().parse(await request.json());
+    const input = await readJsonBody(request, referenceSchema.partial());
     return NextResponse.json({ reference: await updateStyleReference(token, refId, input) });
   } catch (error) {
     return assetErrorResponse(error, "Could not update reference", 500);
