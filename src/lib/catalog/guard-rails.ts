@@ -167,7 +167,8 @@ export type CatalogErrorContext =
   | "link_muscle"
   | "unlink_muscle"
   | "movement"
-  | "pair";
+  | "pair"
+  | "synonym";
 
 /** Hasura's answer when a rule checked at commit refuses the transaction (no detail, devMode off). */
 const GENERIC_DB_ERROR = /^(postgres tx error|database query error|unexpected)$/i;
@@ -190,6 +191,7 @@ const GENERIC_BY_CONTEXT: Record<CatalogErrorContext, string> = {
     "The database refused the unlink: an active muscle cannot be left without a home group. Link it as target of another group first (that moves it), or deactivate it.",
   movement: "The database refused this change to the group's movements. Nothing changed.",
   pair: "The database refused the pair change (target muscles must belong to the group). Nothing changed.",
+  synonym: "The database refused this search synonym change. Nothing changed.",
 };
 
 type Rule = { test: RegExp; message: (m: RegExpMatchArray) => string };
@@ -219,7 +221,24 @@ const RULES: Rule[] = [
   },
   {
     test: /catalog\.(\w+): (\S+) is named by search synonyms/,
-    message: (m) => `${m[2]} is named by search synonyms: repoint or delete them first (backend)`,
+    message: (m) => `${m[2]} is named by search synonyms: delete them first (Catalog → Search synonyms)`,
+  },
+  {
+    test: /catalog\.search_synonyms \((\w+), (.*)\): (\w+) (\S+) does not exist/,
+    message: (m) => `"${m[2]}" (${m[1]}): ${m[3] === "exercise" ? `exercise #${m[4]}` : `${m[3]} ${m[4]}`} does not exist`,
+  },
+  {
+    test: /search_synonyms_pkey/,
+    message: () =>
+      "This phrase already stands for that code in this locale (before backend 2.12.0, a phrase can stand for one code only)",
+  },
+  {
+    test: /search_synonyms_kind_check/,
+    message: () => "The backend does not know this synonym kind yet (also_muscle needs backend 2.12.0)",
+  },
+  {
+    test: /search_synonyms_phrase_check/,
+    message: () => "A phrase is lower case letters and digits separated by single spaces",
   },
   {
     test: /code (.+?) must match/,
