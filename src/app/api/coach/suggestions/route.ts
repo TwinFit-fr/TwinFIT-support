@@ -19,7 +19,7 @@ function emptyToNull(value: unknown): string | null {
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const suggestions = await listSuggestions(token);
     return NextResponse.json({ suggestions });
   } catch (error) {
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = (await request.json()) as Record<string, unknown>;
     const action = String(body.action ?? "create");
 

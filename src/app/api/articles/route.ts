@@ -93,7 +93,7 @@ function failure(error: unknown, fallback: string, status: number): Response {
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     return NextResponse.json({ articles: await listArticles(token) });
   } catch (error) {
     return failure(error, "Failed to load articles", 500);
@@ -102,7 +102,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = actionSchema.parse(await request.json());
 
     switch (body.action) {

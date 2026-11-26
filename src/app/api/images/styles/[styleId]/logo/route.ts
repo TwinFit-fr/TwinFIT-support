@@ -17,7 +17,7 @@ const bodySchema = z.object({
 
 export async function POST(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId } = await context.params;
     const style = await getStyle(token, styleId);
     if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
@@ -50,7 +50,7 @@ export async function POST(request: Request, context: Ctx) {
 
 export async function DELETE(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId } = await context.params;
     const style = await getStyle(token, styleId);
     if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });

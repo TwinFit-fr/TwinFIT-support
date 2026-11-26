@@ -5,7 +5,7 @@ import { listImageModelIds } from "@/lib/images/openai";
 
 export async function GET(request: Request) {
   try {
-    requireStaffToken(request);
+    await requireStaffToken(request);
     const models = await listImageModelIds();
     return NextResponse.json({
       models: models.map((id) => ({ id, capabilities: capabilitiesFor(id) })),

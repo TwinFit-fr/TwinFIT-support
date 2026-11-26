@@ -19,7 +19,7 @@ const patchSchema = z.discriminatedUnion("action", [
 /** Re-extract from the source with new adjustment settings, or (de)activate. */
 export async function PATCH(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const body = patchSchema.parse(await request.json());
     const mask = await getMask(token, id);
@@ -42,7 +42,7 @@ export async function PATCH(request: Request, context: Ctx) {
 /** Deletes an inactive mask, then its files. */
 export async function DELETE(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const mask = await getMask(token, id);
     if (!mask) return NextResponse.json({ error: "Mask not found" }, { status: 404 });

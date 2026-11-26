@@ -25,7 +25,7 @@ function errorContext(body: Record<string, unknown> | null): CatalogErrorContext
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const data = await fetchTaxonomy(token);
     return NextResponse.json({ ok: true, data });
   } catch (error) {
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     const action = body.action as string | undefined;
 
     if (kind === "relation" && action === "unlink") {
-      const token = requireAdminToken(request);
+      const token = await requireAdminToken(request);
       await manageRelation(token, {
         action: body.action,
         kind: body.relationKind ?? body.relation_kind,
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
 
     if (kind === "relation") {
       await manageRelation(token, {

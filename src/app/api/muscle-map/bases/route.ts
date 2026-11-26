@@ -8,7 +8,7 @@ export const maxDuration = 300;
 /** New base of a view (`?view=`): generated with the settings or uploaded; it becomes active. */
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const view = viewSchema.parse(new URL(request.url).searchParams.get("view"));
     const upload = uploadOf(imageSourceSchema.parse(await request.json()));
     if (upload instanceof NextResponse) return upload;

@@ -6,7 +6,7 @@ import { errorResponse } from "@/lib/muscle-map/request";
 /** Everything the muscle map prototype page shows: settings, muscles, bases and masks. */
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     return NextResponse.json(await getBoard(token));
   } catch (error) {
     return errorResponse(error, "Muscle map load failed");

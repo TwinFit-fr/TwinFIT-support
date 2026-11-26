@@ -16,7 +16,7 @@ export async function GET(
   context: { params: Promise<{ userId: string }> },
 ) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { userId } = await context.params;
     const { searchParams } = new URL(request.url);
     const section = searchParams.get("section") as SupportUserSection | null;

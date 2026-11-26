@@ -12,7 +12,7 @@ type Ctx = { params: Promise<{ id: string }> };
 /** Copies the active masks of `from_base_id` onto this base (same view and size). */
 export async function POST(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const { from_base_id } = z.object({ from_base_id: z.string().uuid() }).parse(await request.json());
     const [to, from] = await Promise.all([getBase(token, id), getBase(token, from_base_id)]);

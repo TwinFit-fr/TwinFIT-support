@@ -14,7 +14,7 @@ function parseDateBound(value: string | null, endOfDay: boolean): string | undef
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { searchParams } = new URL(request.url);
 
     if (searchParams.get("options") === "1") {

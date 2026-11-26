@@ -13,7 +13,7 @@ const actionSchema = z.object({ action: z.enum(["retry", "cancel"]) });
 /** retry: failed and skipped jobs run again; cancel: jobs not started yet are dropped. */
 export async function POST(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const batchId = z
       .string()
       .uuid()
@@ -37,7 +37,7 @@ export async function POST(request: Request, context: Ctx) {
  */
 export async function DELETE(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const batchId = z
       .string()
       .uuid()

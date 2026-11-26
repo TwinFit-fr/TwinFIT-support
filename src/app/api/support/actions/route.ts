@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { callStaffFunction, getBearerToken, requireStaffToken } from "@/lib/api-auth";
-import { hasAdminRole } from "@/lib/nhost/jwt";
+import { callStaffFunction, requireStaffAuth } from "@/lib/api-auth";
 import { parseSetRoleRequest, setRoleErrorMessage } from "@/lib/support/roles";
 import type { AdminAction } from "@/lib/support/types";
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const { token, role } = await requireStaffAuth(request);
     const body = (await request.json()) as AdminAction;
 
     switch (body.action) {
@@ -32,8 +31,7 @@ export async function POST(request: Request) {
         return NextResponse.json(result.body, { status: result.status });
       }
       case "set-disabled": {
-        const bearer = getBearerToken(request);
-        if (!bearer || !hasAdminRole(bearer)) {
+        if (role !== "admin") {
           return NextResponse.json({ error: "Admin role required" }, { status: 403 });
         }
         const result = await callStaffFunction(token, "admin-set-user-disabled", {
@@ -43,7 +41,7 @@ export async function POST(request: Request) {
         return NextResponse.json(result.body, { status: result.status });
       }
       case "set-role": {
-        if (!hasAdminRole(token)) {
+        if (role !== "admin") {
           return NextResponse.json(
             { error: setRoleErrorMessage(403, null) },
             { status: 403 },

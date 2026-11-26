@@ -1,4 +1,9 @@
-import { hasAdminRole, hasStaffRole, resolveSupportHasuraRole } from "@/lib/nhost/jwt";
+import { resolveSupportHasuraRole, supportRoleOf } from "./nhost/jwt.ts";
+import {
+  AccessTokenVerificationUnavailableError,
+  InvalidAccessTokenError,
+  verifyAccessToken,
+} from "./nhost/verify-jwt.ts";
 
 export function getBearerToken(request: Request): string | null {
   const auth = request.headers.get("authorization");
@@ -6,30 +11,61 @@ export function getBearerToken(request: Request): string | null {
   return auth.slice(7).trim() || null;
 }
 
-export function requireStaffToken(request: Request): string {
-  const token = getBearerToken(request);
-  if (!token) {
-    throw new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-  }
-  if (!hasStaffRole(token)) {
-    throw new Response(JSON.stringify({ error: "Staff role required" }), {
-      status: 403,
-    });
-  }
-  return token;
+/** A caller whose access token was verified (signature, `exp`, issuer) and holds a Support role. */
+export type SupportAuth = {
+  token: string;
+  userId: string;
+  /** admin > staff: an account holding both is admin. */
+  role: "admin" | "staff";
+};
+
+function jsonError(error: string, status: number): Response {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
-export function requireAdminToken(request: Request): string {
+/**
+ * Verifies the request's bearer token and its Support role. Throws a Response (401 missing,
+ * forged or expired token; 403 no staff/admin role; 503 keys unavailable) that the route's catch
+ * returns as is.
+ */
+export async function requireStaffAuth(request: Request): Promise<SupportAuth> {
   const token = getBearerToken(request);
-  if (!token) {
-    throw new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  if (!token) throw jsonError("Unauthorized", 401);
+
+  let verified;
+  try {
+    verified = await verifyAccessToken(token);
+  } catch (error) {
+    if (error instanceof InvalidAccessTokenError) throw jsonError(error.message, 401);
+    if (error instanceof AccessTokenVerificationUnavailableError) {
+      throw jsonError("Token verification unavailable", 503);
+    }
+    throw error;
   }
-  if (!hasAdminRole(token)) {
-    throw new Response(JSON.stringify({ error: "Admin role required" }), {
-      status: 403,
-    });
-  }
-  return token;
+
+  const role = supportRoleOf(verified.roles);
+  if (!role) throw jsonError("Staff role required", 403);
+  return { token, userId: verified.userId, role };
+}
+
+/** {@link requireStaffAuth}, admin only. */
+export async function requireAdminAuth(request: Request): Promise<SupportAuth> {
+  const auth = await requireStaffAuth(request);
+  if (auth.role !== "admin") throw jsonError("Admin role required", 403);
+  return auth;
+}
+
+/** The verified access token of a staff or admin caller (see {@link requireStaffAuth}). */
+export async function requireStaffToken(request: Request): Promise<string> {
+  return (await requireStaffAuth(request)).token;
+}
+
+/** The verified access token of an admin caller (see {@link requireAdminAuth}). */
+export async function requireAdminToken(request: Request): Promise<string> {
+  return (await requireAdminAuth(request)).token;
 }
 
 export async function callStaffFunction(

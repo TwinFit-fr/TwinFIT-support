@@ -37,6 +37,7 @@ npm run dev
 |----------|-------|-------------|
 | `NEXT_PUBLIC_NHOST_SUBDOMAIN` | Public | Nhost project subdomain |
 | `NEXT_PUBLIC_NHOST_REGION` | Public | Nhost region (e.g. `eu-central-1`) |
+| `NHOST_JWT_ISSUER` | Server, optional | When set, API routes also require this exact `iss` (Nhost Auth signs `https://<subdomain>.auth.<region>.nhost.run/v1`). Unset: no issuer check, as in the backend Functions (the project's JWKS already binds the token to the project) |
 
 Support does **not** use `HASURA_GRAPHQL_ADMIN_SECRET`. All GraphQL reads and catalog writes go through the user's JWT (`staff` or `admin` role). Sensitive support writes call backend Functions that validate the JWT server-side.
 
@@ -114,7 +115,14 @@ document Support sends is a fixed, named operation written with the `gql` tag
 
 - No Hasura admin secret in Support (local or production).
 - Client sends JWT via `Authorization: Bearer` on every API call.
-- Non-staff users are rejected at login and on API routes (403).
+- Every API route verifies that JWT before doing anything (`requireStaffToken` / `requireAdminToken`
+  in `src/lib/api-auth.ts`, `src/lib/nhost/verify-jwt.ts`), as the backend Functions do: RS256
+  signature against the Nhost Auth JWKS (`https://<subdomain>.auth.<region>.nhost.run/v1/.well-known/jwks.json`,
+  cached per server instance), `exp` required, `iss` only when `NHOST_JWT_ISSUER` is set, roles read from the verified
+  `x-hasura-allowed-roles`. A missing, forged or expired token gets 401; a valid token without
+  `staff` / `admin` gets 403 (admin-only routes: without `admin`); 503 when the JWKS cannot be read.
+  New routes must call one of these first, before any server key (OpenAI, Mistral, …) is used.
+- Non-staff users are rejected at login (UI hint only, unverified decode) and on API routes (403).
 - Deploy behind VPN or IP allowlist for production; do not expose publicly without additional hardening.
 
 ## Related repos

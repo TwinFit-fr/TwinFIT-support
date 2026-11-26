@@ -6,7 +6,7 @@ import { loadSettings, updateImageSettings } from "@/lib/images/queries";
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     return NextResponse.json(await loadSettings(token));
   } catch (error) {
     if (error instanceof Response) return error;
@@ -23,7 +23,7 @@ const bodySchema = z.object({
 
 export async function PUT(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = bodySchema.parse(await request.json());
     const concurrencyIssue = validateMaxConcurrency(body.max_concurrency);
     if (concurrencyIssue) {

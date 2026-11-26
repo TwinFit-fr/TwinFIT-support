@@ -7,7 +7,7 @@ import { listPromptVersions } from "@/lib/images/prompt-versions";
 /** Every saved text of a prompt slot, newest first. */
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const id = z
       .string()
       .uuid()

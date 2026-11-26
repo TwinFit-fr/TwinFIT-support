@@ -5,7 +5,7 @@ import { createStyle, listStyles } from "@/lib/images/queries";
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const styles = await listStyles(token);
     return NextResponse.json({ styles });
   } catch (error) {
@@ -25,7 +25,7 @@ const createSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = createSchema.parse(await request.json());
     const style = await createStyle(token, body);
     return NextResponse.json({ style });

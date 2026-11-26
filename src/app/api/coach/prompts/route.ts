@@ -4,7 +4,7 @@ import { insertPromptVersion, listPromptVersions, setPromptVersionActive } from 
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const versions = await listPromptVersions(token);
     return NextResponse.json({ versions });
   } catch (error) {
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = (await request.json()) as {
       action?: string;
       prompt_key?: string;

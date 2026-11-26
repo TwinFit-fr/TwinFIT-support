@@ -4,7 +4,7 @@ import { listImagePromptsForStyle } from "@/lib/images/queries";
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const styleId = new URL(request.url).searchParams.get("styleId");
     if (!styleId) {
       return NextResponse.json({ error: "styleId query parameter is required" }, { status: 400 });

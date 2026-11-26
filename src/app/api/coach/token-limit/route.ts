@@ -4,7 +4,7 @@ import { callStaffFunction, requireAdminToken } from "@/lib/api-auth";
 /** Admin-only proxy to `admin-set-coach-token-limit`. Staff receives 403. */
 export async function GET(request: Request) {
   try {
-    const token = requireAdminToken(request);
+    const token = await requireAdminToken(request);
     const result = await callStaffFunction(token, "admin-set-coach-token-limit", {});
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = requireAdminToken(request);
+    const token = await requireAdminToken(request);
     const body = (await request.json()) as {
       tierCode?: string;
       monthlyTokenLimit?: number;

@@ -17,7 +17,7 @@ async function ownedReference(token: string, styleId: string, refId: string) {
 
 export async function PATCH(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, refId } = await context.params;
     if (!(await ownedReference(token, styleId, refId))) {
       return NextResponse.json({ error: "Reference not found" }, { status: 404 });
@@ -31,7 +31,7 @@ export async function PATCH(request: Request, context: Ctx) {
 
 export async function DELETE(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { styleId, refId } = await context.params;
     if (!(await ownedReference(token, styleId, refId))) {
       return NextResponse.json({ error: "Reference not found" }, { status: 404 });

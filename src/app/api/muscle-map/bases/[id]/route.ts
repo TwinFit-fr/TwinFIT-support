@@ -10,7 +10,7 @@ type Ctx = { params: Promise<{ id: string }> };
 /** Activate (the view's previous active base is deactivated) or deactivate a base. */
 export async function PATCH(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const { active } = z.object({ active: z.boolean() }).parse(await request.json());
     const base = await getBase(token, id);
@@ -25,7 +25,7 @@ export async function PATCH(request: Request, context: Ctx) {
 /** Deletes an inactive base with its masks, then their files. */
 export async function DELETE(request: Request, context: Ctx) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const base = await getBase(token, id);
     if (!base) return NextResponse.json({ error: "Base not found" }, { status: 404 });

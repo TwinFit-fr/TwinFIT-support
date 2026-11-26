@@ -15,7 +15,7 @@ function parseExoId(raw: string): number | null {
 
 export async function GET(request: Request, context: { params: Promise<{ exoId: string }> }) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const exoId = parseExoId((await context.params).exoId);
     if (exoId == null) {
       return NextResponse.json({ error: "Invalid exo id" }, { status: 400 });
@@ -39,7 +39,7 @@ const putSchema = z.object({
 /** Saves one pose edited by hand (the model column is cleared) or approves it as it is. */
 export async function PUT(request: Request, context: { params: Promise<{ exoId: string }> }) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const exoId = parseExoId((await context.params).exoId);
     if (exoId == null) {
       return NextResponse.json({ error: "Invalid exo id" }, { status: 400 });
@@ -62,7 +62,7 @@ export async function PUT(request: Request, context: { params: Promise<{ exoId: 
 /** Regenerates the three poses with the model; they come back as `generated`. */
 export async function POST(request: Request, context: { params: Promise<{ exoId: string }> }) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const exoId = parseExoId((await context.params).exoId);
     if (exoId == null) {
       return NextResponse.json({ error: "Invalid exo id" }, { status: 400 });

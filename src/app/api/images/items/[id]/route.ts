@@ -26,7 +26,7 @@ const patchSchema = z
  */
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const body = patchSchema.parse(await request.json());
     if (body.active === true) {
@@ -71,7 +71,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { id } = await context.params;
     const current = await getExerciseImage(token, id);
     if (!current) {

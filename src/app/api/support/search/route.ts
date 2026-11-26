@@ -4,7 +4,7 @@ import { searchUsers } from "@/lib/support/queries";
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim();
     if (!q || q.length < 4) {

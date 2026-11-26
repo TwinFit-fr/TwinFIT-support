@@ -32,7 +32,7 @@ function parseStringList(value: unknown): string[] | null {
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const [sources, cards] = await Promise.all([
       listKnowledgeSources(token),
       listKnowledgeCards(token),
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = (await request.json()) as Record<string, unknown>;
     const action = String(body.action ?? "");
 

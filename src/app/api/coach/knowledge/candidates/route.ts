@@ -24,7 +24,7 @@ function parseStatus(value: string | null): CandidateStatus {
 
 export async function GET(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const status = parseStatus(new URL(request.url).searchParams.get("status"));
     return NextResponse.json(await listKnowledgeCandidates(token, status));
   } catch (error) {
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const token = requireStaffToken(request);
+    const token = await requireStaffToken(request);
     const body = (await request.json()) as Record<string, unknown>;
     const action = String(body.action ?? "");
     const id = String(body.id ?? "");
