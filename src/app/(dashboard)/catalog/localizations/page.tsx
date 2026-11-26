@@ -30,6 +30,7 @@ const TAB_ORDER: LocalizationTabId[] = [
   "group_movements",
   "catalog_equipment",
   "catalog_support_equipment",
+  "catalog_grips",
   "catalog_load_modalities",
 ];
 

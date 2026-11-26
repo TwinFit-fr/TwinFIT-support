@@ -46,6 +46,24 @@ describe("exercisePayloadSchema", () => {
     assert.equal(exercisePayloadSchema.safeParse({ exo_id: "12; drop" }).success, false);
     assert.equal(exercisePayloadSchema.safeParse({ secondary_muscle_codes: Array(51).fill("X") }).success, false);
   });
+
+  it("checks the facets of 2.10.0 against their closed lists", () => {
+    const parsed = exercisePayloadSchema.parse({
+      width: "WIDE",
+      inclination: "INCLINE",
+      laterality: "UNILATERAL",
+      app_visible: false,
+    });
+    assert.deepEqual(
+      [parsed.width, parsed.inclination, parsed.laterality, parsed.app_visible],
+      ["WIDE", "INCLINE", "UNILATERAL", false],
+    );
+    assert.equal("width" in exercisePayloadSchema.parse({ display_name: "x" }), false);
+    assert.equal(exercisePayloadSchema.safeParse({ width: "SUMO" }).success, false);
+    assert.equal(exercisePayloadSchema.safeParse({ inclination: "incline" }).success, false);
+    assert.equal(exercisePayloadSchema.safeParse({ laterality: "SPLIT" }).success, false);
+    assert.equal(exercisePayloadSchema.safeParse({ app_visible: "false" }).success, false);
+  });
 });
 
 describe("deactivateSchema", () => {

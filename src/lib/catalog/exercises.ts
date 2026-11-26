@@ -9,6 +9,7 @@ import {
   type MusclePlan,
   type PairMusclesRef,
 } from "./guard-rails";
+import { facetColumnsForCreate, providedFacetColumns } from "./facets";
 import { summarizeChange, type ChangeLogRow } from "./history";
 import {
   buildExerciseLocalizationRows,
@@ -77,6 +78,10 @@ export function listLibrary(token: string) {
         grip { code name }
         load_modality { code name }
         logging_mode { code name }
+        width
+        inclination
+        laterality
+        app_visible
         body_mass_coefficient
         default_pulley_ratio
         secondary_muscles(order_by: { sort_order: asc }) { muscle { code name } }
@@ -319,6 +324,7 @@ export async function composeExercise(token: string, payload: ExercisePayload) {
     display_name: localizations[0].display_name,
     ...columns,
     ...biomechanics,
+    ...facetColumnsForCreate(payload),
     taxonomy_status: status,
     taxonomy_notes: payload.taxonomy_notes || null,
     active: true,
@@ -439,6 +445,7 @@ export async function updateExercise(token: string, payload: ExercisePayload) {
     display_name: displayName,
     ...columns,
     ...biomechanics,
+    ...providedFacetColumns(payload),
     taxonomy_status: status,
     ...("taxonomy_notes" in payload ? { taxonomy_notes: payload.taxonomy_notes || null } : {}),
     muscles_inherited: plan.mode !== "custom" && !inheritAtEnd,

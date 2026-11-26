@@ -152,6 +152,7 @@ export const TAXONOMY_LOCALIZATION_FK: Partial<Record<LookupTable, string>> = {
   catalog_muscle_groups: "muscle_group_id",
   catalog_muscles: "muscle_id",
   catalog_load_modalities: "load_modality_id",
+  catalog_grips: "grip_id",
 };
 
 /** Sets every locale of a row: filled ones upserted, emptied ones deleted. */
@@ -247,6 +248,19 @@ export const LOCALIZATIONS_SET: Partial<Record<LookupTable, GqlDocument>> = {
       where: { load_modality_id: { _eq: $id }, locale: { _in: $cleared } }
     ) { affected_rows }
   }`,
+  catalog_grips: gql`mutation SupportTaxonomySetGripsLabels(
+    $objects: [catalog_grip_localizations_insert_input!]!
+    $id: uuid!
+    $cleared: [String!]!
+  ) {
+    insert_catalog_grip_localizations(
+      objects: $objects
+      on_conflict: { constraint: grip_localizations_grip_id_locale_key, update_columns: [display_name] }
+    ) { affected_rows }
+    delete_catalog_grip_localizations(
+      where: { grip_id: { _eq: $id }, locale: { _in: $cleared } }
+    ) { affected_rows }
+  }`,
 };
 
 /** Upserts the English label of a row. */
@@ -291,6 +305,12 @@ export const LOCALIZATION_SET_ENGLISH: Partial<Record<LookupTable, GqlDocument>>
     insert_catalog_load_modality_localizations_one(
       object: $object
       on_conflict: { constraint: load_modality_localizations_load_modality_id_locale_key, update_columns: [display_name] }
+    ) { locale }
+  }`,
+  catalog_grips: gql`mutation SupportTaxonomySetGripsEnglishLabel($object: catalog_grip_localizations_insert_input!) {
+    insert_catalog_grip_localizations_one(
+      object: $object
+      on_conflict: { constraint: grip_localizations_grip_id_locale_key, update_columns: [display_name] }
     ) { locale }
   }`,
 };

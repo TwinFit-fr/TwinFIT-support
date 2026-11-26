@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { INCLINATIONS, LATERALITIES, WIDTHS } from "./facets.ts";
 import type { ExercisePayload } from "./normalize.ts";
 
 /**
@@ -55,6 +56,11 @@ export const exercisePayloadSchema = z.object({
   taxonomy_notes: z.string().max(5000).nullish(),
   body_mass_coefficient: numeric,
   default_pulley_ratio: numeric,
+  // Facets of backend 2.10.0: closed CHECK lists, so the values are checked here.
+  width: z.enum(WIDTHS).optional(),
+  inclination: z.enum(INCLINATIONS).optional(),
+  laterality: z.enum(LATERALITIES).optional(),
+  app_visible: z.boolean().optional(),
   localizations: z
     .object({
       en: exerciseLocalization.optional(),

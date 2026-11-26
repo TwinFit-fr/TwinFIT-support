@@ -39,6 +39,7 @@ export const LOCALIZED_TAXONOMY_TABLES = new Set<TaxonomyTabId>([
   "catalog_muscle_groups",
   "catalog_body_regions",
   "catalog_load_modalities",
+  "catalog_grips",
 ]);
 
 /** Tables with an optional staff-only visual description for image prompts. */

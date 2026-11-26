@@ -234,6 +234,14 @@ export function ExerciseBrowser({
                                     pending
                                   </Badge>
                                 )}
+                                {ex.app_visible === false && (
+                                  <Badge
+                                    className="bg-zinc-200 text-zinc-700"
+                                    title="Not listed in the app (the Lab and history still see it)"
+                                  >
+                                    hidden from app
+                                  </Badge>
+                                )}
                               </div>
                               <div className="mt-1.5 flex flex-wrap gap-1">
                                 {badges.map((b) => (
